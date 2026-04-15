@@ -216,6 +216,7 @@ func run() error {
 
 	var npmWrapped http.Handler = npmMux
 	npmWrapped = tenantResolver.Middleware(npmWrapped)
+	npmWrapped = middleware.NPMTenantFromPath()(npmWrapped) // Extract tenant from /npm/t/{id}/... (runs before tenant resolver)
 	npmWrapped = middleware.RequestLogging(logger)(npmWrapped)
 	npmWrapped = middleware.Recovery(logger)(npmWrapped)
 

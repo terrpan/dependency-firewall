@@ -17,6 +17,7 @@ This example walks through setting up the dependency firewall as an npm registry
 
 - Firewall running (see root [README](../../README.md))
 - `curl` and `jq` installed
+- Node.js v24.11.1 or compatible (if using npm commands; see `.nvmrc`)
 
 ## Run the setup
 
@@ -42,10 +43,9 @@ The script prints your tenant ID and an `.npmrc` snippet at the end:
 
   To use the npm proxy, add this to your .npmrc:
 
-    registry=http://localhost:8080/npm/
-    //localhost:8080/npm/:_header.x-tenant-id="01920abc-..."
+    registry=http://localhost:8080/npm/t/01920abc-.../
 
-  Or pass the header manually:
+  Or pass the header manually (alternative method):
 
     curl -H "X-Tenant-ID: 01920abc-..." \
          http://localhost:8080/npm/express
@@ -75,9 +75,10 @@ curl -H "X-Tenant-ID: $TENANT_ID" "http://localhost:8080/npm/%40types%2Fnode" | 
 Add to your project's `.npmrc` (or `~/.npmrc`):
 
 ```ini
-registry=http://localhost:8080/npm/
-//localhost:8080/npm/:_header.x-tenant-id="<tenant-id>"
+registry=http://localhost:8080/npm/t/<tenant-id>/
 ```
+
+Replace `<tenant-id>` with your actual tenant ID from the setup output.
 
 Then normal npm commands are proxied and evaluated:
 
