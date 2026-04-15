@@ -26,6 +26,8 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 	npmdelivery "github.com/danielterry/dependency-firewall/internal/delivery/npm"
 	ocidelivery "github.com/danielterry/dependency-firewall/internal/delivery/oci"
+	"github.com/danielterry/dependency-firewall/internal/infra/enrichment"
+	"github.com/danielterry/dependency-firewall/internal/infra/npm"
 	"github.com/danielterry/dependency-firewall/internal/infra/osv"
 	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
 	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
@@ -155,8 +157,10 @@ func run() error {
 	decisionCache := valkey.NewDecisionCache(valkeyClient)
 	metadataCache := valkey.NewMetadataCache(valkeyClient)
 
-	// Create stub enricher (real OSV client comes later).
-	enricher := osv.NewStubEnricher()
+	// Create enrichers: OSV for vulnerabilities, npm for publish dates.
+	osvEnricher := osv.NewClient(&http.Client{}, logger)
+	npmEnricher := npm.NewMetadataEnricher(&http.Client{}, logger)
+	enricher := enrichment.NewCompositeEnricher(osvEnricher, npmEnricher)
 
 	// Create upstream client.
 	ociClient := upstream.NewOCIClient(&http.Client{Timeout: 30 * time.Second})
