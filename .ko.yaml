@@ -1,6 +1,3 @@
-apiVersion: ko.build/v1alpha1
-kind: Ko
-
 builds:
   - id: firewall
     dir: ./cmd/firewall
@@ -12,9 +9,3 @@ builds:
       - -X main.ldVersion={{.Git.Tag}}
       - -X main.ldCommit={{.Git.ShortCommit}}
       - -X main.ldBuildTime={{.Git.CommitDate}}
-
-images:
-  - image: dependency-firewall
-    build: firewall
-    tags:
-      - latest

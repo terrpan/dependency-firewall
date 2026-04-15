@@ -1,21 +1,16 @@
 .PHONY: help build push up down logs clean
 
-# Build configuration
-KO_REPO ?= docker://dependency-firewall
-
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build firewall image using ko
+build: ## Build firewall image using ko and load into Docker
 	@echo "Building firewall with ko..."
-	KO_DOCKER_REPO=$(KO_REPO) ko build --push=false ./cmd/firewall
-
-rebuild: ## Force rebuild (no cache) using ko
-	@echo "Force rebuilding firewall with ko..."
-	KO_DOCKER_REPO=$(KO_REPO) ko build --push=false ./cmd/firewall
+	@KO_DOCKER_REPO=ko.local ko build --bare ./cmd/firewall
+	@docker tag ko.local:latest dependency-firewall:latest
+	@echo "Tagged as dependency-firewall:latest"
 
 push: ## Push firewall image using ko
-	KO_DOCKER_REPO=$(KO_REPO) ko build ./cmd/firewall
+	ko build ./cmd/firewall
 
 up: build ## Build with ko and start docker-compose
 	docker-compose up -d
@@ -31,17 +26,8 @@ logs: ## Show docker-compose logs
 logs-firewall: ## Show firewall logs only
 	docker-compose logs -f firewall
 
-logs-postgres: ## Show postgres logs only
-	docker-compose logs -f postgres
-
-logs-valkey: ## Show valkey logs only
-	docker-compose logs -f valkey
-
 ps: ## Show docker-compose containers
 	docker-compose ps
-
-shell: ## Open shell in firewall container
-	docker-compose exec firewall sh
 
 clean: ## Clean up docker images and volumes
 	docker-compose down -v
