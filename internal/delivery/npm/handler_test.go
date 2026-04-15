@@ -87,6 +87,17 @@ func (m *mockEnricher) Enrich(_ context.Context, _ domain.ArtifactIdentity) (*do
 	return &domain.ArtifactMetadata{}, nil
 }
 
+// mockAgeEnricher returns old publish dates for versioned requests, nil for unversioned.
+type mockAgeEnricher struct{}
+
+func (m *mockAgeEnricher) Enrich(_ context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+	if artifact.Version == "" {
+		return &domain.ArtifactMetadata{}, nil
+	}
+	old := time.Now().AddDate(-3, 0, 0) // 3 years ago
+	return &domain.ArtifactMetadata{PublishedAt: &old}, nil
+}
+
 type mockUpstreamClient struct {
 	manifestBody string
 	blobBody     string
@@ -143,6 +154,10 @@ func (m *mockUpstreamRepository) Delete(_ context.Context, _, _ string) error   
 // --- Helpers ---
 
 func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *Handler {
+	return newTestHandlerWithEnricher(policies, hasRecentAllow, &mockEnricher{})
+}
+
+func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, enricher port.Enricher) *Handler {
 	upstream := &domain.Upstream{
 		ID:        "up-1",
 		TenantID:  "t-1",
@@ -162,7 +177,7 @@ func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *Handler {
 		&mockDecisionRepository{hasRecentAllow: hasRecentAllow},
 		&mockDecisionCache{},
 		&mockMetadataCache{},
-		&mockEnricher{},
+		enricher,
 		policy.NewEvaluator(),
 		upstreamClient,
 		upstreamRepo,
@@ -254,7 +269,7 @@ func Test_handleMetadata_denied(t *testing.T) {
 }
 
 func Test_handleTarball_allowed(t *testing.T) {
-	h := newTestHandler(nil, true)
+	h := newTestHandler(nil, false) // no policies = default allow
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -268,7 +283,19 @@ func Test_handleTarball_allowed(t *testing.T) {
 }
 
 func Test_handleTarball_denied(t *testing.T) {
-	h := newTestHandler(nil, false) // hasRecentAllow = false
+	blocklist := []domain.Policy{
+		{
+			ID:       "p-1",
+			TenantID: "t-1",
+			Name:     "block-all",
+			Type:     domain.PolicyTypeBlocklist,
+			Action:   domain.PolicyActionDeny,
+			Config:   map[string]any{"namespaces": []any{""}},
+			Priority: 1,
+			Enabled:  true,
+		},
+	}
+	h := newTestHandler(blocklist, false)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -282,11 +309,11 @@ func Test_handleTarball_denied(t *testing.T) {
 	var resp npmErrorResponse
 	err := json.NewDecoder(rr.Body).Decode(&resp)
 	require.NoError(t, err)
-	assert.Contains(t, resp.Error, "no allow decision")
+	assert.Contains(t, resp.Error, "policy violation:")
 }
 
 func Test_handleTarball_scopedPackage(t *testing.T) {
-	h := newTestHandler(nil, true)
+	h := newTestHandler(nil, false) // no policies = default allow
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
@@ -369,4 +396,48 @@ func Test_emptyPath_returns400(t *testing.T) {
 	mux.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+// Regression test: metadata allow (no version) must not bypass tarball deny (with version).
+// This reproduces the bug where npm metadata requests allowed versionless lookups,
+// and tarball downloads skipped policy evaluation entirely.
+func Test_handleTarball_metadataAllowDoesNotBypassTarballDeny(t *testing.T) {
+	maxAgePolicies := []domain.Policy{
+		{
+			ID:       "p-age",
+			TenantID: "t-1",
+			Name:     "block-old",
+			Type:     domain.PolicyTypeMaximumAge,
+			Action:   domain.PolicyActionDeny,
+			Config:   map[string]any{"max_age_days": 365},
+			Priority: 10,
+			Enabled:  true,
+		},
+	}
+	h := newTestHandlerWithEnricher(maxAgePolicies, true, &mockAgeEnricher{})
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Step 1: metadata request (no version) — should be allowed since age conditions
+	// skip without a publish date on unversioned requests.
+	metaReq := httptest.NewRequest(http.MethodGet, "/npm/express", nil)
+	metaReq = withTenant(metaReq)
+	metaRR := httptest.NewRecorder()
+	mux.ServeHTTP(metaRR, metaReq)
+	assert.Equal(t, http.StatusOK, metaRR.Code, "metadata request should be allowed")
+
+	// Step 2: tarball request (with version) — must be denied because the enricher
+	// returns an old publish date and the maximum_age policy should block it.
+	tarballReq := httptest.NewRequest(http.MethodGet, "/npm/express/-/express-4.19.1.tgz", nil)
+	tarballReq = withTenant(tarballReq)
+	tarballRR := httptest.NewRecorder()
+	mux.ServeHTTP(tarballRR, tarballReq)
+
+	assert.Equal(t, http.StatusForbidden, tarballRR.Code, "tarball request should be denied by maximum_age policy")
+
+	var resp npmErrorResponse
+	err := json.NewDecoder(tarballRR.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp.Error, "policy violation:")
+	assert.Contains(t, resp.Error, "maximum allowed is 365 days")
 }

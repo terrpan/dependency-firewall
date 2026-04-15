@@ -136,35 +136,39 @@ func (h *Handler) handleTarball(w http.ResponseWriter, r *http.Request, name, ve
 		return
 	}
 
-	artifact := domain.ArtifactIdentity{
-		Ecosystem: domain.EcosystemNPM,
-		Name:      name,
-	}
-	// Normalize to extract scope into namespace.
-	normalized, err := domain.NormalizeArtifactIdentity(artifact)
-	if err != nil {
-		writeNPMError(w, "invalid package reference", http.StatusBadRequest)
-		return
-	}
-
-	allowed, err := h.proxy.HasAllowedManifest(r.Context(), tenant.ID, normalized)
-	if err != nil {
-		h.logger.Error("failed to check manifest allow decision",
-			"error", err,
-			"tenant_id", tenant.ID,
-			"package", name,
-		)
-		writeNPMError(w, "policy check error", http.StatusInternalServerError)
-		return
-	}
-	if !allowed {
-		writeNPMError(w, "no allow decision for this package", http.StatusForbidden)
-		return
-	}
-
 	upstream, err := h.upstreams.GetByEcosystem(r.Context(), tenant.ID, domain.EcosystemNPM)
 	if err != nil {
 		writeNPMError(w, "no npm upstream configured", http.StatusNotFound)
+		return
+	}
+
+	artifact := domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemNPM,
+		Name:      name,
+		Version:   version,
+	}
+
+	req := domain.AccessRequest{
+		TenantID:  tenant.ID,
+		Artifact:  artifact,
+		Upstream:  *upstream,
+		Timestamp: time.Now(),
+	}
+
+	decision, err := h.proxy.Evaluate(r.Context(), req)
+	if err != nil {
+		h.logger.Error("policy evaluation failed",
+			"error", err,
+			"tenant_id", tenant.ID,
+			"package", name,
+			"version", version,
+		)
+		writeNPMError(w, "policy evaluation error", http.StatusInternalServerError)
+		return
+	}
+
+	if decision.Outcome == domain.DecisionDeny {
+		writeNPMError(w, "policy violation: "+decision.Reason, http.StatusForbidden)
 		return
 	}
 
