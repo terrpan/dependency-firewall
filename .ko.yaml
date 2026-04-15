@@ -11,11 +11,11 @@ builds:
       - -s
       - -w
       - -X
-      - github.com/danielterry/dependency-firewall/cmd/firewall.ldVersion={{.Env.VERSION}}
+      - main.ldVersion={{.Env.VERSION}}
       - -X
-      - github.com/danielterry/dependency-firewall/cmd/firewall.ldCommit={{.Env.COMMIT}}
+      - main.ldCommit={{.Env.COMMIT}}
       - -X
-      - github.com/danielterry/dependency-firewall/cmd/firewall.ldBuildTime={{.Env.BUILD_TIME}}
+      - main.ldBuildTime={{.Env.BUILD_TIME}}
 
 images:
   - image: dependency-firewall
