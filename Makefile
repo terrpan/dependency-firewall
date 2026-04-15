@@ -2,19 +2,23 @@
 
 # Build configuration
 KO_REPO ?= docker://dependency-firewall
-VERSION ?= latest
+VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "latest")
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell git log -1 --format=%aI 2>/dev/null || echo "unknown")
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build firewall image using ko
-	KO_DOCKER_REPO=$(KO_REPO) ko build --push=false -t $(VERSION) ./cmd/firewall
+	@echo "Building v$(VERSION) (commit: $(COMMIT), time: $(BUILD_TIME))"
+	KO_DOCKER_REPO=$(KO_REPO) VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) ko build --push=false -t $(VERSION) ./cmd/firewall
 
 rebuild: ## Force rebuild (no cache) using ko
-	KO_DOCKER_REPO=$(KO_REPO) ko build --push=false -t $(VERSION) ./cmd/firewall
+	@echo "Force rebuilding v$(VERSION) (commit: $(COMMIT), time: $(BUILD_TIME))"
+	KO_DOCKER_REPO=$(KO_REPO) VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) ko build --push=false -t $(VERSION) ./cmd/firewall
 
 push: ## Push firewall image using ko
-	ko build -t $(VERSION) ./cmd/firewall
+	KO_DOCKER_REPO=$(KO_REPO) VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) ko build -t $(VERSION) ./cmd/firewall
 
 up: build ## Build with ko and start docker-compose
 	docker-compose up -d
@@ -72,6 +76,7 @@ tidy: ## Tidy dependencies
 	go mod tidy
 
 all: clean build test ## Clean, build, and test
+
 
 
 

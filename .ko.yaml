@@ -10,6 +10,12 @@ builds:
     ldflags:
       - -s
       - -w
+      - -X
+      - github.com/danielterry/dependency-firewall/cmd/firewall.ldVersion={{.Env.VERSION}}
+      - -X
+      - github.com/danielterry/dependency-firewall/cmd/firewall.ldCommit={{.Env.COMMIT}}
+      - -X
+      - github.com/danielterry/dependency-firewall/cmd/firewall.ldBuildTime={{.Env.BUILD_TIME}}
 
 images:
   - image: dependency-firewall
