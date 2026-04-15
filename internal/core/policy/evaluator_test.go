@@ -8,9 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func ptrFloat64(v float64) *float64 { return &v }
-func ptrTime(t time.Time) *time.Time { return &t }
-func ptrBool(b bool) *bool { return &b }
+//go:fix inline
+func ptrFloat64(v float64) *float64 { return new(v) }
+
+//go:fix inline
+func ptrTime(t time.Time) *time.Time { return new(t) }
+
+//go:fix inline
+func ptrBool(b bool) *bool { return new(b) }
 
 func TestEvaluate(t *testing.T) {
 	now := time.Now()
@@ -25,8 +30,8 @@ func TestEvaluate(t *testing.T) {
 			Version:   "1.0.0",
 		},
 		Metadata: &domain.ArtifactMetadata{
-			MaxCVSS:     ptrFloat64(9.0),
-			PublishedAt: ptrTime(recentPublish),
+			MaxCVSS:     new(9.0),
+			PublishedAt: new(recentPublish),
 		},
 		Timestamp: now,
 	}
@@ -108,7 +113,7 @@ func TestEvaluate(t *testing.T) {
 					Version:   "0.1.0",
 				},
 				Metadata: &domain.ArtifactMetadata{
-					MaxCVSS: ptrFloat64(8.5),
+					MaxCVSS: new(8.5),
 				},
 				Timestamp: now,
 			},
@@ -160,7 +165,7 @@ func TestEvaluate(t *testing.T) {
 					Version:   "1.0.0",
 				},
 				Metadata: &domain.ArtifactMetadata{
-					MaxCVSS: ptrFloat64(9.0),
+					MaxCVSS: new(9.0),
 				},
 				Timestamp: now,
 			},
@@ -249,7 +254,7 @@ func TestEvaluate_SamePriorityDeterministic(t *testing.T) {
 			Version:   "1.0.0",
 		},
 		Metadata: &domain.ArtifactMetadata{
-			MaxCVSS: ptrFloat64(9.0),
+			MaxCVSS: new(9.0),
 		},
 		Timestamp: now,
 	}
@@ -270,7 +275,7 @@ func TestEvaluate_SamePriorityDeterministic(t *testing.T) {
 	eval := NewEvaluator()
 
 	// Run multiple times to verify determinism.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		decision := eval.Evaluate(req, policies)
 		assert.Equal(t, domain.DecisionDeny, decision.Outcome)
 		// "block-high-cvss" sorts before "block-untrusted" alphabetically,
@@ -325,7 +330,7 @@ func TestEvaluate_ConditionEvaluationError(t *testing.T) {
 			Version:   "1.0.0",
 		},
 		Metadata: &domain.ArtifactMetadata{
-			MaxCVSS: ptrFloat64(5.0),
+			MaxCVSS: new(5.0),
 		},
 		Timestamp: now,
 	}

@@ -51,7 +51,7 @@ func (h *PolicyHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create policy")
 		return
 	}
-	writeJSON(w, http.StatusCreated, p)
+	writeJSON(w, http.StatusCreated, toPolicyResponse(&p))
 }
 
 func (h *PolicyHandler) importYAML(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +107,7 @@ func (h *PolicyHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list policies")
 		return
 	}
-	writeJSON(w, http.StatusOK, policies)
+	writeJSON(w, http.StatusOK, toPoliciesResponse(policies))
 }
 
 func (h *PolicyHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +128,7 @@ func (h *PolicyHandler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get policy")
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, toPolicyResponse(p))
 }
 
 func (h *PolicyHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +156,7 @@ func (h *PolicyHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update policy")
 		return
 	}
-	writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, toPolicyResponse(&p))
 }
 
 func (h *PolicyHandler) delete(w http.ResponseWriter, r *http.Request) {

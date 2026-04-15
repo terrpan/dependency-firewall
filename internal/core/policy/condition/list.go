@@ -2,6 +2,7 @@ package condition
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
@@ -18,10 +19,8 @@ func (a Allowlist) Evaluate(req domain.AccessRequest, config map[string]any) (bo
 	}
 
 	ns := req.Artifact.Namespace
-	for _, allowed := range namespaces {
-		if ns == allowed {
-			return true, fmt.Sprintf("namespace %q is allowed", ns), nil
-		}
+	if slices.Contains(namespaces, ns) {
+		return true, fmt.Sprintf("namespace %q is allowed", ns), nil
 	}
 
 	return false, "", nil
@@ -39,10 +38,8 @@ func (b Blocklist) Evaluate(req domain.AccessRequest, config map[string]any) (bo
 	}
 
 	ns := req.Artifact.Namespace
-	for _, blocked := range namespaces {
-		if ns == blocked {
-			return true, fmt.Sprintf("namespace %q is blocked", ns), nil
-		}
+	if slices.Contains(namespaces, ns) {
+		return true, fmt.Sprintf("namespace %q is blocked", ns), nil
 	}
 
 	return false, "", nil

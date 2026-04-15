@@ -15,6 +15,17 @@
 - Repositories only persist and load data.
 - Policy packages evaluate policy and do not perform I/O.
 
+## API Response DTOs
+
+- **Always use response DTOs in the delivery layer**, never return domain models directly.
+- Response DTOs must define `json` tags with lowercase, snake_case field names (e.g., `json:"created_at"`).
+- Create converter functions to transform domain models to response DTOs (e.g., `toTenantResponse(t *domain.Tenant)`).
+- Centralize all response DTOs and converters in `internal/delivery/api/response.go`.
+- This ensures:
+  - API contracts are stable and decoupled from internal domain model changes
+  - JSON serialization uses consistent, developer-friendly lowercase naming
+  - Omit internal fields (like `TenantID`) from responses when not needed for API consumers
+
 ## Error handling
 
 - Return typed or categorized errors from core and infrastructure.

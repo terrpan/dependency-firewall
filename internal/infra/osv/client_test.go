@@ -19,14 +19,14 @@ func TestClient_Enrich(t *testing.T) {
 	logger := slog.Default()
 
 	tests := []struct {
-		name           string
-		artifact       domain.ArtifactIdentity
-		handler        http.HandlerFunc
-		wantErr        bool
-		wantErrIs      error
-		wantVulnCount  int
-		wantMaxCVSS    *float64
-		wantNilResult  bool
+		name          string
+		artifact      domain.ArtifactIdentity
+		handler       http.HandlerFunc
+		wantErr       bool
+		wantErrIs     error
+		wantVulnCount int
+		wantMaxCVSS   *float64
+		wantNilResult bool
 	}{
 		{
 			name: "successful query returns vulnerabilities with CVSS scores",
@@ -69,7 +69,7 @@ func TestClient_Enrich(t *testing.T) {
 				json.NewEncoder(w).Encode(resp)
 			},
 			wantVulnCount: 2,
-			wantMaxCVSS:   ptr(9.8),
+			wantMaxCVSS:   new(9.8),
 		},
 		{
 			name: "empty vulns response returns metadata with nil MaxCVSS",
@@ -186,6 +186,7 @@ func TestClient_Enrich_Timeout(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrEnrichmentFailed)
 }
 
+//go:fix inline
 func ptr(f float64) *float64 {
-	return &f
+	return new(f)
 }

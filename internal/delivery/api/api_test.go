@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"log/slog"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -265,10 +265,7 @@ func (m *mockDecisionRepo) ListByTenant(_ context.Context, tenantID string, limi
 	if offset >= len(result) {
 		return nil, nil
 	}
-	end := offset + limit
-	if end > len(result) {
-		end = len(result)
-	}
+	end := min(offset+limit, len(result))
 	return result[offset:end], nil
 }
 
@@ -398,7 +395,7 @@ func Test_PolicyCRUD(t *testing.T) {
 	}
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
-	created := decodeJSON[domain.Policy](t, resp)
+	created := decodeJSON[PolicyResponse](t, resp)
 	assert.Equal(t, "block-critical", created.Name)
 	assert.Equal(t, "tenant-1", created.TenantID)
 	assert.NotEmpty(t, created.ID)
@@ -406,20 +403,20 @@ func Test_PolicyCRUD(t *testing.T) {
 	// Get
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies/"+created.ID, nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	got := decodeJSON[domain.Policy](t, resp)
+	got := decodeJSON[PolicyResponse](t, resp)
 	assert.Equal(t, created.ID, got.ID)
 
 	// List
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies", nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	list := decodeJSON[[]domain.Policy](t, resp)
+	list := decodeJSON[[]PolicyResponse](t, resp)
 	assert.Len(t, list, 1)
 
 	// Update
 	body["name"] = "block-critical-updated"
 	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/policies/"+created.ID, body, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	updated := decodeJSON[domain.Policy](t, resp)
+	updated := decodeJSON[PolicyResponse](t, resp)
 	assert.Equal(t, "block-critical-updated", updated.Name)
 
 	// Delete
@@ -477,7 +474,7 @@ func Test_UpstreamCRUD(t *testing.T) {
 	}
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", body, headers)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
-	created := decodeJSON[domain.Upstream](t, resp)
+	created := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, "docker-hub", created.Name)
 	assert.Equal(t, "tenant-1", created.TenantID)
 	assert.NotEmpty(t, created.ID)
@@ -485,20 +482,20 @@ func Test_UpstreamCRUD(t *testing.T) {
 	// Get
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams/"+created.ID, nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	got := decodeJSON[domain.Upstream](t, resp)
+	got := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, created.ID, got.ID)
 
 	// List
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams", nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	list := decodeJSON[[]domain.Upstream](t, resp)
+	list := decodeJSON[[]UpstreamResponse](t, resp)
 	assert.Len(t, list, 1)
 
 	// Update
 	body["name"] = "docker-hub-updated"
 	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/upstreams/"+created.ID, body, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	updated := decodeJSON[domain.Upstream](t, resp)
+	updated := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, "docker-hub-updated", updated.Name)
 
 	// Delete
@@ -533,13 +530,13 @@ func Test_EvaluationList(t *testing.T) {
 
 	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/evaluations", nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	list := decodeJSON[[]domain.Decision](t, resp)
+	list := decodeJSON[[]DecisionResponse](t, resp)
 	assert.Len(t, list, 3)
 
 	// With limit and offset.
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/evaluations?limit=2&offset=1", nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	list = decodeJSON[[]domain.Decision](t, resp)
+	list = decodeJSON[[]DecisionResponse](t, resp)
 	assert.Len(t, list, 2)
 }
 
@@ -566,4 +563,165 @@ func Test_MissingTenantIDHeader(t *testing.T) {
 			assert.Contains(t, body["error"], "X-Tenant-ID")
 		})
 	}
+}
+
+// --- Response DTO Tests ---
+
+func Test_TenantResponseDTO_HasLowercaseJSONTags(t *testing.T) {
+	srv, _, _, _, _ := setupTestServer(t)
+
+	// Create a tenant and verify the response uses lowercase snake_case fields
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/tenants", map[string]string{"name": "test-tenant"}, nil)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Decode as map to inspect the actual JSON keys
+	var data map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&data))
+	resp.Body.Close()
+
+	// Verify lowercase snake_case keys exist
+	assert.Contains(t, data, "id", "response should have 'id' field (lowercase)")
+	assert.Contains(t, data, "name", "response should have 'name' field (lowercase)")
+	assert.Contains(t, data, "created_at", "response should have 'created_at' field (lowercase snake_case)")
+	assert.Contains(t, data, "updated_at", "response should have 'updated_at' field (lowercase snake_case)")
+
+	// Verify uppercase keys do NOT exist
+	assert.NotContains(t, data, "ID", "response should not have 'ID' field (capital)")
+	assert.NotContains(t, data, "CreatedAt", "response should not have 'CreatedAt' field (capital)")
+	assert.NotContains(t, data, "UpdatedAt", "response should not have 'UpdatedAt' field (capital)")
+}
+
+func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
+	srv, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	// Create an upstream and verify the response uses lowercase snake_case fields
+	body := map[string]string{
+		"name":      "npmjs",
+		"ecosystem": "npm",
+		"base_url":  "https://registry.npmjs.org",
+	}
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", body, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Decode as map to inspect the actual JSON keys
+	var data map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&data))
+	resp.Body.Close()
+
+	// Verify lowercase snake_case keys exist
+	assert.Contains(t, data, "id", "response should have 'id' field (lowercase)")
+	assert.Contains(t, data, "tenant_id", "response should have 'tenant_id' field (lowercase snake_case)")
+	assert.Contains(t, data, "name", "response should have 'name' field (lowercase)")
+	assert.Contains(t, data, "ecosystem", "response should have 'ecosystem' field (lowercase)")
+	assert.Contains(t, data, "base_url", "response should have 'base_url' field (lowercase snake_case)")
+	assert.Contains(t, data, "created_at", "response should have 'created_at' field (lowercase snake_case)")
+	assert.Contains(t, data, "updated_at", "response should have 'updated_at' field (lowercase snake_case)")
+
+	// Verify uppercase keys do NOT exist
+	assert.NotContains(t, data, "ID", "response should not have 'ID' field (capital)")
+	assert.NotContains(t, data, "TenantID", "response should not have 'TenantID' field (capital)")
+	assert.NotContains(t, data, "BaseURL", "response should not have 'BaseURL' field (capital)")
+	assert.NotContains(t, data, "Ecosystem", "response should not have 'Ecosystem' field (capital)")
+	assert.NotContains(t, data, "CreatedAt", "response should not have 'CreatedAt' field (capital)")
+	assert.NotContains(t, data, "UpdatedAt", "response should not have 'UpdatedAt' field (capital)")
+}
+
+func Test_PolicyResponseDTO_HasLowercaseJSONTags(t *testing.T) {
+	srv, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	// Create a policy and verify the response uses lowercase snake_case fields
+	body := map[string]any{
+		"name":     "block-critical",
+		"type":     "cvss_threshold",
+		"action":   "deny",
+		"priority": 1,
+		"enabled":  true,
+		"config":   map[string]any{"threshold": 9.0},
+	}
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	// Decode as map to inspect the actual JSON keys
+	var data map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&data))
+	resp.Body.Close()
+
+	// Verify lowercase snake_case keys exist
+	assert.Contains(t, data, "id", "response should have 'id' field (lowercase)")
+	assert.Contains(t, data, "tenant_id", "response should have 'tenant_id' field (lowercase snake_case)")
+	assert.Contains(t, data, "name", "response should have 'name' field (lowercase)")
+	assert.Contains(t, data, "type", "response should have 'type' field (lowercase)")
+	assert.Contains(t, data, "action", "response should have 'action' field (lowercase)")
+	assert.Contains(t, data, "config", "response should have 'config' field (lowercase)")
+	assert.Contains(t, data, "priority", "response should have 'priority' field (lowercase)")
+	assert.Contains(t, data, "enabled", "response should have 'enabled' field (lowercase)")
+	assert.Contains(t, data, "created_at", "response should have 'created_at' field (lowercase snake_case)")
+	assert.Contains(t, data, "updated_at", "response should have 'updated_at' field (lowercase snake_case)")
+
+	// Verify uppercase keys do NOT exist
+	assert.NotContains(t, data, "ID", "response should not have 'ID' field (capital)")
+	assert.NotContains(t, data, "TenantID", "response should not have 'TenantID' field (capital)")
+	assert.NotContains(t, data, "Type", "response should not have 'Type' field (capital)")
+	assert.NotContains(t, data, "Action", "response should not have 'Action' field (capital)")
+	assert.NotContains(t, data, "Config", "response should not have 'Config' field (capital)")
+	assert.NotContains(t, data, "Priority", "response should not have 'Priority' field (capital)")
+	assert.NotContains(t, data, "Enabled", "response should not have 'Enabled' field (capital)")
+	assert.NotContains(t, data, "CreatedAt", "response should not have 'CreatedAt' field (capital)")
+	assert.NotContains(t, data, "UpdatedAt", "response should not have 'UpdatedAt' field (capital)")
+}
+
+func Test_ListResponsesUseLowercaseJSONTags(t *testing.T) {
+	srv, _, policyRepo, upstreamRepo, decisionRepo := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	// Create some test data
+	_ = policyRepo.Create(context.Background(), &domain.Policy{
+		TenantID: "tenant-1",
+		Name:     "test-policy",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+	})
+	_ = upstreamRepo.Create(context.Background(), &domain.Upstream{
+		TenantID:  "tenant-1",
+		Name:      "test-upstream",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://example.com",
+	})
+	_ = decisionRepo.Record(context.Background(), &domain.Decision{
+		TenantID: "tenant-1",
+		Artifact: domain.ArtifactIdentity{Ecosystem: domain.EcosystemNPM, Name: "express", Version: "1.0.0"},
+		Outcome:  domain.DecisionAllow,
+	})
+
+	// Test policies list response
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var policyList []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&policyList))
+	resp.Body.Close()
+	assert.NotEmpty(t, policyList)
+	assert.Contains(t, policyList[0], "created_at")
+	assert.NotContains(t, policyList[0], "CreatedAt")
+
+	// Test upstreams list response
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var upstreamList []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&upstreamList))
+	resp.Body.Close()
+	assert.NotEmpty(t, upstreamList)
+	assert.Contains(t, upstreamList[0], "tenant_id")
+	assert.NotContains(t, upstreamList[0], "TenantID")
+
+	// Test evaluations list response
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/evaluations", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var decisionList []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&decisionList))
+	resp.Body.Close()
+	assert.NotEmpty(t, decisionList)
+	assert.Contains(t, decisionList[0], "evaluated_at")
+	assert.NotContains(t, decisionList[0], "EvaluatedAt")
 }

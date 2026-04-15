@@ -226,13 +226,13 @@ func parsePackagePath(path string) (name, version string) {
 //   - "@scope/name/-/name-1.0.0.tgz"     → ("@scope/name", "1.0.0")
 //   - "name/-/name-1.0.0.tgz"            → ("name", "1.0.0")
 func parseTarballPath(path string) (name, version string, ok bool) {
-	idx := strings.Index(path, "/-/")
-	if idx < 0 {
+	before, after, ok0 := strings.Cut(path, "/-/")
+	if !ok0 {
 		return "", "", false
 	}
 
-	name = path[:idx]
-	filename := path[idx+3:] // after "/-/"
+	name = before
+	filename := after // after "/-/"
 
 	if !strings.HasSuffix(filename, ".tgz") {
 		return "", "", false

@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptrFloat64(v float64) *float64 { return &v }
+//go:fix inline
+func ptrFloat64(v float64) *float64 { return new(v) }
 
 func TestCVSSThreshold(t *testing.T) {
 	cond := CVSSThreshold{}
@@ -23,7 +24,7 @@ func TestCVSSThreshold(t *testing.T) {
 		{
 			name: "below threshold, no match",
 			req: domain.AccessRequest{
-				Metadata: &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(5.0)},
+				Metadata: &domain.ArtifactMetadata{MaxCVSS: new(5.0)},
 			},
 			config:    map[string]any{"max_cvss": 7.0},
 			wantMatch: false,
@@ -31,7 +32,7 @@ func TestCVSSThreshold(t *testing.T) {
 		{
 			name: "at threshold, no match",
 			req: domain.AccessRequest{
-				Metadata: &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(7.0)},
+				Metadata: &domain.ArtifactMetadata{MaxCVSS: new(7.0)},
 			},
 			config:    map[string]any{"max_cvss": 7.0},
 			wantMatch: false,
@@ -39,7 +40,7 @@ func TestCVSSThreshold(t *testing.T) {
 		{
 			name: "above threshold, match",
 			req: domain.AccessRequest{
-				Metadata: &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(9.1)},
+				Metadata: &domain.ArtifactMetadata{MaxCVSS: new(9.1)},
 			},
 			config:    map[string]any{"max_cvss": 7.0},
 			wantMatch: true,
@@ -63,7 +64,7 @@ func TestCVSSThreshold(t *testing.T) {
 		{
 			name: "missing config key, error",
 			req: domain.AccessRequest{
-				Metadata: &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(9.0)},
+				Metadata: &domain.ArtifactMetadata{MaxCVSS: new(9.0)},
 			},
 			config:  map[string]any{},
 			wantErr: true,

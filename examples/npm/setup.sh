@@ -49,7 +49,7 @@ echo "==> Creating tenant 'npm-example-$(date +%s)' ..."
 TENANT=$(curl -sf -X POST "${FIREWALL}/api/v1/tenants" \
   -H "Content-Type: application/json" \
   -d "{\"name\": \"npm-example-$(date +%s)\"}")
-TENANT_ID=$(echo "$TENANT" | jq -r '.ID')
+TENANT_ID=$(echo "$TENANT" | jq -r '.id')
 echo "    tenant_id: ${TENANT_ID}"
 
 echo
@@ -61,7 +61,7 @@ curl -sf -X POST "${FIREWALL}/api/v1/upstreams" \
     "name":      "npmjs-public",
     "ecosystem": "npm",
     "base_url":  "https://registry.npmjs.org"
-  }' | jq '{ID, Name, Ecosystem, BaseURL}'
+  }' | jq '{id, name, ecosystem, base_url}'
 
 echo
 echo "==> Importing policies from policy.yaml ..."
@@ -74,7 +74,7 @@ echo "    $(echo "$IMPORT" | jq -r '"imported \(.imported) policies"')"
 echo
 echo "==> Listing active policies ..."
 curl -sf "${FIREWALL}/api/v1/policies" \
-  -H "X-Tenant-ID: ${TENANT_ID}" | jq '[.[] | {Name, Type, Action, Priority, Enabled}]'
+  -H "X-Tenant-ID: ${TENANT_ID}" | jq '[.[] | {name, type, action, priority, enabled}]'
 
 echo
 echo "══════════════════════════════════════════════════════"

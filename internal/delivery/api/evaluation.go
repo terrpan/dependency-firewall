@@ -50,5 +50,5 @@ func (h *EvaluationHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list evaluations")
 		return
 	}
-	writeJSON(w, http.StatusOK, decisions)
+	writeJSON(w, http.StatusOK, toDecisionsResponse(decisions))
 }

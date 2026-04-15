@@ -50,7 +50,7 @@ func (h *TenantHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create tenant")
 		return
 	}
-	writeJSON(w, http.StatusCreated, tenant)
+	writeJSON(w, http.StatusCreated, toTenantResponse(tenant))
 }
 
 func (h *TenantHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +60,7 @@ func (h *TenantHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list tenants")
 		return
 	}
-	writeJSON(w, http.StatusOK, tenants)
+	writeJSON(w, http.StatusOK, toTenantsResponse(tenants))
 }
 
 func (h *TenantHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +75,7 @@ func (h *TenantHandler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, tenant)
+	writeJSON(w, http.StatusOK, toTenantResponse(tenant))
 }
 
 func (h *TenantHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func (h *TenantHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update tenant")
 		return
 	}
-	writeJSON(w, http.StatusOK, tenant)
+	writeJSON(w, http.StatusOK, toTenantResponse(tenant))
 }
 
 func (h *TenantHandler) delete(w http.ResponseWriter, r *http.Request) {

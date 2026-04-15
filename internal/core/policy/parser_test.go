@@ -97,7 +97,7 @@ func TestToDomainPolicies(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
-				{Name: "p1", Type: "cvss_threshold", Action: "deny", Enabled: ptrBool(false)},
+				{Name: "p1", Type: "cvss_threshold", Action: "deny", Enabled: new(false)},
 			},
 		}
 		policies, err := ToDomainPolicies(pf)

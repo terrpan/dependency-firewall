@@ -63,7 +63,7 @@ func (h *UpstreamHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create upstream")
 		return
 	}
-	writeJSON(w, http.StatusCreated, upstream)
+	writeJSON(w, http.StatusCreated, toUpstreamResponse(upstream))
 }
 
 func (h *UpstreamHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +79,7 @@ func (h *UpstreamHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list upstreams")
 		return
 	}
-	writeJSON(w, http.StatusOK, upstreams)
+	writeJSON(w, http.StatusOK, toUpstreamsResponse(upstreams))
 }
 
 func (h *UpstreamHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func (h *UpstreamHandler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get upstream")
 		return
 	}
-	writeJSON(w, http.StatusOK, u)
+	writeJSON(w, http.StatusOK, toUpstreamResponse(u))
 }
 
 func (h *UpstreamHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +133,7 @@ func (h *UpstreamHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update upstream")
 		return
 	}
-	writeJSON(w, http.StatusOK, upstream)
+	writeJSON(w, http.StatusOK, toUpstreamResponse(upstream))
 }
 
 func (h *UpstreamHandler) delete(w http.ResponseWriter, r *http.Request) {
