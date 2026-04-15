@@ -76,15 +76,18 @@ echo "==> Listing active policies ..."
 curl -sf "${FIREWALL}/api/v1/policies" \
   -H "X-Tenant-ID: ${TENANT_ID}" | jq '[.[] | {name, type, action, priority, enabled}]'
 
+# Write .npmrc so npm uses the proxy automatically.
+echo "registry=${FIREWALL}/npm/t/${TENANT_ID}/" > "${SCRIPT_DIR}/.npmrc"
+
 echo
 echo "══════════════════════════════════════════════════════"
 echo "  Setup complete!"
 echo ""
 echo "  Tenant ID : ${TENANT_ID}"
 echo ""
-echo "  To use the npm proxy, add this to your .npmrc:"
+echo "  .npmrc written — npm will use the proxy automatically:"
 echo ""
-echo "    registry=http://localhost:8080/npm/t/${TENANT_ID}/"
+echo "    registry=${FIREWALL}/npm/t/${TENANT_ID}/"
 echo ""
 echo "  Or pass the header manually (alternative method):"
 echo ""
