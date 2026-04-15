@@ -7,19 +7,9 @@ builds:
     main: .
     env:
       - CGO_ENABLED=0
-    ldflags:
-      - -s
-      - -w
-      - -X
-      - main.ldVersion={{.Env.VERSION}}
-      - -X
-      - main.ldCommit={{.Env.COMMIT}}
-      - -X
-      - main.ldBuildTime={{.Env.BUILD_TIME}}
 
 images:
   - image: dependency-firewall
     build: firewall
     tags:
       - latest
-      - '{{.Env.VERSION}}'
