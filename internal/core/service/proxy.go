@@ -111,6 +111,12 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 
 	// 3. Try metadata cache.
 	metadata, err := s.metadataCache.Get(ctx, req.TenantID, req.Artifact)
+	s.logger.Info("metadata cache check",
+		"tenant_id", req.TenantID,
+		"artifact", req.Artifact.CacheKey(),
+		"cache_hit", metadata != nil,
+		"cache_error", err,
+	)
 	if err != nil && !errors.Is(err, domain.ErrCacheMiss) {
 		s.logger.Warn("metadata cache error",
 			"error", err,
@@ -120,6 +126,10 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 
 	// 4. If metadata cache miss, call enricher and cache the result.
 	if metadata == nil {
+		s.logger.Info("calling enricher",
+			"tenant_id", req.TenantID,
+			"artifact", req.Artifact.CacheKey(),
+		)
 		metadata, err = s.enricher.Enrich(ctx, req.Artifact)
 		if err != nil {
 			// Fail-open: log the error and continue with nil metadata.

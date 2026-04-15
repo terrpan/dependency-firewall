@@ -3,6 +3,7 @@ package enrichment
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ func (m *mockEnricher) Enrich(ctx context.Context, artifact domain.ArtifactIdent
 
 func TestCompositeEnricher_Enrich(t *testing.T) {
 	ctx := context.Background()
+	logger := slog.Default()
 	artifact := domain.ArtifactIdentity{
 		Ecosystem: domain.EcosystemNPM,
 		Name:      "test-pkg",
@@ -44,7 +46,7 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 			},
 		}
 
-		composite := NewCompositeEnricher(e1, e2)
+		composite := NewCompositeEnricher(logger, e1, e2)
 		meta, err := composite.Enrich(ctx, artifact)
 
 		if err != nil {
@@ -61,19 +63,25 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error if any enricher fails", func(t *testing.T) {
+	t.Run("continues if one enricher fails", func(t *testing.T) {
+		now := time.Now()
 		e1 := &mockEnricher{
-			meta: &domain.ArtifactMetadata{},
-		}
-		e2 := &mockEnricher{
 			err: errors.New("enrichment failed"),
 		}
+		e2 := &mockEnricher{
+			meta: &domain.ArtifactMetadata{
+				PublishedAt: &now,
+			},
+		}
 
-		composite := NewCompositeEnricher(e1, e2)
-		_, err := composite.Enrich(ctx, artifact)
+		composite := NewCompositeEnricher(logger, e1, e2)
+		meta, err := composite.Enrich(ctx, artifact)
 
-		if err == nil {
-			t.Fatal("expected error, got nil")
+		if err != nil {
+			t.Fatalf("expected no error (fail-soft), got %v", err)
+		}
+		if meta.PublishedAt == nil {
+			t.Error("expected metadata from second enricher")
 		}
 	})
 
@@ -85,7 +93,7 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 			meta: &domain.ArtifactMetadata{},
 		}
 
-		composite := NewCompositeEnricher(e1, e2)
+		composite := NewCompositeEnricher(logger, e1, e2)
 		meta, err := composite.Enrich(ctx, artifact)
 
 		if err != nil {
@@ -97,7 +105,7 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 	})
 
 	t.Run("works with no enrichers", func(t *testing.T) {
-		composite := NewCompositeEnricher()
+		composite := NewCompositeEnricher(logger)
 		meta, err := composite.Enrich(ctx, artifact)
 
 		if err != nil {
@@ -123,7 +131,7 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 			},
 		}
 
-		composite := NewCompositeEnricher(e1, e2)
+		composite := NewCompositeEnricher(logger, e1, e2)
 		meta, err := composite.Enrich(ctx, artifact)
 
 		if err != nil {
@@ -150,7 +158,7 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 			},
 		}
 
-		composite := NewCompositeEnricher(e1, e2)
+		composite := NewCompositeEnricher(logger, e1, e2)
 		meta, err := composite.Enrich(ctx, artifact)
 
 		if err != nil {
@@ -173,7 +181,7 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 			},
 		}
 
-		composite := NewCompositeEnricher(e1, e2)
+		composite := NewCompositeEnricher(logger, e1, e2)
 		meta, err := composite.Enrich(ctx, artifact)
 
 		if err != nil {

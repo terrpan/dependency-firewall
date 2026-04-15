@@ -3,6 +3,7 @@ package enrichment
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
@@ -11,25 +12,39 @@ import (
 // CompositeEnricher combines multiple enrichers into a single enrichment pipeline.
 type CompositeEnricher struct {
 	enrichers []port.Enricher
+	logger    *slog.Logger
 }
 
 // NewCompositeEnricher creates an enricher that runs all provided enrichers and merges results.
-func NewCompositeEnricher(enrichers ...port.Enricher) *CompositeEnricher {
+func NewCompositeEnricher(logger *slog.Logger, enrichers ...port.Enricher) *CompositeEnricher {
 	return &CompositeEnricher{
 		enrichers: enrichers,
+		logger:    logger,
 	}
 }
 
 // Enrich runs all enrichers and merges their metadata results.
-// If any enricher fails, the error is returned and enrichment stops.
-// If all enrichers succeed, their metadata is merged (non-nil fields take precedence in order).
+// If an enricher fails, it logs the error and continues with the next enricher (fail-soft).
+// Returns merged metadata from all successful enrichers.
 func (c *CompositeEnricher) Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+	c.logger.InfoContext(ctx, "composite enricher called",
+		"artifact", artifact.CacheKey(),
+		"enricher_count", len(c.enrichers),
+	)
 	merged := &domain.ArtifactMetadata{}
 
-	for _, enricher := range c.enrichers {
+	for i, enricher := range c.enrichers {
+		c.logger.InfoContext(ctx, "calling enricher",
+			"index", i,
+			"artifact", artifact.CacheKey(),
+		)
 		meta, err := enricher.Enrich(ctx, artifact)
 		if err != nil {
-			return nil, err
+			c.logger.WarnContext(ctx, "enricher failed, continuing with others",
+				"error", err,
+				"artifact", artifact.CacheKey(),
+			)
+			continue
 		}
 		if meta != nil {
 			mergeMetadata(merged, meta)

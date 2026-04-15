@@ -160,7 +160,7 @@ func run() error {
 	// Create enrichers: OSV for vulnerabilities, npm for publish dates.
 	osvEnricher := osv.NewClient(&http.Client{}, logger)
 	npmEnricher := npm.NewMetadataEnricher(&http.Client{}, logger)
-	enricher := enrichment.NewCompositeEnricher(osvEnricher, npmEnricher)
+	enricher := enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
 
 	// Create upstream client.
 	ociClient := upstream.NewOCIClient(&http.Client{Timeout: 30 * time.Second})

@@ -6,7 +6,7 @@ services:
     environment:
       FIREWALL_DATABASE_DSN: "postgres://firewall:firewall@postgres:5432/firewall?sslmode=disable"
       FIREWALL_VALKEY_ADDR: "valkey:6379"
-      FIREWALL_LOG_LEVEL: "info"
+      FIREWALL_LOG_LEVEL: "debug"
     depends_on:
       postgres:
         condition: service_healthy

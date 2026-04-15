@@ -47,6 +47,12 @@ type npmPackageResponse struct {
 
 // Enrich fetches package metadata from the npm registry to populate PublishedAt.
 func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+	e.logger.InfoContext(ctx, "npm enricher called",
+		"ecosystem", artifact.Ecosystem,
+		"name", artifact.Name,
+		"version", artifact.Version,
+	)
+
 	if artifact.Ecosystem != domain.EcosystemNPM {
 		return &domain.ArtifactMetadata{}, nil
 	}
@@ -67,9 +73,18 @@ func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactI
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
+		e.logger.WarnContext(ctx, "npm registry request failed",
+			"package", pkgName,
+			"error", err,
+		)
 		return nil, fmt.Errorf("%w: %v", domain.ErrEnrichmentFailed, err)
 	}
 	defer resp.Body.Close()
+
+	e.logger.InfoContext(ctx, "npm registry response received",
+		"package", pkgName,
+		"status", resp.StatusCode,
+	)
 
 	if resp.StatusCode == http.StatusNotFound {
 		// Package doesn't exist - not an error for enrichment purposes.
@@ -108,7 +123,18 @@ func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactI
 			)
 		} else {
 			meta.PublishedAt = &publishedAt
+			e.logger.InfoContext(ctx, "extracted publish time",
+				"package", pkgName,
+				"version", artifact.Version,
+				"published_at", publishedAt,
+			)
 		}
+	} else {
+		e.logger.WarnContext(ctx, "version not found in time map",
+			"package", pkgName,
+			"version", artifact.Version,
+			"available_versions", len(pkgData.Time),
+		)
 	}
 
 	return meta, nil
