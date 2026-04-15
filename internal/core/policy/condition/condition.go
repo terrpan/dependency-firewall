@@ -15,6 +15,7 @@ type Condition interface {
 var registry = map[domain.PolicyType]Condition{
 	domain.PolicyTypeCVSSThreshold:   CVSSThreshold{},
 	domain.PolicyTypeMinimumAge:      MinimumAge{},
+	domain.PolicyTypeMaximumAge:      MaximumAge{},
 	domain.PolicyTypeBlockMutableTag: BlockMutableTag{},
 	domain.PolicyTypeAllowlist:       Allowlist{},
 	domain.PolicyTypeBlocklist:       Blocklist{},

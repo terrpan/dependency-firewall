@@ -35,6 +35,7 @@ type PolicyType string
 const (
 	PolicyTypeCVSSThreshold   PolicyType = "cvss_threshold"
 	PolicyTypeMinimumAge      PolicyType = "minimum_age"
+	PolicyTypeMaximumAge      PolicyType = "maximum_age"
 	PolicyTypeBlockMutableTag PolicyType = "block_mutable_tag"
 	PolicyTypeAllowlist       PolicyType = "allowlist"
 	PolicyTypeBlocklist       PolicyType = "blocklist"

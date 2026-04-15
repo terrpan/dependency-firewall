@@ -11,6 +11,7 @@ import (
 var knownPolicyTypes = map[string]domain.PolicyType{
 	string(domain.PolicyTypeCVSSThreshold):   domain.PolicyTypeCVSSThreshold,
 	string(domain.PolicyTypeMinimumAge):      domain.PolicyTypeMinimumAge,
+	string(domain.PolicyTypeMaximumAge):      domain.PolicyTypeMaximumAge,
 	string(domain.PolicyTypeBlockMutableTag): domain.PolicyTypeBlockMutableTag,
 	string(domain.PolicyTypeAllowlist):       domain.PolicyTypeAllowlist,
 	string(domain.PolicyTypeBlocklist):       domain.PolicyTypeBlocklist,

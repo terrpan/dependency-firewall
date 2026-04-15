@@ -26,6 +26,16 @@ policies:
       min_age_days: 7
     enabled: true
 
+  # Deny packages published more than 365 days ago.
+  # Prevents use of unmaintained or obsolete dependencies.
+  - name: block-outdated-packages
+    type: maximum_age
+    action: deny
+    priority: 25
+    config:
+      max_age_days: 365
+    enabled: true
+
   # Explicitly block known malicious or abandoned scopes.
   - name: block-untrusted-scopes
     type: blocklist

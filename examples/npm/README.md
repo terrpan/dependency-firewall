@@ -7,9 +7,10 @@ This example walks through setting up the dependency firewall as an npm registry
 1. Waits for the firewall to be healthy
 2. Creates a tenant called `npm-example`
 3. Registers `registry.npmjs.org` as the upstream npm registry
-4. Imports the four policies in `policy.yaml`:
+4. Imports the five policies in `policy.yaml`:
    - **block-critical-vulnerabilities** — deny packages with CVSS > 7.0
    - **block-brand-new-packages** — deny packages published less than 7 days ago
+   - **block-outdated-packages** — deny packages published more than 365 days ago
    - **block-untrusted-scopes** — deny known bad npm scopes
    - **allow-internal-packages** — unconditionally allow your own packages
 

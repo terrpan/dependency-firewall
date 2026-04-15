@@ -85,3 +85,98 @@ func TestMinimumAge(t *testing.T) {
 		})
 	}
 }
+
+func TestMaximumAge(t *testing.T) {
+	cond := MaximumAge{}
+	now := time.Now()
+
+	tests := []struct {
+		name      string
+		req       domain.AccessRequest
+		config    map[string]any
+		wantMatch bool
+		wantErr   bool
+	}{
+		{
+			name: "recent package, no match",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-30 * 24 * time.Hour)),
+				},
+			},
+			config:    map[string]any{"max_age_days": 365.0},
+			wantMatch: false,
+		},
+		{
+			name: "too old, match",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-400 * 24 * time.Hour)),
+				},
+			},
+			config:    map[string]any{"max_age_days": 365.0},
+			wantMatch: true,
+		},
+		{
+			name: "exactly at boundary (just over), match",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-366 * 24 * time.Hour)),
+				},
+			},
+			config:    map[string]any{"max_age_days": 365.0},
+			wantMatch: true,
+		},
+		{
+			name: "nil PublishedAt, no match",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{PublishedAt: nil},
+			},
+			config:    map[string]any{"max_age_days": 365.0},
+			wantMatch: false,
+		},
+		{
+			name: "nil metadata, no match",
+			req: domain.AccessRequest{
+				Metadata: nil,
+			},
+			config:    map[string]any{"max_age_days": 365.0},
+			wantMatch: false,
+		},
+		{
+			name: "missing config key, error",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now),
+				},
+			},
+			config:  map[string]any{},
+			wantErr: true,
+		},
+		{
+			name: "invalid config type, error",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now),
+				},
+			},
+			config:  map[string]any{"max_age_days": "not-a-number"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, reason, err := cond.Evaluate(tt.req, tt.config)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMatch, matched)
+			if matched {
+				assert.Contains(t, reason, "maximum allowed")
+			}
+		})
+	}
+}
