@@ -38,18 +38,48 @@ A multi-tenant dependency firewall and proxy for npm and OCI (container) registr
 
 ## Running with Docker Compose
 
-This is the quickest way to get everything running.
+The firewall uses [ko](https://ko.build) for fast, minimal container builds that automatically embed build info (git commit, timestamp, etc.).
+
+**Quick start:**
 
 ```bash
-docker compose up --build
+make up
 ```
 
-This starts:
+This builds the firewall using `ko` and starts Docker Compose services:
 - **Firewall** on `http://localhost:8080`
 - **PostgreSQL 16** on `localhost:5432`
 - **Valkey 8** on `localhost:6379`
 
 Schema migrations run automatically on startup.
+
+**Other useful commands:**
+
+```bash
+make help          # Show all available commands
+make down          # Stop services
+make logs          # Follow logs
+make restart       # Rebuild and restart
+make status        # Check service health
+```
+
+The Makefile wraps `ko build` with sensible defaults. See the [Makefile](./Makefile) for all available targets.
+
+## Build information
+
+The firewall automatically embeds build information at compile time via `ko`:
+
+```bash
+curl http://localhost:8080/healthz | jq .
+```
+
+Response includes:
+- `commit` — git commit SHA
+- `build_time` — build timestamp  
+- `go_version` — Go runtime version
+- `dependencies` — health status of PostgreSQL and Valkey
+
+This information is embedded by `ko` without needing to pass ldflags manually. See `.ko.yaml` for build configuration.
 
 ## Running locally
 

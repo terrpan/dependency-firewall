@@ -1,8 +1,5 @@
 services:
   firewall:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: dependency-firewall:latest
     ports:
       - "8080:8080"
