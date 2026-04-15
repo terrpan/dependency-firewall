@@ -1,0 +1,19 @@
+apiVersion: ko.build/v1alpha1
+kind: Ko
+
+builds:
+  - id: firewall
+    dir: ./cmd/firewall
+    main: .
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s
+      - -w
+
+images:
+  - image: dependency-firewall
+    build: firewall
+    tags:
+      - latest
+      - '{{.Env.VERSION}}'

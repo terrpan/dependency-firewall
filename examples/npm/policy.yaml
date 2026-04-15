@@ -1,0 +1,50 @@
+# npm policy example
+#
+# tenant_id is overridden at import time by the X-Tenant-ID header,
+# so the value here is only used as documentation.
+tenant_id: "set-by-setup-script"
+
+policies:
+  # Deny packages with a critical vulnerability score above 7.0.
+  # Requires OSV enrichment to be effective.
+  - name: block-critical-vulnerabilities
+    type: cvss_threshold
+    action: deny
+    priority: 10
+    config:
+      max_cvss: 7.0
+    enabled: true
+
+  # Deny packages published less than 7 days ago.
+  # Protects against supply-chain attacks that exploit newly-published packages
+  # before the community has had time to audit them.
+  - name: block-brand-new-packages
+    type: minimum_age
+    action: deny
+    priority: 20
+    config:
+      min_age_days: 7
+    enabled: true
+
+  # Explicitly block known malicious or abandoned scopes.
+  - name: block-untrusted-scopes
+    type: blocklist
+    action: deny
+    priority: 30
+    config:
+      namespaces:
+        - "evil-corp"
+        - "abandoned-org"
+    enabled: true
+
+  # Allow packages from your own private registry namespace without restriction.
+  # This must run BEFORE generic deny rules that might match internal packages.
+  - name: allow-internal-packages
+    type: allowlist
+    action: allow
+    priority: 5
+    config:
+      namespaces:
+        - "mycompany"
+        - "internal"
+    enabled: true

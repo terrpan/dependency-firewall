@@ -1,0 +1,54 @@
+# OCI (container image) policy example
+#
+# tenant_id is overridden at import time by the X-Tenant-ID header,
+# so the value here is only used as documentation.
+tenant_id: "set-by-setup-script"
+
+policies:
+  # Deny images pulled by mutable tags such as "latest".
+  # Mutable tags are a deployment risk — the same tag can resolve to a
+  # different digest at any time, making builds non-reproducible.
+  - name: block-mutable-tags
+    type: block_mutable_tag
+    action: deny
+    priority: 10
+    config:
+      tags:
+        - latest
+        - stable
+        - edge
+    enabled: true
+
+  # Deny images with a high CVSS vulnerability score.
+  # Requires OSV enrichment. OCI enrichment is limited in v1 — this rule
+  # will have no effect until OCI enrichment is wired in.
+  - name: block-vulnerable-images
+    type: cvss_threshold
+    action: deny
+    priority: 20
+    config:
+      max_cvss: 8.0
+    enabled: true
+
+  # Block images from untrusted registries or organizations.
+  - name: block-untrusted-registries
+    type: blocklist
+    action: deny
+    priority: 30
+    config:
+      namespaces:
+        - "untrusted-registry.example.com"
+        - "malicious-org"
+    enabled: true
+
+  # Allow images from your own internal registry without restriction.
+  # Set this at a lower priority number so it is checked first.
+  - name: allow-internal-images
+    type: allowlist
+    action: allow
+    priority: 5
+    config:
+      namespaces:
+        - "registry.mycompany.internal"
+        - "mycompany"
+    enabled: true

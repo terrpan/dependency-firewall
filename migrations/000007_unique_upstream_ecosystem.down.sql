@@ -1,0 +1,1 @@
+ALTER TABLE upstreams DROP CONSTRAINT uq_upstreams_tenant_ecosystem;

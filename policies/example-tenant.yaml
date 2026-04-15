@@ -1,0 +1,40 @@
+tenant_id: "tenant-abc-123"
+policies:
+  - name: block-critical-vulnerabilities
+    type: cvss_threshold
+    action: deny
+    config:
+      max_cvss: 7.0
+    enabled: true
+
+  - name: block-new-packages
+    type: minimum_age
+    action: deny
+    config:
+      min_age_days: 30
+    enabled: true
+
+  - name: block-latest-tag
+    type: block_mutable_tag
+    action: deny
+    config:
+      tags:
+        - latest
+    enabled: true
+
+  - name: allow-internal-images
+    type: allowlist
+    action: allow
+    config:
+      namespaces:
+        - "internal"
+        - "company-registry"
+    enabled: true
+
+  - name: block-untrusted-registries
+    type: blocklist
+    action: deny
+    config:
+      namespaces:
+        - "untrusted-registry"
+    enabled: true

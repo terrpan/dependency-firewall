@@ -1,0 +1,20 @@
+server:
+  port: 8080
+  readTimeout: 30s
+  writeTimeout: 30s
+  idleTimeout: 120s
+
+database:
+  dsn: "postgres://firewall:firewall@localhost:5432/firewall?sslmode=disable"
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+
+valkey:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+log:
+  level: info
+  format: json

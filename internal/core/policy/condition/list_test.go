@@ -1,0 +1,113 @@
+package condition
+
+import (
+	"testing"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestAllowlist(t *testing.T) {
+	cond := Allowlist{}
+
+	tests := []struct {
+		name      string
+		req       domain.AccessRequest
+		config    map[string]any
+		wantMatch bool
+		wantErr   bool
+	}{
+		{
+			name: "namespace in allowlist, match",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "internal"},
+			},
+			config:    map[string]any{"namespaces": []string{"internal", "company"}},
+			wantMatch: true,
+		},
+		{
+			name: "namespace not in allowlist, no match",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "external"},
+			},
+			config:    map[string]any{"namespaces": []string{"internal", "company"}},
+			wantMatch: false,
+		},
+		{
+			name: "missing config key, error",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "internal"},
+			},
+			config:  map[string]any{},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, reason, err := cond.Evaluate(tt.req, tt.config)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMatch, matched)
+			if matched {
+				assert.Contains(t, reason, "allowed")
+			}
+		})
+	}
+}
+
+func TestBlocklist(t *testing.T) {
+	cond := Blocklist{}
+
+	tests := []struct {
+		name      string
+		req       domain.AccessRequest
+		config    map[string]any
+		wantMatch bool
+		wantErr   bool
+	}{
+		{
+			name: "namespace in blocklist, match",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "untrusted"},
+			},
+			config:    map[string]any{"namespaces": []string{"untrusted", "malicious"}},
+			wantMatch: true,
+		},
+		{
+			name: "namespace not in blocklist, no match",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "trusted"},
+			},
+			config:    map[string]any{"namespaces": []string{"untrusted", "malicious"}},
+			wantMatch: false,
+		},
+		{
+			name: "missing config key, error",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "untrusted"},
+			},
+			config:  map[string]any{},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, reason, err := cond.Evaluate(tt.req, tt.config)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMatch, matched)
+			if matched {
+				assert.Contains(t, reason, "blocked")
+			}
+		})
+	}
+}
