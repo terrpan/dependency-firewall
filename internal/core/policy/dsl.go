@@ -9,9 +9,10 @@ type PolicyFile struct {
 
 // PolicyDef is a single policy definition from YAML.
 type PolicyDef struct {
-	Name    string         `yaml:"name"`
-	Type    string         `yaml:"type"`
-	Action  string         `yaml:"action"`
-	Config  map[string]any `yaml:"config"`
-	Enabled *bool          `yaml:"enabled"`
+	Name     string         `yaml:"name"`
+	Type     string         `yaml:"type"`
+	Action   string         `yaml:"action"`
+	Priority *int           `yaml:"priority"`
+	Config   map[string]any `yaml:"config"`
+	Enabled  *bool          `yaml:"enabled"`
 }

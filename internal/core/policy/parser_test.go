@@ -14,12 +14,14 @@ policies:
   - name: block-critical
     type: cvss_threshold
     action: deny
+    priority: 10
     config:
       max_cvss: 7.0
     enabled: true
   - name: allow-internal
     type: allowlist
     action: allow
+    priority: 5
     config:
       namespaces:
         - internal
@@ -105,7 +107,7 @@ func TestToDomainPolicies(t *testing.T) {
 		assert.False(t, policies[0].Enabled)
 	})
 
-	t.Run("priority assigned by order", func(t *testing.T) {
+	t.Run("priority defaults to index when not specified", func(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
@@ -122,19 +124,23 @@ func TestToDomainPolicies(t *testing.T) {
 		assert.Equal(t, 2, policies[2].Priority)
 	})
 
-	t.Run("deterministic ID from tenant and name", func(t *testing.T) {
+	t.Run("explicit priority from YAML is used", func(t *testing.T) {
+		p10 := 10
+		p20 := 20
+		p5 := 5
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
-				{Name: "my-policy", Type: "cvss_threshold", Action: "deny"},
+				{Name: "first", Type: "cvss_threshold", Action: "deny", Priority: &p10},
+				{Name: "second", Type: "allowlist", Action: "allow", Priority: &p20},
+				{Name: "third", Type: "blocklist", Action: "deny", Priority: &p5},
 			},
 		}
-		p1, err := ToDomainPolicies(pf)
+		policies, err := ToDomainPolicies(pf)
 		require.NoError(t, err)
-		p2, err := ToDomainPolicies(pf)
-		require.NoError(t, err)
-
-		assert.Equal(t, p1[0].ID, p2[0].ID)
-		assert.NotEmpty(t, p1[0].ID)
+		require.Len(t, policies, 3)
+		assert.Equal(t, 10, policies[0].Priority)
+		assert.Equal(t, 20, policies[1].Priority)
+		assert.Equal(t, 5, policies[2].Priority)
 	})
 }

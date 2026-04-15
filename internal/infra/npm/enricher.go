@@ -26,6 +26,11 @@ type MetadataEnricher struct {
 	logger     *slog.Logger
 }
 
+// npmPackageResponse is the relevant subset of the npm registry package JSON response.
+type npmPackageResponse struct {
+	Time map[string]string `json:"time"` // version -> ISO8601 timestamp
+}
+
 // NewMetadataEnricher creates a new npm metadata enricher.
 func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger) *MetadataEnricher {
 	if httpClient == nil {
@@ -38,11 +43,6 @@ func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger) *Metadata
 		registry:   defaultRegistry,
 		logger:     logger,
 	}
-}
-
-// npmPackageResponse is the relevant subset of the npm registry package JSON response.
-type npmPackageResponse struct {
-	Time map[string]string `json:"time"` // version -> ISO8601 timestamp
 }
 
 // Enrich fetches package metadata from the npm registry to populate PublishedAt.

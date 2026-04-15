@@ -1,7 +1,6 @@
 package policy
 
 import (
-	"crypto/sha256"
 	"fmt"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -74,22 +73,19 @@ func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, e
 		enabled = *def.Enabled
 	}
 
-	id := deterministicID(tenantID, def.Name)
+	priority := index
+	if def.Priority != nil {
+		priority = *def.Priority
+	}
 
 	return domain.Policy{
-		ID:       id,
 		TenantID: tenantID,
 		Name:     def.Name,
 		Type:     policyType,
 		Action:   action,
 		Config:   def.Config,
-		Priority: index,
+		Priority: priority,
 		Enabled:  enabled,
 		Version:  1,
 	}, nil
-}
-
-func deterministicID(tenantID, policyName string) string {
-	h := sha256.Sum256([]byte(tenantID + ":" + policyName))
-	return fmt.Sprintf("%x", h[:8])
 }
