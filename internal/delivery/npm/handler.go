@@ -16,23 +16,23 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
-// Handler handles npm registry protocol requests.
-type Handler struct {
-	proxy     *service.ProxyService
+// RegistryHandler handles npm registry protocol requests.
+type RegistryHandler struct {
+	access    *service.AccessService
 	upstream  port.UpstreamClient
 	upstreams port.UpstreamRepository
 	logger    *slog.Logger
 }
 
-// NewHandler creates a new npm Handler.
-func NewHandler(
-	proxy *service.ProxyService,
+// NewRegistryHandler creates a new npm RegistryHandler.
+func NewRegistryHandler(
+	access *service.AccessService,
 	upstream port.UpstreamClient,
 	upstreams port.UpstreamRepository,
 	logger *slog.Logger,
-) *Handler {
-	return &Handler{
-		proxy:     proxy,
+) *RegistryHandler {
+	return &RegistryHandler{
+		access:    access,
 		upstream:  upstream,
 		upstreams: upstreams,
 		logger:    logger,
@@ -40,12 +40,12 @@ func NewHandler(
 }
 
 // RegisterRoutes registers npm protocol routes on the given mux.
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+func (h *RegistryHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /npm/{package...}", h.route)
 }
 
 // route dispatches requests based on path structure.
-func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
+func (h *RegistryHandler) route(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/npm/")
 	if path == "" {
 		writeNPMError(w, "package name is required", http.StatusBadRequest)
@@ -61,7 +61,7 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMetadata processes package metadata requests.
-func (h *Handler) handleMetadata(w http.ResponseWriter, r *http.Request, path string) {
+func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request, path string) {
 	tenant, ok := middleware.TenantFromContext(r.Context())
 	if !ok {
 		writeNPMError(w, "tenant not identified", http.StatusUnauthorized)
@@ -92,7 +92,7 @@ func (h *Handler) handleMetadata(w http.ResponseWriter, r *http.Request, path st
 		Timestamp: time.Now(),
 	}
 
-	decision, err := h.proxy.Evaluate(r.Context(), req)
+	decision, err := h.access.Evaluate(r.Context(), req)
 	if err != nil {
 		h.logger.Error("policy evaluation failed",
 			"error", err,
@@ -109,7 +109,9 @@ func (h *Handler) handleMetadata(w http.ResponseWriter, r *http.Request, path st
 		return
 	}
 
-	resp, err := h.upstream.GetManifest(r.Context(), *upstream, artifact)
+	addWarningHeaders(w, decision)
+
+	resp, err := h.upstream.FetchMetadata(r.Context(), *upstream, artifact)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
 			writeNPMError(w, "package not found", http.StatusNotFound)
@@ -129,7 +131,7 @@ func (h *Handler) handleMetadata(w http.ResponseWriter, r *http.Request, path st
 }
 
 // handleTarball processes tarball download requests.
-func (h *Handler) handleTarball(w http.ResponseWriter, r *http.Request, name, version string) {
+func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, name, version string) {
 	tenant, ok := middleware.TenantFromContext(r.Context())
 	if !ok {
 		writeNPMError(w, "tenant not identified", http.StatusUnauthorized)
@@ -155,7 +157,7 @@ func (h *Handler) handleTarball(w http.ResponseWriter, r *http.Request, name, ve
 		Timestamp: time.Now(),
 	}
 
-	decision, err := h.proxy.Evaluate(r.Context(), req)
+	decision, err := h.access.Evaluate(r.Context(), req)
 	if err != nil {
 		h.logger.Error("policy evaluation failed",
 			"error", err,
@@ -172,9 +174,11 @@ func (h *Handler) handleTarball(w http.ResponseWriter, r *http.Request, name, ve
 		return
 	}
 
+	addWarningHeaders(w, decision)
+
 	// Use the tarball filename as the digest/identifier for the blob fetch.
 	tarball := tarballFilename(name, version)
-	resp, err := h.upstream.GetBlob(r.Context(), *upstream, tarball)
+	resp, err := h.upstream.FetchContent(r.Context(), *upstream, tarball)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
 			writeNPMError(w, "tarball not found", http.StatusNotFound)
@@ -269,6 +273,14 @@ func tarballFilename(name, version string) string {
 		basename = name[idx+1:]
 	}
 	return name + "/-/" + basename + "-" + version + ".tgz"
+}
+
+// addWarningHeaders writes policy warnings as npm-notice headers so npm
+// displays them to the user during install.
+func addWarningHeaders(w http.ResponseWriter, decision *domain.Decision) {
+	for _, warning := range decision.Warnings {
+		w.Header().Add("npm-notice", warning)
+	}
 }
 
 // streamResponse copies upstream response headers and body to the client.

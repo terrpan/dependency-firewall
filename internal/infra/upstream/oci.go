@@ -38,8 +38,8 @@ func repoPath(artifact domain.ArtifactIdentity) string {
 	return artifact.Name
 }
 
-// GetManifest fetches a manifest from the upstream registry.
-func (c *OCIClient) GetManifest(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+// FetchMetadata fetches a manifest from the upstream registry.
+func (c *OCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
 	ref := artifact.Version
 	if ref == "" {
 		ref = artifact.Digest
@@ -77,11 +77,11 @@ func (c *OCIClient) GetManifest(ctx context.Context, upstream domain.Upstream, a
 	}, nil
 }
 
-// GetBlob streams a blob from the upstream registry.
+// FetchContent streams content from the upstream registry.
 // The digest parameter must include the full digest reference (e.g. "sha256:abc123").
 // The upstream.BaseURL should include the repository path context — the handler prepends
 // "/v2/{repo}" to the base URL before calling this method.
-func (c *OCIClient) GetBlob(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
+func (c *OCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
 	url := fmt.Sprintf("%s/blobs/%s",
 		strings.TrimRight(upstream.BaseURL, "/"),
 		digest,
@@ -112,8 +112,8 @@ func (c *OCIClient) GetBlob(ctx context.Context, upstream domain.Upstream, diges
 	}, nil
 }
 
-// ResolveTag resolves a tag to a digest via HEAD request, falling back to GET.
-func (c *OCIClient) ResolveTag(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
+// ResolveReference resolves a tag to a digest via HEAD request, falling back to GET.
+func (c *OCIClient) ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
 	url := fmt.Sprintf("%s/v2/%s/manifests/%s",
 		strings.TrimRight(upstream.BaseURL, "/"),
 		repoPath(artifact),

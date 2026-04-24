@@ -6,18 +6,18 @@ import (
 	"net/http"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
 
 // TenantHandler handles tenant CRUD endpoints.
 type TenantHandler struct {
-	repo   port.TenantRepository
-	logger *slog.Logger
+	tenants *service.TenantService
+	logger  *slog.Logger
 }
 
 // NewTenantHandler creates a new TenantHandler.
-func NewTenantHandler(repo port.TenantRepository, logger *slog.Logger) *TenantHandler {
-	return &TenantHandler{repo: repo, logger: logger}
+func NewTenantHandler(tenants *service.TenantService, logger *slog.Logger) *TenantHandler {
+	return &TenantHandler{tenants: tenants, logger: logger}
 }
 
 // RegisterRoutes registers tenant API routes on the given mux.
@@ -30,7 +30,7 @@ func (h *TenantHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type createTenantRequest struct {
-	Name string `json:"name"`
+	Name string `json:"name" validate:"notblank"`
 }
 
 func (h *TenantHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -39,13 +39,17 @@ func (h *TenantHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+	if err := validateRequest(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	tenant := &domain.Tenant{Name: req.Name}
-	if err := h.repo.Create(r.Context(), tenant); err != nil {
+	if err := h.tenants.Create(r.Context(), tenant); err != nil {
+		if errors.Is(err, domain.ErrTenantNameConflict) {
+			writeError(w, http.StatusConflict, "tenant name already exists")
+			return
+		}
 		h.logger.Error("creating tenant", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create tenant")
 		return
@@ -54,7 +58,7 @@ func (h *TenantHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TenantHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenants, err := h.repo.List(r.Context())
+	tenants, err := h.tenants.List(r.Context())
 	if err != nil {
 		h.logger.Error("listing tenants", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to list tenants")
@@ -65,7 +69,7 @@ func (h *TenantHandler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *TenantHandler) get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	tenant, err := h.repo.GetByID(r.Context(), id)
+	tenant, err := h.tenants.GetByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			writeError(w, http.StatusNotFound, "tenant not found")
@@ -85,13 +89,17 @@ func (h *TenantHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+	if err := validateRequest(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	tenant := &domain.Tenant{ID: id, Name: req.Name}
-	if err := h.repo.Update(r.Context(), tenant); err != nil {
+	if err := h.tenants.Update(r.Context(), tenant); err != nil {
+		if errors.Is(err, domain.ErrTenantNameConflict) {
+			writeError(w, http.StatusConflict, "tenant name already exists")
+			return
+		}
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			writeError(w, http.StatusNotFound, "tenant not found")
 			return
@@ -105,7 +113,7 @@ func (h *TenantHandler) update(w http.ResponseWriter, r *http.Request) {
 
 func (h *TenantHandler) delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := h.repo.Delete(r.Context(), id); err != nil {
+	if err := h.tenants.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			writeError(w, http.StatusNotFound, "tenant not found")
 			return

@@ -1,0 +1,6 @@
+ALTER TABLE policy_versions
+    DROP COLUMN IF EXISTS enabled,
+    DROP COLUMN IF EXISTS priority,
+    DROP COLUMN IF EXISTS action,
+    DROP COLUMN IF EXISTS type,
+    DROP COLUMN IF EXISTS name;

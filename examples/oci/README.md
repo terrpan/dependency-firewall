@@ -125,6 +125,8 @@ curl -X POST http://localhost:8080/api/v1/policies/import \
   --data-binary @policy.yaml | jq .
 ```
 
+The import endpoint also accepts `application/json` with the same schema.
+
 ## Policy evaluation order
 
 Policies are sorted by `priority` (ascending) then `name`. A **deny** result from any policy wins immediately — lower priority numbers are checked first. The `allow-internal-images` policy has `priority: 5`, so it short-circuits all deny rules for your own registry.

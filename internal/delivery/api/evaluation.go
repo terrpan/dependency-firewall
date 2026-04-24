@@ -5,18 +5,18 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
 
 // EvaluationHandler handles evaluation listing endpoints.
 type EvaluationHandler struct {
-	repo   port.DecisionRepository
-	logger *slog.Logger
+	evaluations *service.EvaluationService
+	logger      *slog.Logger
 }
 
 // NewEvaluationHandler creates a new EvaluationHandler.
-func NewEvaluationHandler(repo port.DecisionRepository, logger *slog.Logger) *EvaluationHandler {
-	return &EvaluationHandler{repo: repo, logger: logger}
+func NewEvaluationHandler(evaluations *service.EvaluationService, logger *slog.Logger) *EvaluationHandler {
+	return &EvaluationHandler{evaluations: evaluations, logger: logger}
 }
 
 // RegisterRoutes registers evaluation API routes on the given mux.
@@ -44,7 +44,7 @@ func (h *EvaluationHandler) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	decisions, err := h.repo.ListByTenant(r.Context(), tenantID, limit, offset)
+	decisions, err := h.evaluations.ListByTenant(r.Context(), tenantID, limit, offset)
 	if err != nil {
 		h.logger.Error("listing evaluations", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to list evaluations")

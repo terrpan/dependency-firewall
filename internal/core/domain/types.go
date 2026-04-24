@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -33,22 +34,166 @@ const (
 type PolicyType string
 
 const (
-	PolicyTypeCVSSThreshold   PolicyType = "cvss_threshold"
-	PolicyTypeMinimumAge      PolicyType = "minimum_age"
-	PolicyTypeMaximumAge      PolicyType = "maximum_age"
-	PolicyTypeBlockMutableTag PolicyType = "block_mutable_tag"
-	PolicyTypeAllowlist       PolicyType = "allowlist"
-	PolicyTypeBlocklist       PolicyType = "blocklist"
+	PolicyTypeCVSSThreshold    PolicyType = "cvss_threshold"
+	PolicyTypeMinimumAge       PolicyType = "minimum_age"
+	PolicyTypeMaximumAge       PolicyType = "maximum_age"
+	PolicyTypeBlockMutableTag  PolicyType = "block_mutable_tag"
+	PolicyTypeLicense          PolicyType = "license"
+	PolicyTypeLicenseAllowlist PolicyType = "license_allowlist"
+	PolicyTypeAllowlist        PolicyType = "allowlist"
+	PolicyTypeBlocklist        PolicyType = "blocklist"
 )
+
+// PolicyConfig is the typed configuration for a policy.
+type PolicyConfig interface {
+	Validate() error
+	DryRunEnabled() bool
+}
+
+// CVSSThresholdPolicyConfig configures the cvss_threshold policy type.
+type CVSSThresholdPolicyConfig struct {
+	MaxCVSS *float64 `json:"max_cvss,omitempty" yaml:"max_cvss,omitempty"`
+	DryRun  bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *CVSSThresholdPolicyConfig) Validate() error {
+	if c == nil || c.MaxCVSS == nil {
+		return fmt.Errorf("missing required config key %q", "max_cvss")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *CVSSThresholdPolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
+
+// MinimumAgePolicyConfig configures the minimum_age policy type.
+type MinimumAgePolicyConfig struct {
+	MinAgeDays      *int     `json:"min_age_days,omitempty" yaml:"min_age_days,omitempty"`
+	ExcludePackages []string `json:"exclude_packages,omitempty" yaml:"exclude_packages,omitempty"`
+	DryRun          bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *MinimumAgePolicyConfig) Validate() error {
+	if c == nil || c.MinAgeDays == nil {
+		return fmt.Errorf("missing required config key %q", "min_age_days")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *MinimumAgePolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
+
+// MaximumAgePolicyConfig configures the maximum_age policy type.
+type MaximumAgePolicyConfig struct {
+	MaxAgeDays      *int     `json:"max_age_days,omitempty" yaml:"max_age_days,omitempty"`
+	ExcludePackages []string `json:"exclude_packages,omitempty" yaml:"exclude_packages,omitempty"`
+	DryRun          bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *MaximumAgePolicyConfig) Validate() error {
+	if c == nil || c.MaxAgeDays == nil {
+		return fmt.Errorf("missing required config key %q", "max_age_days")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *MaximumAgePolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
+
+// BlockMutableTagPolicyConfig configures the block_mutable_tag policy type.
+type BlockMutableTagPolicyConfig struct {
+	Tags   []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	DryRun bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *BlockMutableTagPolicyConfig) Validate() error {
+	if c == nil || len(c.Tags) == 0 {
+		return fmt.Errorf("missing required config key %q", "tags")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *BlockMutableTagPolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
+
+// LicensePolicyConfig configures the license policy type.
+type LicensePolicyConfig struct {
+	Licenses []string `json:"licenses,omitempty" yaml:"licenses,omitempty"`
+	DryRun   bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *LicensePolicyConfig) Validate() error {
+	if c == nil || len(c.Licenses) == 0 {
+		return fmt.Errorf("missing required config key %q", "licenses")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *LicensePolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
+
+// LicenseAllowlistPolicyConfig configures the license_allowlist policy type.
+type LicenseAllowlistPolicyConfig struct {
+	Licenses []string `json:"licenses,omitempty" yaml:"licenses,omitempty"`
+	DryRun   bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *LicenseAllowlistPolicyConfig) Validate() error {
+	if c == nil || len(c.Licenses) == 0 {
+		return fmt.Errorf("missing required config key %q", "licenses")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *LicenseAllowlistPolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
+
+// NamespaceListPolicyConfig configures the allowlist and blocklist policy types.
+type NamespaceListPolicyConfig struct {
+	Namespaces []string `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
+	DryRun     bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+}
+
+// Validate validates the config.
+func (c *NamespaceListPolicyConfig) Validate() error {
+	if c == nil || len(c.Namespaces) == 0 {
+		return fmt.Errorf("missing required config key %q", "namespaces")
+	}
+	return nil
+}
+
+// DryRunEnabled reports whether dry-run mode is enabled.
+func (c *NamespaceListPolicyConfig) DryRunEnabled() bool {
+	return c != nil && c.DryRun
+}
 
 // ReasonCategory classifies why a decision was made.
 type ReasonCategory string
 
 const (
-	ReasonPolicyMatch          ReasonCategory = "policy_match"
-	ReasonNoMatchingPolicy     ReasonCategory = "no_matching_policy"
-	ReasonEnrichmentFailure    ReasonCategory = "enrichment_failure"
-	ReasonCached               ReasonCategory = "cached"
+	ReasonPolicyMatch             ReasonCategory = "policy_match"
+	ReasonPolicyWarning           ReasonCategory = "policy_warning"
+	ReasonNoMatchingPolicy        ReasonCategory = "no_matching_policy"
+	ReasonEnrichmentFailure       ReasonCategory = "enrichment_failure"
+	ReasonCached                  ReasonCategory = "cached"
 	ReasonCategoryEvaluationError ReasonCategory = "evaluation_error"
 )
 
@@ -93,6 +238,7 @@ type AccessRequest struct {
 type ArtifactMetadata struct {
 	PublishedAt     *time.Time
 	MaxCVSS         *float64
+	Licenses        []string
 	Vulnerabilities []Vulnerability
 	IsMutableTag    bool
 }
@@ -107,17 +253,43 @@ type Vulnerability struct {
 
 // Policy represents a tenant's policy rule.
 type Policy struct {
-	ID        string
-	TenantID  string
-	Name      string
-	Type      PolicyType
-	Action    PolicyAction
-	Config    map[string]any
-	Priority  int
-	Enabled   bool
-	Version   int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            string
+	TenantID      string
+	Name          string
+	Type          PolicyType
+	Action        PolicyAction
+	SchemaVersion int
+	Config        PolicyConfig
+	Priority      int
+	Enabled       bool
+	Version       int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+const MaxRetainedPolicyVersions = 3
+
+// PolicyVersion stores a point-in-time snapshot of a tenant policy.
+type PolicyVersion struct {
+	PolicyID      string
+	Version       int
+	Name          string
+	Type          PolicyType
+	Action        PolicyAction
+	SchemaVersion int
+	Config        PolicyConfig
+	Priority      int
+	Enabled       bool
+	CreatedAt     time.Time
+}
+
+// PolicySetRevision records the canonical tenant policy-set hash at a point in time.
+type PolicySetRevision struct {
+	ID         string
+	TenantID   string
+	Generation int64
+	PolicyHash string
+	CreatedAt  time.Time
 }
 
 // Decision records the outcome of a policy evaluation.
@@ -127,8 +299,10 @@ type Decision struct {
 	Artifact    ArtifactIdentity
 	Outcome     DecisionOutcome
 	PolicyID    string
+	PolicyHash  string
 	Reason      string // user-facing reason
 	Reasons     []EvaluationReason
+	Warnings    []string // user-facing warnings from warn-mode policies
 	CachedAt    *time.Time
 	EvaluatedAt time.Time
 }

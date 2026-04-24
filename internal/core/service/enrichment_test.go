@@ -28,9 +28,9 @@ func (m *mockEnricher) Enrich(_ context.Context, _ domain.ArtifactIdentity) (*do
 // --- mock metadata cache ---
 
 type mockMetadataCache struct {
-	store      map[string]*domain.ArtifactMetadata
-	setCalls   int
-	lastTTL    time.Duration
+	store    map[string]*domain.ArtifactMetadata
+	setCalls int
+	lastTTL  time.Duration
 }
 
 func newMockMetadataCache() *mockMetadataCache {

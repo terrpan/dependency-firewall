@@ -37,6 +37,7 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 	})
 
 	var reasons []domain.EvaluationReason
+	var warnings []string
 	var firstDenyReason string
 	hasDeny := false
 
@@ -76,6 +77,21 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 		}
 
 		if !matched {
+			continue
+		}
+
+		// When dry_run is enabled, record the match as a warning instead of
+		// a hard allow/deny. The decision outcome is unaffected.
+		if isWarnMode(p.Config) {
+			er := domain.EvaluationReason{
+				PolicyID:   p.ID,
+				PolicyName: p.Name,
+				Category:   domain.ReasonPolicyWarning,
+				Action:     p.Action,
+				Message:    reason,
+			}
+			reasons = append(reasons, er)
+			warnings = append(warnings, fmt.Sprintf("[%s] %s", p.Name, reason))
 			continue
 		}
 
@@ -126,8 +142,17 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 		PolicyID:    policyID,
 		Reason:      userReason,
 		Reasons:     reasons,
+		Warnings:    warnings,
 		EvaluatedAt: time.Now(),
 	}
+}
+
+// isWarnMode returns true if the policy config enables dry-run evaluation.
+func isWarnMode(config domain.PolicyConfig) bool {
+	if config == nil {
+		return false
+	}
+	return config.DryRunEnabled()
 }
 
 func filterEnabled(policies []domain.Policy) []domain.Policy {

@@ -49,7 +49,7 @@ func TestHealthHandler_Healthy(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
-	var body service.HealthResponse
+	var body healthResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Equal(t, "healthy", body.Status)
 	assert.Equal(t, "test-firewall", body.ServiceName)
@@ -67,7 +67,7 @@ func TestHealthHandler_Degraded(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
-	var body service.HealthResponse
+	var body healthResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Equal(t, "degraded", body.Status)
 }
@@ -81,7 +81,7 @@ func TestHealthHandler_Error(t *testing.T) {
 
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
-	var body service.HealthResponse
+	var body healthResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Equal(t, "error", body.Status)
 	assert.Equal(t, "error", body.Dependencies["postgresql"].Status)

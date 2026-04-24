@@ -21,6 +21,8 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
+func ptrInt(v int) *int { return &v }
+
 // --- Mock implementations ---
 
 type mockPolicyRepository struct {
@@ -33,6 +35,14 @@ func (m *mockPolicyRepository) GetByID(_ context.Context, _, _ string) (*domain.
 
 func (m *mockPolicyRepository) ListByTenant(_ context.Context, _ string) ([]domain.Policy, error) {
 	return m.policies, nil
+}
+
+func (m *mockPolicyRepository) ListVersions(_ context.Context, _, _ string, _ int) ([]domain.PolicyVersion, error) {
+	return nil, domain.ErrPolicyNotFound
+}
+
+func (m *mockPolicyRepository) RollbackToVersion(_ context.Context, _, _ string, _ int) (*domain.Policy, error) {
+	return nil, domain.ErrPolicyNotFound
 }
 
 func (m *mockPolicyRepository) Create(_ context.Context, _ *domain.Policy) error { return nil }
@@ -71,6 +81,10 @@ func (m *mockDecisionCache) Invalidate(_ context.Context, _ string, _ domain.Art
 	return nil
 }
 
+func (m *mockDecisionCache) InvalidateTenant(_ context.Context, _ string) error {
+	return nil
+}
+
 type mockMetadataCache struct{}
 
 func (m *mockMetadataCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
@@ -103,7 +117,7 @@ type mockUpstreamClient struct {
 	blobBody     string
 }
 
-func (m *mockUpstreamClient) GetManifest(_ context.Context, _ domain.Upstream, _ domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (m *mockUpstreamClient) FetchMetadata(_ context.Context, _ domain.Upstream, _ domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
 	return &port.UpstreamResponse{
 		StatusCode:  http.StatusOK,
 		ContentType: "application/json",
@@ -112,7 +126,7 @@ func (m *mockUpstreamClient) GetManifest(_ context.Context, _ domain.Upstream, _
 	}, nil
 }
 
-func (m *mockUpstreamClient) GetBlob(_ context.Context, _ domain.Upstream, _ string) (*port.UpstreamResponse, error) {
+func (m *mockUpstreamClient) FetchContent(_ context.Context, _ domain.Upstream, _ string) (*port.UpstreamResponse, error) {
 	return &port.UpstreamResponse{
 		StatusCode:  http.StatusOK,
 		ContentType: "application/octet-stream",
@@ -121,7 +135,7 @@ func (m *mockUpstreamClient) GetBlob(_ context.Context, _ domain.Upstream, _ str
 	}, nil
 }
 
-func (m *mockUpstreamClient) ResolveTag(_ context.Context, _ domain.Upstream, _ domain.ArtifactIdentity) (string, error) {
+func (m *mockUpstreamClient) ResolveReference(_ context.Context, _ domain.Upstream, _ domain.ArtifactIdentity) (string, error) {
 	return "", domain.ErrArtifactNotFound
 }
 
@@ -153,11 +167,11 @@ func (m *mockUpstreamRepository) Delete(_ context.Context, _, _ string) error   
 
 // --- Helpers ---
 
-func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *Handler {
+func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *RegistryHandler {
 	return newTestHandlerWithEnricher(policies, hasRecentAllow, &mockEnricher{})
 }
 
-func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, enricher port.Enricher) *Handler {
+func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, enricher port.Enricher) *RegistryHandler {
 	upstream := &domain.Upstream{
 		ID:        "up-1",
 		TenantID:  "t-1",
@@ -172,19 +186,19 @@ func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, e
 	}
 	upstreamRepo := &mockUpstreamRepository{upstream: upstream}
 
-	proxySvc := service.NewProxyService(
+	enrichmentService := service.NewEnrichmentService(enricher, &mockMetadataCache{}, slog.Default())
+	accessSvc := service.NewAccessService(
 		&mockPolicyRepository{policies: policies},
 		&mockDecisionRepository{hasRecentAllow: hasRecentAllow},
 		&mockDecisionCache{},
-		&mockMetadataCache{},
-		enricher,
+		enrichmentService,
 		policy.NewEvaluator(),
 		upstreamClient,
 		upstreamRepo,
 		slog.Default(),
 	)
 
-	return NewHandler(proxySvc, upstreamClient, upstreamRepo, slog.Default())
+	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default())
 }
 
 func withTenant(r *http.Request) *http.Request {
@@ -246,7 +260,7 @@ func Test_handleMetadata_denied(t *testing.T) {
 			Name:     "block-all",
 			Type:     domain.PolicyTypeBlocklist,
 			Action:   domain.PolicyActionDeny,
-			Config:   map[string]any{"packages": []any{"*"}},
+			Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{""}},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -290,7 +304,7 @@ func Test_handleTarball_denied(t *testing.T) {
 			Name:     "block-all",
 			Type:     domain.PolicyTypeBlocklist,
 			Action:   domain.PolicyActionDeny,
-			Config:   map[string]any{"namespaces": []any{""}},
+			Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{""}},
 			Priority: 1,
 			Enabled:  true,
 		},
@@ -409,7 +423,7 @@ func Test_handleTarball_metadataAllowDoesNotBypassTarballDeny(t *testing.T) {
 			Name:     "block-old",
 			Type:     domain.PolicyTypeMaximumAge,
 			Action:   domain.PolicyActionDeny,
-			Config:   map[string]any{"max_age_days": 365},
+			Config:   &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365)},
 			Priority: 10,
 			Enabled:  true,
 		},
@@ -440,4 +454,40 @@ func Test_handleTarball_metadataAllowDoesNotBypassTarballDeny(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, resp.Error, "policy violation:")
 	assert.Contains(t, resp.Error, "maximum allowed is 365 days")
+}
+
+func Test_handleMetadata_unversionedRequestSkipsLicenseAllowlistButTarballStillDenies(t *testing.T) {
+	licensePolicies := []domain.Policy{
+		{
+			ID:            "p-license",
+			TenantID:      "t-1",
+			Name:          "allow-approved-licenses",
+			Type:          domain.PolicyTypeLicenseAllowlist,
+			Action:        domain.PolicyActionDeny,
+			SchemaVersion: 1,
+			Config:        &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT"}},
+			Priority:      10,
+			Enabled:       true,
+		},
+	}
+	h := newTestHandlerWithEnricher(licensePolicies, false, &mockEnricher{})
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	metaReq := httptest.NewRequest(http.MethodGet, "/npm/react", nil)
+	metaReq = withTenant(metaReq)
+	metaRR := httptest.NewRecorder()
+	mux.ServeHTTP(metaRR, metaReq)
+	assert.Equal(t, http.StatusOK, metaRR.Code, "metadata request should be allowed so npm can resolve a concrete version")
+
+	tarballReq := httptest.NewRequest(http.MethodGet, "/npm/react/-/react-19.2.0.tgz", nil)
+	tarballReq = withTenant(tarballReq)
+	tarballRR := httptest.NewRecorder()
+	mux.ServeHTTP(tarballRR, tarballReq)
+	assert.Equal(t, http.StatusForbidden, tarballRR.Code, "versioned tarball request should still fail closed when license metadata is unavailable")
+
+	var resp npmErrorResponse
+	err := json.NewDecoder(tarballRR.Body).Decode(&resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp.Error, "license metadata is unavailable")
 }

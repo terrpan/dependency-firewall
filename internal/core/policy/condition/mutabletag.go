@@ -10,15 +10,13 @@ import (
 type BlockMutableTag struct{}
 
 // Evaluate checks whether the artifact's version is a blocked mutable tag.
-func (b BlockMutableTag) Evaluate(req domain.AccessRequest, config map[string]any) (bool, string, error) {
-	raw, ok := config["tags"]
+func (b BlockMutableTag) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) (bool, string, error) {
+	typed, ok := config.(*domain.BlockMutableTagPolicyConfig)
 	if !ok {
-		return false, "", fmt.Errorf("missing required config key \"tags\"")
+		return false, "", fmt.Errorf("block_mutable_tag requires %T, got %T", &domain.BlockMutableTagPolicyConfig{}, config)
 	}
-
-	tags, ok := toStringSlice(raw)
-	if !ok {
-		return false, "", fmt.Errorf("config key \"tags\" must be a list of strings")
+	if err := typed.Validate(); err != nil {
+		return false, "", err
 	}
 
 	if req.Metadata == nil || !req.Metadata.IsMutableTag {
@@ -26,30 +24,11 @@ func (b BlockMutableTag) Evaluate(req domain.AccessRequest, config map[string]an
 	}
 
 	version := req.Artifact.Version
-	for _, tag := range tags {
+	for _, tag := range typed.Tags {
 		if version == tag {
 			return true, fmt.Sprintf("mutable tag %q is blocked by policy", tag), nil
 		}
 	}
 
 	return false, "", nil
-}
-
-func toStringSlice(v any) ([]string, bool) {
-	switch s := v.(type) {
-	case []string:
-		return s, true
-	case []any:
-		result := make([]string, 0, len(s))
-		for _, item := range s {
-			str, ok := item.(string)
-			if !ok {
-				return nil, false
-			}
-			result = append(result, str)
-		}
-		return result, true
-	default:
-		return nil, false
-	}
 }

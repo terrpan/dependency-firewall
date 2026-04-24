@@ -12,6 +12,7 @@ type DecisionCache interface {
 	Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error)
 	Set(ctx context.Context, decision *domain.Decision, ttl time.Duration) error
 	Invalidate(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) error
+	InvalidateTenant(ctx context.Context, tenantID string) error
 }
 
 // MetadataCache caches enrichment metadata.

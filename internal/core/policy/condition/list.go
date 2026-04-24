@@ -12,14 +12,17 @@ import (
 type Allowlist struct{}
 
 // Evaluate checks whether the artifact's namespace is in the allowed namespaces.
-func (a Allowlist) Evaluate(req domain.AccessRequest, config map[string]any) (bool, string, error) {
-	namespaces, err := extractNamespaces(config)
-	if err != nil {
+func (a Allowlist) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) (bool, string, error) {
+	typed, ok := config.(*domain.NamespaceListPolicyConfig)
+	if !ok {
+		return false, "", fmt.Errorf("allowlist requires %T, got %T", &domain.NamespaceListPolicyConfig{}, config)
+	}
+	if err := typed.Validate(); err != nil {
 		return false, "", err
 	}
 
 	ns := req.Artifact.Namespace
-	if slices.Contains(namespaces, ns) {
+	if slices.Contains(typed.Namespaces, ns) {
 		return true, fmt.Sprintf("namespace %q is allowed", ns), nil
 	}
 
@@ -31,30 +34,19 @@ func (a Allowlist) Evaluate(req domain.AccessRequest, config map[string]any) (bo
 type Blocklist struct{}
 
 // Evaluate checks whether the artifact's namespace is in the blocked namespaces.
-func (b Blocklist) Evaluate(req domain.AccessRequest, config map[string]any) (bool, string, error) {
-	namespaces, err := extractNamespaces(config)
-	if err != nil {
+func (b Blocklist) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) (bool, string, error) {
+	typed, ok := config.(*domain.NamespaceListPolicyConfig)
+	if !ok {
+		return false, "", fmt.Errorf("blocklist requires %T, got %T", &domain.NamespaceListPolicyConfig{}, config)
+	}
+	if err := typed.Validate(); err != nil {
 		return false, "", err
 	}
 
 	ns := req.Artifact.Namespace
-	if slices.Contains(namespaces, ns) {
+	if slices.Contains(typed.Namespaces, ns) {
 		return true, fmt.Sprintf("namespace %q is blocked", ns), nil
 	}
 
 	return false, "", nil
-}
-
-func extractNamespaces(config map[string]any) ([]string, error) {
-	raw, ok := config["namespaces"]
-	if !ok {
-		return nil, fmt.Errorf("missing required config key \"namespaces\"")
-	}
-
-	namespaces, ok := toStringSlice(raw)
-	if !ok {
-		return nil, fmt.Errorf("config key \"namespaces\" must be a list of strings")
-	}
-
-	return namespaces, nil
 }

@@ -23,6 +23,9 @@ import (
 	"github.com/danielterry/dependency-firewall/migrations"
 )
 
+func ptrFloat64(v float64) *float64 { return &v }
+func intPtr(v int) *int             { return &v }
+
 // setupTestDB starts a PostgreSQL container, runs migrations, and returns a pool.
 func setupTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -228,7 +231,7 @@ func TestPolicyRepository_CreateAndGet(t *testing.T) {
 		Name:     "block-critical",
 		Type:     domain.PolicyTypeCVSSThreshold,
 		Action:   domain.PolicyActionDeny,
-		Config:   map[string]any{"threshold": 9.0},
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)},
 		Priority: 10,
 		Enabled:  true,
 	}
@@ -243,9 +246,142 @@ func TestPolicyRepository_CreateAndGet(t *testing.T) {
 	assert.Equal(t, "block-critical", got.Name)
 	assert.Equal(t, domain.PolicyTypeCVSSThreshold, got.Type)
 	assert.Equal(t, domain.PolicyActionDeny, got.Action)
+	assert.Equal(t, 1, got.SchemaVersion)
 	assert.Equal(t, 10, got.Priority)
 	assert.True(t, got.Enabled)
-	assert.Equal(t, 9.0, got.Config["threshold"])
+	cfg, ok := got.Config.(*domain.CVSSThresholdPolicyConfig)
+	require.True(t, ok)
+	require.NotNil(t, cfg.MaxCVSS)
+	assert.Equal(t, 9.0, *cfg.MaxCVSS)
+}
+
+func TestPolicyRepository_GetByIDReturnsDeprecatedConfigError(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "legacy-policy-tenant")
+	repo := postgres.NewPolicyRepository(pool)
+
+	var policyID string
+	err := pool.QueryRow(ctx, `
+		INSERT INTO policies (tenant_id, name, type, action, schema_version, config, priority, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+		RETURNING id`,
+		tenant.ID, "legacy-policy", string(domain.PolicyTypeMaximumAge), string(domain.PolicyActionDeny),
+		1, `{"max_age_days":730,"enforce":"warn"}`, 1, true,
+	).Scan(&policyID)
+	require.NoError(t, err)
+
+	_, err = repo.GetByID(ctx, tenant.ID, policyID)
+	require.ErrorIs(t, err, domain.ErrDeprecatedPolicyConfig)
+}
+
+func TestPolicyMigration_TranslateEnforceToDryRun(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "legacy-policy-migration-tenant")
+	repo := postgres.NewPolicyRepository(pool)
+
+	var policyID string
+	err := pool.QueryRow(ctx, `
+		INSERT INTO policies (tenant_id, name, type, action, schema_version, config, priority, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+		RETURNING id`,
+		tenant.ID, "legacy-policy", string(domain.PolicyTypeMaximumAge), string(domain.PolicyActionDeny),
+		1, `{"max_age_days":730,"enforce":"warn"}`, 1, true,
+	).Scan(&policyID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policy_versions (policy_id, version, name, type, action, schema_version, config, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
+		policyID, 1, "legacy-policy", string(domain.PolicyTypeMaximumAge), string(domain.PolicyActionDeny), 1, `{"max_age_days":730,"enforce":"warn"}`, 1, true,
+	)
+	require.NoError(t, err)
+
+	migrationSQL, err := migrations.FS.ReadFile("000009_translate_enforce_to_dry_run.up.sql")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, string(migrationSQL))
+	require.NoError(t, err)
+
+	got, err := repo.GetByID(ctx, tenant.ID, policyID)
+	require.NoError(t, err)
+	cfg, ok := got.Config.(*domain.MaximumAgePolicyConfig)
+	require.True(t, ok)
+	require.NotNil(t, cfg.MaxAgeDays)
+	assert.Equal(t, 730, *cfg.MaxAgeDays)
+	assert.True(t, cfg.DryRun)
+}
+
+func TestPolicyRepository_ListVersionsRetainsLatestThree(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "policy-version-history-tenant")
+	repo := postgres.NewPolicyRepository(pool)
+
+	policy := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "block-critical",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
+		Priority: 1,
+		Enabled:  true,
+	}
+	require.NoError(t, repo.Create(ctx, policy))
+
+	for _, score := range []float64{8.0, 9.0, 9.5} {
+		policy.Config = &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(score)}
+		require.NoError(t, repo.Update(ctx, policy))
+	}
+
+	versions, err := repo.ListVersions(ctx, tenant.ID, policy.ID, domain.MaxRetainedPolicyVersions)
+	require.NoError(t, err)
+	require.Len(t, versions, 3)
+	assert.Equal(t, []int{4, 3, 2}, []int{versions[0].Version, versions[1].Version, versions[2].Version})
+
+	firstCfg, ok := versions[0].Config.(*domain.CVSSThresholdPolicyConfig)
+	require.True(t, ok)
+	require.NotNil(t, firstCfg.MaxCVSS)
+	assert.Equal(t, 9.5, *firstCfg.MaxCVSS)
+}
+
+func TestPolicyRepository_RollbackToVersion(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "policy-rollback-tenant")
+	repo := postgres.NewPolicyRepository(pool)
+
+	policy := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "block-critical",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
+		Priority: 1,
+		Enabled:  true,
+	}
+	require.NoError(t, repo.Create(ctx, policy))
+
+	policy.Name = "block-critical-stricter"
+	policy.Config = &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)}
+	policy.Priority = 5
+	require.NoError(t, repo.Update(ctx, policy))
+
+	rolledBack, err := repo.RollbackToVersion(ctx, tenant.ID, policy.ID, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 3, rolledBack.Version)
+	assert.Equal(t, "block-critical", rolledBack.Name)
+	assert.Equal(t, 1, rolledBack.Priority)
+	cfg, ok := rolledBack.Config.(*domain.CVSSThresholdPolicyConfig)
+	require.True(t, ok)
+	require.NotNil(t, cfg.MaxCVSS)
+	assert.Equal(t, 7.0, *cfg.MaxCVSS)
+
+	got, err := repo.GetByID(ctx, tenant.ID, policy.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 3, got.Version)
+	assert.Equal(t, "block-critical", got.Name)
+	assert.Equal(t, 1, got.Priority)
 }
 
 func TestPolicyRepository_TenantIsolation(t *testing.T) {
@@ -260,7 +396,7 @@ func TestPolicyRepository_TenantIsolation(t *testing.T) {
 		Name:     "private-policy",
 		Type:     domain.PolicyTypeCVSSThreshold,
 		Action:   domain.PolicyActionDeny,
-		Config:   map[string]any{},
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 		Priority: 1,
 		Enabled:  true,
 	}
@@ -293,7 +429,7 @@ func TestPolicyRepository_ListByTenant(t *testing.T) {
 			Name:     p.name,
 			Type:     domain.PolicyTypeCVSSThreshold,
 			Action:   domain.PolicyActionDeny,
-			Config:   map[string]any{},
+			Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 			Priority: p.priority,
 			Enabled:  true,
 		}
@@ -319,7 +455,7 @@ func TestPolicyRepository_Update(t *testing.T) {
 		Name:     "original",
 		Type:     domain.PolicyTypeCVSSThreshold,
 		Action:   domain.PolicyActionDeny,
-		Config:   map[string]any{"threshold": 7.0},
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 		Priority: 5,
 		Enabled:  true,
 	}
@@ -327,7 +463,7 @@ func TestPolicyRepository_Update(t *testing.T) {
 	assert.Equal(t, 1, policy.Version)
 
 	policy.Name = "updated"
-	policy.Config = map[string]any{"threshold": 9.5}
+	policy.Config = &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.5)}
 	require.NoError(t, repo.Update(ctx, policy))
 	assert.Equal(t, 2, policy.Version)
 
@@ -335,7 +471,73 @@ func TestPolicyRepository_Update(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "updated", got.Name)
 	assert.Equal(t, 2, got.Version)
-	assert.Equal(t, 9.5, got.Config["threshold"])
+	cfg, ok := got.Config.(*domain.CVSSThresholdPolicyConfig)
+	require.True(t, ok)
+	require.NotNil(t, cfg.MaxCVSS)
+	assert.Equal(t, 9.5, *cfg.MaxCVSS)
+}
+
+func TestPolicyRepository_CreateReturnsConflictForDuplicateName(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "duplicate-policy-tenant")
+	repo := postgres.NewPolicyRepository(pool)
+
+	first := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "block-critical",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
+		Priority: 1,
+		Enabled:  true,
+	}
+	second := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "block-critical",
+		Type:     domain.PolicyTypeMinimumAge,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.MinimumAgePolicyConfig{MinAgeDays: intPtr(30)},
+		Priority: 2,
+		Enabled:  true,
+	}
+
+	require.NoError(t, repo.Create(ctx, first))
+	err := repo.Create(ctx, second)
+	require.ErrorIs(t, err, domain.ErrPolicyNameConflict)
+}
+
+func TestPolicyRepository_UpdateReturnsConflictForDuplicateName(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "policy-update-conflict-tenant")
+	repo := postgres.NewPolicyRepository(pool)
+
+	first := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "first-policy",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
+		Priority: 1,
+		Enabled:  true,
+	}
+	second := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "second-policy",
+		Type:     domain.PolicyTypeMinimumAge,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.MinimumAgePolicyConfig{MinAgeDays: intPtr(30)},
+		Priority: 2,
+		Enabled:  true,
+	}
+
+	require.NoError(t, repo.Create(ctx, first))
+	require.NoError(t, repo.Create(ctx, second))
+
+	second.Name = "first-policy"
+	err := repo.Update(ctx, second)
+	require.ErrorIs(t, err, domain.ErrPolicyNameConflict)
 }
 
 func TestPolicyRepository_Delete(t *testing.T) {
@@ -349,7 +551,7 @@ func TestPolicyRepository_Delete(t *testing.T) {
 		Name:     "to-delete",
 		Type:     domain.PolicyTypeCVSSThreshold,
 		Action:   domain.PolicyActionDeny,
-		Config:   map[string]any{},
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 		Priority: 1,
 		Enabled:  true,
 	}
@@ -358,6 +560,29 @@ func TestPolicyRepository_Delete(t *testing.T) {
 
 	_, err := repo.GetByID(ctx, tenant.ID, policy.ID)
 	require.ErrorIs(t, err, domain.ErrPolicyNotFound)
+}
+
+func TestPolicyRevisionRepository_Create(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "policy-revision-tenant")
+	repo := postgres.NewPolicyRevisionRepository(pool)
+
+	first := &domain.PolicySetRevision{
+		TenantID:   tenant.ID,
+		PolicyHash: "hash-1",
+	}
+	require.NoError(t, repo.Create(ctx, first))
+	assert.Equal(t, int64(1), first.Generation)
+	assert.NotEmpty(t, first.ID)
+
+	second := &domain.PolicySetRevision{
+		TenantID:   tenant.ID,
+		PolicyHash: "hash-2",
+	}
+	require.NoError(t, repo.Create(ctx, second))
+	assert.Equal(t, int64(2), second.Generation)
+	assert.NotEmpty(t, second.ID)
 }
 
 // ---------------------------------------------------------------------------
@@ -472,7 +697,7 @@ func TestDecisionRepository_RecordAndGet(t *testing.T) {
 		Name:     "cvss-block",
 		Type:     domain.PolicyTypeCVSSThreshold,
 		Action:   domain.PolicyActionDeny,
-		Config:   map[string]any{"threshold": 7.0},
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 		Priority: 1,
 		Enabled:  true,
 	}
@@ -488,11 +713,12 @@ func TestDecisionRepository_RecordAndGet(t *testing.T) {
 		Digest:    "sha256:abc123",
 	}
 	decision := &domain.Decision{
-		TenantID: tenant.ID,
-		Artifact: artifact,
-		Outcome:  domain.DecisionDeny,
-		PolicyID: policy.ID,
-		Reason:   "CVSS score 9.8 exceeds threshold 7.0",
+		TenantID:   tenant.ID,
+		Artifact:   artifact,
+		Outcome:    domain.DecisionDeny,
+		PolicyID:   policy.ID,
+		PolicyHash: "policy-hash-1",
+		Reason:     "CVSS score 9.8 exceeds threshold 7.0",
 		Reasons: []domain.EvaluationReason{
 			{
 				PolicyID:   policy.ID,
@@ -512,6 +738,7 @@ func TestDecisionRepository_RecordAndGet(t *testing.T) {
 	assert.Equal(t, decision.ID, got.ID)
 	assert.Equal(t, domain.DecisionDeny, got.Outcome)
 	assert.Equal(t, policy.ID, got.PolicyID)
+	assert.Equal(t, "policy-hash-1", got.PolicyHash)
 	assert.Equal(t, artifact.Name, got.Artifact.Name)
 }
 
@@ -529,8 +756,9 @@ func TestDecisionRepository_ListByTenant(t *testing.T) {
 				Name:      fmt.Sprintf("pkg-%d", i),
 				Version:   "1.0.0",
 			},
-			Outcome: domain.DecisionAllow,
-			Reason:  "allowed",
+			Outcome:    domain.DecisionAllow,
+			PolicyHash: fmt.Sprintf("policy-hash-%d", i),
+			Reason:     "allowed",
 		}
 		require.NoError(t, repo.Record(ctx, d))
 	}
@@ -538,6 +766,7 @@ func TestDecisionRepository_ListByTenant(t *testing.T) {
 	all, err := repo.ListByTenant(ctx, tenant.ID, 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, all, 3)
+	assert.NotEmpty(t, all[0].PolicyHash)
 
 	page, err := repo.ListByTenant(ctx, tenant.ID, 2, 0)
 	require.NoError(t, err)

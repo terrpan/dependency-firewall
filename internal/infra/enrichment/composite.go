@@ -62,6 +62,9 @@ func mergeMetadata(dst, src *domain.ArtifactMetadata) {
 	if src.MaxCVSS != nil {
 		dst.MaxCVSS = src.MaxCVSS
 	}
+	if len(src.Licenses) > 0 {
+		dst.Licenses = append(dst.Licenses, src.Licenses...)
+	}
 	if len(src.Vulnerabilities) > 0 {
 		dst.Vulnerabilities = append(dst.Vulnerabilities, src.Vulnerabilities...)
 	}

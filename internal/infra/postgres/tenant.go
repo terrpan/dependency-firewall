@@ -16,6 +16,10 @@ type TenantRepository struct {
 	pool *pgxpool.Pool
 }
 
+var tenantConstraintErrors = map[string]error{
+	"tenants_name_key": domain.ErrTenantNameConflict,
+}
+
 // NewTenantRepository creates a new TenantRepository.
 func NewTenantRepository(pool *pgxpool.Pool) *TenantRepository {
 	return &TenantRepository{pool: pool}
@@ -67,6 +71,9 @@ func (r *TenantRepository) Create(ctx context.Context, tenant *domain.Tenant) er
 		tenant.Name,
 	).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt)
 	if err != nil {
+		if mappedErr := mapConstraintError(err, tenantConstraintErrors); mappedErr != err {
+			return mappedErr
+		}
 		return fmt.Errorf("creating tenant: %w", err)
 	}
 	return nil
@@ -79,6 +86,9 @@ func (r *TenantRepository) Update(ctx context.Context, tenant *domain.Tenant) er
 		tenant.Name, tenant.ID,
 	)
 	if err != nil {
+		if mappedErr := mapConstraintError(err, tenantConstraintErrors); mappedErr != err {
+			return mappedErr
+		}
 		return fmt.Errorf("updating tenant: %w", err)
 	}
 	if ct.RowsAffected() == 0 {

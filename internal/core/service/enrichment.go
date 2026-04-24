@@ -60,12 +60,14 @@ func (s *EnrichmentService) Enrich(ctx context.Context, tenantID string, artifac
 	}
 
 	ttl := s.cacheTTL(artifact)
-	if cacheErr := s.metadataCache.Set(ctx, tenantID, artifact, metadata, ttl); cacheErr != nil {
-		s.logger.WarnContext(ctx, "failed to cache metadata",
-			slog.String("tenant_id", tenantID),
-			slog.String("name", artifact.Name),
-			slog.String("error", cacheErr.Error()),
-		)
+	if metadata != nil {
+		if cacheErr := s.metadataCache.Set(ctx, tenantID, artifact, metadata, ttl); cacheErr != nil {
+			s.logger.WarnContext(ctx, "failed to cache metadata",
+				slog.String("tenant_id", tenantID),
+				slog.String("name", artifact.Name),
+				slog.String("error", cacheErr.Error()),
+			)
+		}
 	}
 
 	return metadata, nil

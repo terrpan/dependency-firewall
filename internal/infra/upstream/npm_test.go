@@ -33,7 +33,7 @@ func TestNPMClient_GetManifest_ScopedPackage(t *testing.T) {
 		Version:   "1.0.0",
 	}
 
-	resp, err := client.GetManifest(context.Background(), upstream, artifact)
+	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -60,7 +60,7 @@ func TestNPMClient_GetManifest_UnscopedPackage(t *testing.T) {
 		Name:      "express",
 	}
 
-	resp, err := client.GetManifest(context.Background(), upstream, artifact)
+	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -84,7 +84,7 @@ func TestNPMClient_GetBlob_TarballURL(t *testing.T) {
 
 	// The digest for npm encodes the tarball path segment.
 	tarballPath := "express/-/express-4.18.2.tgz"
-	resp, err := client.GetBlob(context.Background(), upstream, tarballPath)
+	resp, err := client.FetchContent(context.Background(), upstream, tarballPath)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -119,7 +119,7 @@ func TestNPMClient_ResolveTag_DistTagsLatest(t *testing.T) {
 		Version:   "latest",
 	}
 
-	version, err := client.ResolveTag(context.Background(), upstream, artifact)
+	version, err := client.ResolveReference(context.Background(), upstream, artifact)
 	require.NoError(t, err)
 	assert.Equal(t, "4.18.2", version)
 }
@@ -138,17 +138,17 @@ func TestNPMClient_404_ReturnsErrArtifactNotFound(t *testing.T) {
 	}
 
 	t.Run("GetManifest", func(t *testing.T) {
-		_, err := client.GetManifest(context.Background(), upstream, artifact)
+		_, err := client.FetchMetadata(context.Background(), upstream, artifact)
 		assert.ErrorIs(t, err, domain.ErrArtifactNotFound)
 	})
 
 	t.Run("GetBlob", func(t *testing.T) {
-		_, err := client.GetBlob(context.Background(), upstream, "nonexistent/-/nonexistent-1.0.0.tgz")
+		_, err := client.FetchContent(context.Background(), upstream, "nonexistent/-/nonexistent-1.0.0.tgz")
 		assert.ErrorIs(t, err, domain.ErrArtifactNotFound)
 	})
 
 	t.Run("ResolveTag", func(t *testing.T) {
-		_, err := client.ResolveTag(context.Background(), upstream, artifact)
+		_, err := client.ResolveReference(context.Background(), upstream, artifact)
 		assert.ErrorIs(t, err, domain.ErrArtifactNotFound)
 	})
 }
@@ -169,17 +169,17 @@ func TestNPMClient_ConnectionError_ReturnsErrUpstreamUnavailable(t *testing.T) {
 	}
 
 	t.Run("GetManifest", func(t *testing.T) {
-		_, err := client.GetManifest(context.Background(), upstream, artifact)
+		_, err := client.FetchMetadata(context.Background(), upstream, artifact)
 		assert.ErrorIs(t, err, domain.ErrUpstreamUnavailable)
 	})
 
 	t.Run("GetBlob", func(t *testing.T) {
-		_, err := client.GetBlob(context.Background(), upstream, "express/-/express-4.18.2.tgz")
+		_, err := client.FetchContent(context.Background(), upstream, "express/-/express-4.18.2.tgz")
 		assert.ErrorIs(t, err, domain.ErrUpstreamUnavailable)
 	})
 
 	t.Run("ResolveTag", func(t *testing.T) {
-		_, err := client.ResolveTag(context.Background(), upstream, artifact)
+		_, err := client.ResolveReference(context.Background(), upstream, artifact)
 		assert.ErrorIs(t, err, domain.ErrUpstreamUnavailable)
 	})
 }

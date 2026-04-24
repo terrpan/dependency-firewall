@@ -12,11 +12,11 @@ type Enricher interface {
 	Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error)
 }
 
-// UpstreamClient fetches content from upstream registries.
+// UpstreamClient fetches metadata and content from upstream registries.
 type UpstreamClient interface {
-	GetManifest(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*UpstreamResponse, error)
-	GetBlob(ctx context.Context, upstream domain.Upstream, digest string) (*UpstreamResponse, error)
-	ResolveTag(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error)
+	FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*UpstreamResponse, error)
+	FetchContent(ctx context.Context, upstream domain.Upstream, locator string) (*UpstreamResponse, error)
+	ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error)
 }
 
 // UpstreamResponse wraps a streaming response from an upstream registry.

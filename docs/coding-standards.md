@@ -14,6 +14,11 @@
 - Services orchestrate business workflows.
 - Repositories only persist and load data.
 - Policy packages evaluate policy and do not perform I/O.
+- Control-plane handlers call core services, not repositories.
+- Delivery request bodies must decode into delivery-layer request DTOs, not domain models.
+- Delivery response DTOs stay in delivery. Core types must not be shaped around JSON responses.
+- Shared ports in core must use protocol-neutral names when they are used by more than one ecosystem.
+- Protocol-specific terms such as manifest, blob, tarball, and tag belong in delivery or ecosystem-specific infrastructure packages.
 
 ## API Response DTOs
 

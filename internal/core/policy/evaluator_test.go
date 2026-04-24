@@ -8,14 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-//go:fix inline
-func ptrFloat64(v float64) *float64 { return new(v) }
-
-//go:fix inline
-func ptrTime(t time.Time) *time.Time { return new(t) }
-
-//go:fix inline
-func ptrBool(b bool) *bool { return new(b) }
+func ptrFloat64(v float64) *float64  { return &v }
+func ptrTime(t time.Time) *time.Time { return &t }
+func ptrInt(v int) *int              { return &v }
 
 func TestEvaluate(t *testing.T) {
 	now := time.Now()
@@ -30,8 +25,8 @@ func TestEvaluate(t *testing.T) {
 			Version:   "1.0.0",
 		},
 		Metadata: &domain.ArtifactMetadata{
-			MaxCVSS:     new(9.0),
-			PublishedAt: new(recentPublish),
+			MaxCVSS:     ptrFloat64(9.0),
+			PublishedAt: ptrTime(recentPublish),
 		},
 		Timestamp: now,
 	}
@@ -52,7 +47,7 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
 					Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"max_cvss": 7.0}, Priority: 0, Enabled: true,
+					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: true,
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
@@ -66,12 +61,12 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
 					Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"max_cvss": 7.0}, Priority: 0, Enabled: true,
+					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: true,
 				},
 				{
 					ID: "p2", TenantID: "tenant-1", Name: "block-untrusted",
 					Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"namespaces": []string{"untrusted-registry"}}, Priority: 1, Enabled: true,
+					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted-registry"}}, Priority: 1, Enabled: true,
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
@@ -95,12 +90,109 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "allow-internal",
 					Type: domain.PolicyTypeAllowlist, Action: domain.PolicyActionAllow,
-					Config: map[string]any{"namespaces": []string{"internal"}}, Priority: 0, Enabled: true,
+					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}}, Priority: 0, Enabled: true,
 				},
 			},
 			wantOutcome:    domain.DecisionAllow,
 			wantReasonSub:  "allowed",
 			wantAllowCount: 1,
+		},
+		{
+			name: "license policy denies configured blocked license",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "copyleft-package",
+					Version:   "1.0.0",
+				},
+				Metadata: &domain.ArtifactMetadata{
+					Licenses: []string{"GPL-3.0-only"},
+				},
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-license", TenantID: "tenant-1", Name: "block-copyleft",
+					Type: domain.PolicyTypeLicense, Action: domain.PolicyActionDeny,
+					Config: &domain.LicensePolicyConfig{Licenses: []string{"GPL-3.0-only"}}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionDeny,
+			wantReasonSub: `license "GPL-3.0-only"`,
+			wantDenyCount: 1,
+		},
+		{
+			name: "license allowlist denies unapproved license",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "copyleft-package",
+					Version:   "1.0.0",
+				},
+				Metadata: &domain.ArtifactMetadata{
+					Licenses: []string{"GPL-3.0-only"},
+				},
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-license-allowlist", TenantID: "tenant-1", Name: "allow-approved-licenses",
+					Type: domain.PolicyTypeLicenseAllowlist, Action: domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT", "Apache-2.0"}}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionDeny,
+			wantReasonSub: `license "GPL-3.0-only" is not in the approved license list`,
+			wantDenyCount: 1,
+		},
+		{
+			name: "license allowlist denies missing metadata",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "unknown-license-package",
+					Version:   "1.0.0",
+				},
+				Metadata:  nil,
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-license-allowlist", TenantID: "tenant-1", Name: "allow-approved-licenses",
+					Type: domain.PolicyTypeLicenseAllowlist, Action: domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT"}}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionDeny,
+			wantReasonSub: "license metadata is unavailable",
+			wantDenyCount: 1,
+		},
+		{
+			name: "license allowlist allows approved license set",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "approved-package",
+					Version:   "1.0.0",
+				},
+				Metadata: &domain.ArtifactMetadata{
+					Licenses: []string{"MIT", "Apache-2.0"},
+				},
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-license-allowlist", TenantID: "tenant-1", Name: "allow-approved-licenses",
+					Type: domain.PolicyTypeLicenseAllowlist, Action: domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT", "Apache-2.0"}}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionAllow,
+			wantReasonSub: "no matching policy",
 		},
 		{
 			name: "mixed allow and deny, deny wins",
@@ -113,7 +205,7 @@ func TestEvaluate(t *testing.T) {
 					Version:   "0.1.0",
 				},
 				Metadata: &domain.ArtifactMetadata{
-					MaxCVSS: new(8.5),
+					MaxCVSS: ptrFloat64(8.5),
 				},
 				Timestamp: now,
 			},
@@ -121,12 +213,12 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "allow-internal",
 					Type: domain.PolicyTypeAllowlist, Action: domain.PolicyActionAllow,
-					Config: map[string]any{"namespaces": []string{"internal"}}, Priority: 0, Enabled: true,
+					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}}, Priority: 0, Enabled: true,
 				},
 				{
 					ID: "p2", TenantID: "tenant-1", Name: "block-high-cvss",
 					Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"max_cvss": 7.0}, Priority: 1, Enabled: true,
+					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 1, Enabled: true,
 				},
 			},
 			wantOutcome:    domain.DecisionDeny,
@@ -148,7 +240,7 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
 					Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"max_cvss": 7.0}, Priority: 0, Enabled: false,
+					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: false,
 				},
 			},
 			wantOutcome:   domain.DecisionAllow,
@@ -165,7 +257,7 @@ func TestEvaluate(t *testing.T) {
 					Version:   "1.0.0",
 				},
 				Metadata: &domain.ArtifactMetadata{
-					MaxCVSS: new(9.0),
+					MaxCVSS: ptrFloat64(9.0),
 				},
 				Timestamp: now,
 			},
@@ -173,12 +265,12 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p2", TenantID: "tenant-1", Name: "block-untrusted",
 					Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"namespaces": []string{"untrusted-registry"}}, Priority: 5, Enabled: true,
+					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted-registry"}}, Priority: 5, Enabled: true,
 				},
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
 					Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"max_cvss": 7.0}, Priority: 0, Enabled: true,
+					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: true,
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
@@ -202,7 +294,7 @@ func TestEvaluate(t *testing.T) {
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
 					Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-					Config: map[string]any{"max_cvss": 7.0}, Priority: 0, Enabled: true,
+					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: true,
 				},
 			},
 			wantOutcome:   domain.DecisionAllow,
@@ -254,7 +346,7 @@ func TestEvaluate_SamePriorityDeterministic(t *testing.T) {
 			Version:   "1.0.0",
 		},
 		Metadata: &domain.ArtifactMetadata{
-			MaxCVSS: new(9.0),
+			MaxCVSS: ptrFloat64(9.0),
 		},
 		Timestamp: now,
 	}
@@ -263,12 +355,12 @@ func TestEvaluate_SamePriorityDeterministic(t *testing.T) {
 		{
 			ID: "p2", TenantID: "tenant-1", Name: "block-untrusted",
 			Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
-			Config: map[string]any{"namespaces": []string{"untrusted-registry"}}, Priority: 0, Enabled: true,
+			Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted-registry"}}, Priority: 0, Enabled: true,
 		},
 		{
 			ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
 			Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionDeny,
-			Config: map[string]any{"max_cvss": 7.0}, Priority: 0, Enabled: true,
+			Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: true,
 		},
 	}
 
@@ -303,7 +395,7 @@ func TestEvaluate_UnknownPolicyType(t *testing.T) {
 		{
 			ID: "p1", TenantID: "tenant-1", Name: "bad-policy",
 			Type: domain.PolicyType("nonexistent_type"), Action: domain.PolicyActionDeny,
-			Config: map[string]any{}, Priority: 0, Enabled: true,
+			Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}}, Priority: 0, Enabled: true,
 		},
 	}
 
@@ -330,17 +422,17 @@ func TestEvaluate_ConditionEvaluationError(t *testing.T) {
 			Version:   "1.0.0",
 		},
 		Metadata: &domain.ArtifactMetadata{
-			MaxCVSS: new(5.0),
+			MaxCVSS: ptrFloat64(5.0),
 		},
 		Timestamp: now,
 	}
 
-	// CVSS threshold with invalid config (missing max_cvss) should cause evaluation error.
+	// Mismatched config type should cause evaluation error.
 	policies := []domain.Policy{
 		{
 			ID: "p1", TenantID: "tenant-1", Name: "bad-config-policy",
 			Type: domain.PolicyTypeCVSSThreshold, Action: domain.PolicyActionAllow,
-			Config: map[string]any{"max_cvss": "not-a-number"}, Priority: 0, Enabled: true,
+			Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}}, Priority: 0, Enabled: true,
 		},
 	}
 
@@ -359,4 +451,96 @@ func TestEvaluate_ConditionEvaluationError(t *testing.T) {
 		}
 	}
 	assert.True(t, hasEvalError, "should contain evaluation_error reason")
+}
+
+func TestEvaluate_WarnMode(t *testing.T) {
+	now := time.Now()
+	oldPublish := now.Add(-400 * 24 * time.Hour)
+
+	req := domain.AccessRequest{
+		TenantID: "tenant-1",
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "old-but-stable",
+			Version:   "1.0.0",
+		},
+		Metadata: &domain.ArtifactMetadata{
+			PublishedAt: &oldPublish,
+		},
+		Timestamp: now,
+	}
+
+	policies := []domain.Policy{
+		{
+			ID: "p1", TenantID: "tenant-1", Name: "block-old-warn",
+			Type: domain.PolicyTypeMaximumAge, Action: domain.PolicyActionDeny,
+			Config:   &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365), DryRun: true},
+			Priority: 10, Enabled: true,
+		},
+	}
+
+	eval := NewEvaluator()
+	decision := eval.Evaluate(req, policies)
+
+	// Warn mode should NOT block the package.
+	assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+
+	// Should have a warning.
+	assert.Len(t, decision.Warnings, 1)
+	assert.Contains(t, decision.Warnings[0], "block-old-warn")
+	assert.Contains(t, decision.Warnings[0], "maximum allowed is 365 days")
+
+	// Reason should be recorded with warning category.
+	var hasWarning bool
+	for _, r := range decision.Reasons {
+		if r.Category == domain.ReasonPolicyWarning {
+			hasWarning = true
+			break
+		}
+	}
+	assert.True(t, hasWarning, "should contain policy_warning reason")
+}
+
+func TestEvaluate_WarnModeDoesNotOverrideDeny(t *testing.T) {
+	now := time.Now()
+	oldPublish := now.Add(-400 * 24 * time.Hour)
+
+	req := domain.AccessRequest{
+		TenantID: "tenant-1",
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Namespace: "evil-corp",
+			Name:      "bad-pkg",
+			Version:   "1.0.0",
+		},
+		Metadata: &domain.ArtifactMetadata{
+			PublishedAt: &oldPublish,
+		},
+		Timestamp: now,
+	}
+
+	policies := []domain.Policy{
+		{
+			ID: "p1", TenantID: "tenant-1", Name: "block-old-warn",
+			Type: domain.PolicyTypeMaximumAge, Action: domain.PolicyActionDeny,
+			Config:   &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365), DryRun: true},
+			Priority: 10, Enabled: true,
+		},
+		{
+			ID: "p2", TenantID: "tenant-1", Name: "block-evil",
+			Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
+			Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{"evil-corp"}},
+			Priority: 20, Enabled: true,
+		},
+	}
+
+	eval := NewEvaluator()
+	decision := eval.Evaluate(req, policies)
+
+	// The blocklist deny should still block.
+	assert.Equal(t, domain.DecisionDeny, decision.Outcome)
+	assert.Contains(t, decision.Reason, "blocked")
+
+	// Should still have the warning from the warn-mode policy.
+	assert.Len(t, decision.Warnings, 1)
 }

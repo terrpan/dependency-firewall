@@ -27,6 +27,11 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 					"created": "2010-12-29T07:28:24.371Z",
 					"4.17.1": "2019-05-25T23:58:54.329Z",
 					"4.19.1": "2024-03-20T15:53:05.388Z"
+				},
+				"versions": {
+					"4.19.1": {
+						"license": "(MIT OR Apache-2.0)"
+					}
 				}
 			}`))
 		}))
@@ -51,10 +56,16 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 		if meta.PublishedAt == nil {
 			t.Fatal("expected PublishedAt to be set")
 		}
+		if meta.Licenses == nil {
+			t.Fatal("expected Licenses to be set")
+		}
 
 		expected := time.Date(2024, 3, 20, 15, 53, 5, 388000000, time.UTC)
 		if !meta.PublishedAt.Equal(expected) {
 			t.Errorf("PublishedAt = %v, want %v", meta.PublishedAt, expected)
+		}
+		if len(meta.Licenses) != 2 || meta.Licenses[0] != "MIT" || meta.Licenses[1] != "Apache-2.0" {
+			t.Errorf("Licenses = %v, want [MIT Apache-2.0]", meta.Licenses)
 		}
 	})
 
@@ -68,6 +79,13 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 			w.Write([]byte(`{
 				"time": {
 					"20.0.0": "2023-03-17T16:43:13.123Z"
+				},
+				"versions": {
+					"20.0.0": {
+						"licenses": [
+							{"type": "MIT"}
+						]
+					}
 				}
 			}`))
 		}))
@@ -94,6 +112,9 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 		expected := time.Date(2023, 3, 17, 16, 43, 13, 123000000, time.UTC)
 		if !meta.PublishedAt.Equal(expected) {
 			t.Errorf("PublishedAt = %v, want %v", meta.PublishedAt, expected)
+		}
+		if len(meta.Licenses) != 1 || meta.Licenses[0] != "MIT" {
+			t.Errorf("Licenses = %v, want [MIT]", meta.Licenses)
 		}
 	})
 
@@ -252,6 +273,33 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 			t.Fatal("expected error on malformed JSON, got nil")
 		}
 	})
+}
+
+func TestSplitLicenseExpression(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{name: "single SPDX id", value: "MIT", want: []string{"MIT"}},
+		{name: "OR expression", value: "(MIT OR Apache-2.0)", want: []string{"MIT", "Apache-2.0"}},
+		{name: "WITH exception", value: "GPL-2.0-only WITH Classpath-exception-2.0", want: []string{"GPL-2.0-only", "Classpath-exception-2.0"}},
+		{name: "plus shorthand preserved", value: "GPL-2.0+", want: []string{"GPL-2.0+"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitLicenseExpression(tt.value)
+			if len(got) != len(tt.want) {
+				t.Fatalf("splitLicenseExpression() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("splitLicenseExpression() = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
 }
 
 func TestBuildPackageName(t *testing.T) {

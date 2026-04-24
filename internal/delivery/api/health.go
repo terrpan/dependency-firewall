@@ -10,12 +10,12 @@ import (
 // HealthHandler handles the health check endpoint.
 type HealthHandler struct {
 	healthService *service.HealthService
-	logger        *slog.Logger
 }
 
 // NewHealthHandler creates a new HealthHandler.
 func NewHealthHandler(healthService *service.HealthService, logger *slog.Logger) *HealthHandler {
-	return &HealthHandler{healthService: healthService, logger: logger}
+	_ = logger
+	return &HealthHandler{healthService: healthService}
 }
 
 // RegisterRoutes registers health check routes on the given mux.
@@ -24,12 +24,12 @@ func (h *HealthHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (h *HealthHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	resp := h.healthService.CheckHealth(r.Context())
+	status := h.healthService.CheckHealth(r.Context())
 
-	status := http.StatusOK
-	if resp.Status != "healthy" {
-		status = http.StatusServiceUnavailable
+	httpStatus := http.StatusOK
+	if status.Status != "healthy" {
+		httpStatus = http.StatusServiceUnavailable
 	}
 
-	writeJSON(w, status, resp)
+	writeJSON(w, httpStatus, toHealthResponse(status))
 }

@@ -10,12 +10,17 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
+	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
+
+func ptrFloat64(v float64) *float64 { return &v }
 
 // --- Mock repositories ---
 
@@ -81,11 +86,17 @@ func (m *mockTenantRepo) Delete(_ context.Context, id string) error {
 type mockPolicyRepo struct {
 	mu       sync.RWMutex
 	policies map[string]*domain.Policy // key: tenantID:id
+	versions map[string][]domain.PolicyVersion
 	nextID   int
+	getErr   error
+	listErr  error
 }
 
 func newMockPolicyRepo() *mockPolicyRepo {
-	return &mockPolicyRepo{policies: make(map[string]*domain.Policy)}
+	return &mockPolicyRepo{
+		policies: make(map[string]*domain.Policy),
+		versions: make(map[string][]domain.PolicyVersion),
+	}
 }
 
 func (m *mockPolicyRepo) key(tenantID, id string) string {
@@ -95,17 +106,29 @@ func (m *mockPolicyRepo) key(tenantID, id string) string {
 func (m *mockPolicyRepo) Create(_ context.Context, p *domain.Policy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, existing := range m.policies {
+		if existing.TenantID == p.TenantID && existing.Name == p.Name {
+			return domain.ErrPolicyNameConflict
+		}
+	}
 	if p.ID == "" {
 		m.nextID++
 		p.ID = fmt.Sprintf("p-%d", m.nextID)
 	}
+	if p.Version == 0 {
+		p.Version = 1
+	}
 	m.policies[m.key(p.TenantID, p.ID)] = p
+	m.recordVersionLocked(p)
 	return nil
 }
 
 func (m *mockPolicyRepo) GetByID(_ context.Context, tenantID, id string) (*domain.Policy, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
 	p, ok := m.policies[m.key(tenantID, id)]
 	if !ok {
 		return nil, domain.ErrPolicyNotFound
@@ -116,6 +139,9 @@ func (m *mockPolicyRepo) GetByID(_ context.Context, tenantID, id string) (*domai
 func (m *mockPolicyRepo) ListByTenant(_ context.Context, tenantID string) ([]domain.Policy, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
 	var result []domain.Policy
 	for _, p := range m.policies {
 		if p.TenantID == tenantID {
@@ -125,15 +151,70 @@ func (m *mockPolicyRepo) ListByTenant(_ context.Context, tenantID string) ([]dom
 	return result, nil
 }
 
+func (m *mockPolicyRepo) ListVersions(_ context.Context, tenantID, policyID string, limit int) ([]domain.PolicyVersion, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if _, ok := m.policies[m.key(tenantID, policyID)]; !ok {
+		return nil, domain.ErrPolicyNotFound
+	}
+	versions := append([]domain.PolicyVersion(nil), m.versions[policyID]...)
+	if limit > 0 && len(versions) > limit {
+		versions = versions[:limit]
+	}
+	return versions, nil
+}
+
 func (m *mockPolicyRepo) Update(_ context.Context, p *domain.Policy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, existing := range m.policies {
+		if existing.TenantID == p.TenantID && existing.Name == p.Name && existing.ID != p.ID {
+			return domain.ErrPolicyNameConflict
+		}
+	}
 	k := m.key(p.TenantID, p.ID)
-	if _, ok := m.policies[k]; !ok {
+	existing, ok := m.policies[k]
+	if !ok {
 		return domain.ErrPolicyNotFound
 	}
+	p.Version = existing.Version + 1
 	m.policies[k] = p
+	m.recordVersionLocked(p)
 	return nil
+}
+
+func (m *mockPolicyRepo) RollbackToVersion(_ context.Context, tenantID, policyID string, version int) (*domain.Policy, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current, ok := m.policies[m.key(tenantID, policyID)]
+	if !ok {
+		return nil, domain.ErrPolicyNotFound
+	}
+	var snapshot *domain.PolicyVersion
+	for i := range m.versions[policyID] {
+		if m.versions[policyID][i].Version == version {
+			snapshot = &m.versions[policyID][i]
+			break
+		}
+	}
+	if snapshot == nil {
+		return nil, domain.ErrPolicyVersionNotFound
+	}
+
+	updated := *current
+	updated.Name = snapshot.Name
+	updated.Type = snapshot.Type
+	updated.Action = snapshot.Action
+	updated.SchemaVersion = snapshot.SchemaVersion
+	updated.Config = snapshot.Config
+	updated.Priority = snapshot.Priority
+	updated.Enabled = snapshot.Enabled
+	updated.Version++
+	m.policies[m.key(tenantID, policyID)] = &updated
+	m.recordVersionLocked(&updated)
+
+	copyPolicy := updated
+	return &copyPolicy, nil
 }
 
 func (m *mockPolicyRepo) Delete(_ context.Context, tenantID, id string) error {
@@ -144,13 +225,68 @@ func (m *mockPolicyRepo) Delete(_ context.Context, tenantID, id string) error {
 		return domain.ErrPolicyNotFound
 	}
 	delete(m.policies, k)
+	delete(m.versions, id)
 	return nil
+}
+
+func (m *mockPolicyRepo) recordVersionLocked(policy *domain.Policy) {
+	version := domain.PolicyVersion{
+		PolicyID:      policy.ID,
+		Version:       policy.Version,
+		Name:          policy.Name,
+		Type:          policy.Type,
+		Action:        policy.Action,
+		SchemaVersion: policy.SchemaVersion,
+		Config:        policy.Config,
+		Priority:      policy.Priority,
+		Enabled:       policy.Enabled,
+		CreatedAt:     time.Now(),
+	}
+	history := append([]domain.PolicyVersion{version}, m.versions[policy.ID]...)
+	if len(history) > domain.MaxRetainedPolicyVersions {
+		history = history[:domain.MaxRetainedPolicyVersions]
+	}
+	m.versions[policy.ID] = history
 }
 
 type mockUpstreamRepo struct {
 	mu        sync.RWMutex
 	upstreams map[string]*domain.Upstream // key: tenantID:id
 	nextID    int
+}
+
+type mockDecisionCache struct {
+	mu                  sync.Mutex
+	invalidatedTenants  []string
+	invalidateTenantErr error
+}
+
+func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.Decision, error) {
+	return nil, domain.ErrCacheMiss
+}
+
+func (m *mockDecisionCache) Set(_ context.Context, _ *domain.Decision, _ time.Duration) error {
+	return nil
+}
+
+func (m *mockDecisionCache) Invalidate(_ context.Context, _ string, _ domain.ArtifactIdentity) error {
+	return nil
+}
+
+func (m *mockDecisionCache) InvalidateTenant(_ context.Context, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.invalidateTenantErr != nil {
+		return m.invalidateTenantErr
+	}
+	m.invalidatedTenants = append(m.invalidatedTenants, tenantID)
+	return nil
+}
+
+type mockPolicyRevisionRepo struct{}
+
+func (m *mockPolicyRevisionRepo) Create(_ context.Context, _ *domain.PolicySetRevision) error {
+	return nil
 }
 
 func newMockUpstreamRepo() *mockUpstreamRepo {
@@ -275,23 +411,25 @@ func (m *mockDecisionRepo) HasRecentAllow(_ context.Context, _ string, _ domain.
 
 // --- Test helpers ---
 
-func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo) {
+func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache) {
 	t.Helper()
 	logger := slog.Default()
 	tenantRepo := newMockTenantRepo()
 	policyRepo := newMockPolicyRepo()
 	upstreamRepo := newMockUpstreamRepo()
 	decisionRepo := newMockDecisionRepo()
+	decisionCache := &mockDecisionCache{}
 
 	mux := http.NewServeMux()
-	NewTenantHandler(tenantRepo, logger).RegisterRoutes(mux)
-	NewPolicyHandler(policyRepo, logger).RegisterRoutes(mux)
-	NewUpstreamHandler(upstreamRepo, logger).RegisterRoutes(mux)
-	NewEvaluationHandler(decisionRepo, logger).RegisterRoutes(mux)
+	NewTenantHandler(service.NewTenantService(tenantRepo), logger).RegisterRoutes(mux)
+	NewPolicyHandler(service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache), logger).RegisterRoutes(mux)
+	NewCacheHandler(service.NewCacheService(decisionCache), logger).RegisterRoutes(mux)
+	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo), logger).RegisterRoutes(mux)
+	NewEvaluationHandler(service.NewEvaluationService(decisionRepo), logger).RegisterRoutes(mux)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo
+	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache
 }
 
 func doJSON(t *testing.T, method, url string, body any, headers map[string]string) *http.Response {
@@ -335,7 +473,7 @@ func decodeJSON[T any](t *testing.T, resp *http.Response) T {
 // --- Tests ---
 
 func Test_TenantCRUD(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 
 	// Create
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/tenants", map[string]string{"name": "acme"}, nil)
@@ -375,30 +513,45 @@ func Test_TenantCRUD(t *testing.T) {
 }
 
 func Test_TenantNotFound(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 
 	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/tenants/nonexistent", nil, nil)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
 }
 
+func Test_TenantValidation(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/tenants", map[string]string{"name": "   "}, nil)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `field "name" is required`)
+
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/tenants", []byte(`{"name":"acme","slug":"acme"}`), "application/json", nil)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `unknown field "slug"`)
+}
+
 func Test_PolicyCRUD(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Create
 	body := map[string]any{
-		"name":   "block-critical",
-		"type":   "cvss_threshold",
-		"action": "deny",
-		"config": map[string]any{"threshold": 9.0},
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 9.0},
 	}
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	created := decodeJSON[PolicyResponse](t, resp)
 	assert.Equal(t, "block-critical", created.Name)
-	assert.Equal(t, "tenant-1", created.TenantID)
 	assert.NotEmpty(t, created.ID)
+	assert.Equal(t, 1, created.SchemaVersion)
 
 	// Get
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies/"+created.ID, nil, headers)
@@ -430,8 +583,194 @@ func Test_PolicyCRUD(t *testing.T) {
 	resp.Body.Close()
 }
 
-func Test_PolicyImportYAML(t *testing.T) {
-	srv, _, policyRepo, _, _ := setupTestServer(t)
+func Test_PolicyListReturnsUpgradeErrorForDeprecatedStoredConfig(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	policyRepo.listErr = domain.ErrDeprecatedPolicyConfig
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies", nil, headers)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "tenant contains deprecated stored policies; run the policy data migration", body["error"])
+}
+
+func Test_PolicyGetReturnsUpgradeErrorForDeprecatedStoredConfig(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	policyRepo.getErr = domain.ErrDeprecatedPolicyConfig
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies/p-1", nil, headers)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "tenant contains deprecated stored policies; run the policy data migration", body["error"])
+}
+
+func Test_PolicyVersionHistoryAndRollback(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	body := map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"priority":       1,
+		"enabled":        true,
+		"config":         map[string]any{"max_cvss": 7.0},
+	}
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeJSON[PolicyResponse](t, resp)
+
+	body["name"] = "block-critical-stricter"
+	body["priority"] = 5
+	body["config"] = map[string]any{"max_cvss": 9.0}
+	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/policies/"+created.ID, body, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies/"+created.ID+"/versions", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	versions := decodeJSON[[]PolicyVersionResponse](t, resp)
+	require.Len(t, versions, 2)
+	assert.Equal(t, 2, versions[0].Version)
+	assert.Equal(t, 1, versions[1].Version)
+	assert.Equal(t, "block-critical-stricter", versions[0].Name)
+	assert.Equal(t, "block-critical", versions[1].Name)
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies/"+created.ID+"/rollback", map[string]any{"version": 1}, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	rolledBack := decodeJSON[PolicyResponse](t, resp)
+	assert.Equal(t, 3, rolledBack.Version)
+	assert.Equal(t, "block-critical", rolledBack.Name)
+	assert.Equal(t, 1, rolledBack.Priority)
+}
+
+func Test_PolicyCreateRejectsUnsupportedSchemaVersion(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"action":         "deny",
+		"schema_version": 2,
+		"config":         map[string]any{"max_cvss": 9.0},
+	}, headers)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], "schema_version")
+}
+
+func Test_PolicyImportRequiresItemSchemaVersion(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-import"}
+
+	body := []byte(`
+policies:
+  - name: block-high-cvss
+    type: cvss_threshold
+    action: deny
+    config:
+      max_cvss: 7.5
+`)
+	resp := doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", body, "application/x-yaml", headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	errBody := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, errBody["error"], "schema_version is required")
+}
+
+func Test_PolicyTypesEndpoint(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/policy-types", nil, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	types := decodeJSON[[]PolicyTypeResponse](t, resp)
+	require.NotEmpty(t, types)
+
+	var found bool
+	for _, descriptor := range types {
+		if descriptor.Type == "license_allowlist" {
+			found = true
+			assert.NotEmpty(t, descriptor.Summary)
+			assert.NotEmpty(t, descriptor.Description)
+			assert.NotEmpty(t, descriptor.Help)
+			assert.Contains(t, descriptor.Example, "license_allowlist")
+			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
+			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
+			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
+		}
+	}
+	assert.True(t, found)
+}
+
+func Test_PolicyRequestValidationAcceptsAllCatalogedTypes(t *testing.T) {
+	for _, descriptor := range corepolicy.TypeCatalog() {
+		req := policyRequest{
+			Name:          "example",
+			Type:          descriptor.Type,
+			SchemaVersion: descriptor.CurrentSchemaVersion,
+			Action:        descriptor.SupportedActions[0],
+			Config:        json.RawMessage(`{}`),
+		}
+
+		err := validateRequest(req)
+		require.NoError(t, err, "cataloged type %q should be accepted by API validation", descriptor.Type)
+	}
+}
+
+func Test_PolicyValidation(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "policy-without-config",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `field "config" is required`)
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "bad-type",
+		"type":           "something_else",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 7.0},
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `field "type" must be one of`)
+
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies", []byte(`{
+		"name":"block-critical",
+		"type":"cvss_threshold",
+		"schema_version":1,
+		"action":"deny",
+		"config":{"max_cvss":7.0},
+		"extra":"nope"
+	}`), "application/json", headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `unknown field "extra"`)
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":   "missing-version",
+		"type":   "cvss_threshold",
+		"action": "deny",
+		"config": map[string]any{"max_cvss": 7.0},
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `field "schema_version" is required`)
+}
+
+func Test_PolicyImportDocument(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-import"}
 
 	yamlBody := []byte(`
@@ -439,14 +778,16 @@ tenant_id: "ignored-id"
 policies:
   - name: block-high-cvss
     type: cvss_threshold
+    schema_version: 1
     action: deny
     config:
-      threshold: 7.5
+      max_cvss: 7.5
   - name: require-age
     type: minimum_age
+    schema_version: 1
     action: deny
     config:
-      days: 30
+      min_age_days: 30
 `)
 	resp := doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", yamlBody, "application/x-yaml", headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -460,10 +801,189 @@ policies:
 	for _, p := range policies {
 		assert.Equal(t, "tenant-import", p.TenantID)
 	}
+
+	jsonBody := []byte(`{
+  "tenant_id": "ignored-id",
+  "policies": [
+    {
+      "name": "block-json",
+      "type": "cvss_threshold",
+      "schema_version": 1,
+      "action": "deny",
+      "config": {
+        "max_cvss": 8.0
+      }
+    }
+  ]
+}`)
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", jsonBody, "application/json", headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	result = decodeJSON[map[string]int](t, resp)
+	assert.Equal(t, 1, result["imported"])
+}
+
+func Test_PolicyImportUpsertsByName(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-import"}
+
+	initial := []byte(`
+policies:
+  - name: block-critical-vulnerabilities
+    type: cvss_threshold
+    schema_version: 1
+    action: deny
+    priority: 5
+    config:
+      max_cvss: 7.0
+`)
+	resp := doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", initial, "application/x-yaml", headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	updated := []byte(`
+policies:
+  - name: block-critical-vulnerabilities
+    type: cvss_threshold
+    schema_version: 1
+    action: deny
+    priority: 10
+    config:
+      max_cvss: 9.0
+`)
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", updated, "application/x-yaml", headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	result := decodeJSON[map[string]int](t, resp)
+	assert.Equal(t, 1, result["imported"])
+
+	policies, err := policyRepo.ListByTenant(context.Background(), "tenant-import")
+	require.NoError(t, err)
+	require.Len(t, policies, 1)
+	assert.Equal(t, 10, policies[0].Priority)
+	cfg, ok := policies[0].Config.(*domain.CVSSThresholdPolicyConfig)
+	require.True(t, ok)
+	require.NotNil(t, cfg.MaxCVSS)
+	assert.Equal(t, 9.0, *cfg.MaxCVSS)
+}
+
+func Test_PolicyImportRejectsDuplicateNamesInDocument(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-import"}
+
+	body := []byte(`
+policies:
+  - name: block-critical-vulnerabilities
+    type: cvss_threshold
+    schema_version: 1
+    action: deny
+    config:
+      max_cvss: 7.0
+  - name: block-critical-vulnerabilities
+    type: minimum_age
+    schema_version: 1
+    action: deny
+    config:
+      min_age_days: 30
+`)
+	resp := doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", body, "application/x-yaml", headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	errBody := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, errBody["error"], "duplicate policy name")
+	assert.NotContains(t, errBody["error"], "SQLSTATE")
+}
+
+func Test_PolicyCreateConflictIsSanitized(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	body := map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 9.0},
+	}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	errBody := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "policy name already exists", errBody["error"])
+}
+
+func Test_PolicyRejectsDeprecatedEnforceConfig(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	createBody := map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 7.0, "enforce": "warn"},
+		"enabled":        true,
+		"priority":       10,
+	}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", createBody, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	createErr := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, createErr["error"], `config key "enforce" is not supported`)
+
+	policy := &domain.Policy{
+		TenantID:      "tenant-1",
+		Name:          "existing",
+		Type:          domain.PolicyTypeCVSSThreshold,
+		Action:        domain.PolicyActionDeny,
+		SchemaVersion: 1,
+		Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
+		Enabled:       true,
+	}
+	require.NoError(t, policyRepo.Create(context.Background(), policy))
+
+	updateBody := map[string]any{
+		"name":           "existing",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 7.0, "enforce": "warn"},
+		"enabled":        true,
+		"priority":       10,
+	}
+	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/policies/"+policy.ID, updateBody, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	updateErr := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, updateErr["error"], `config key "enforce" is not supported`)
+
+	yamlBody := []byte(`
+policies:
+  - name: block-high-cvss
+    type: cvss_threshold
+    schema_version: 1
+    action: deny
+    config:
+      max_cvss: 7.5
+      enforce: warn
+`)
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", yamlBody, "application/x-yaml", headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	importErr := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, importErr["error"], `config key "enforce" is not supported`)
+}
+
+func Test_PolicyImportRejectsUnsupportedContentType(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doRaw(t, http.MethodPost, srv.URL+"/api/v1/policies/import", []byte("policies: []"), "text/plain", headers)
+	assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], "unsupported Content-Type")
 }
 
 func Test_UpstreamCRUD(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Create
@@ -476,7 +996,6 @@ func Test_UpstreamCRUD(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	created := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, "docker-hub", created.Name)
-	assert.Equal(t, "tenant-1", created.TenantID)
 	assert.NotEmpty(t, created.ID)
 
 	// Get
@@ -509,16 +1028,50 @@ func Test_UpstreamCRUD(t *testing.T) {
 	resp.Body.Close()
 }
 
+func Test_UpstreamValidation(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]string{
+		"name":      "npmjs",
+		"ecosystem": "maven",
+		"base_url":  "https://registry.npmjs.org",
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `field "ecosystem" must be one of`)
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]string{
+		"name":      "npmjs",
+		"ecosystem": "npm",
+		"base_url":  "not-a-url",
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `field "base_url" must be a valid URL`)
+
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/upstreams", []byte(`{
+		"name":"npmjs",
+		"ecosystem":"npm",
+		"base_url":"https://registry.npmjs.org",
+		"url":"https://registry.npmjs.org"
+	}`), "application/json", headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `unknown field "url"`)
+}
+
 func Test_EvaluationList(t *testing.T) {
-	srv, _, _, _, decisionRepo := setupTestServer(t)
+	srv, _, _, _, decisionRepo, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Seed some decisions.
 	for i := range 3 {
 		_ = decisionRepo.Record(context.Background(), &domain.Decision{
-			ID:       fmt.Sprintf("d-%d", i),
-			TenantID: "tenant-1",
-			Outcome:  domain.DecisionAllow,
+			ID:         fmt.Sprintf("d-%d", i),
+			TenantID:   "tenant-1",
+			Outcome:    domain.DecisionAllow,
+			PolicyHash: fmt.Sprintf("policy-hash-%d", i),
 		})
 	}
 	// Add a decision for a different tenant.
@@ -532,6 +1085,7 @@ func Test_EvaluationList(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	list := decodeJSON[[]DecisionResponse](t, resp)
 	assert.Len(t, list, 3)
+	assert.NotEmpty(t, list[0].PolicyHash)
 
 	// With limit and offset.
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/evaluations?limit=2&offset=1", nil, headers)
@@ -540,8 +1094,33 @@ func Test_EvaluationList(t *testing.T) {
 	assert.Len(t, list, 2)
 }
 
+func Test_ClearDecisionCache(t *testing.T) {
+	srv, _, _, _, _, decisionCache := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodDelete, srv.URL+"/api/v1/cache/decisions", nil, headers)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeJSON[cacheClearResponse](t, resp)
+	assert.Equal(t, "cleared", body.Status)
+	assert.Equal(t, "decisions", body.Cache)
+	assert.Equal(t, []string{"tenant-1"}, decisionCache.invalidatedTenants)
+}
+
+func Test_ClearDecisionCache_InternalError(t *testing.T) {
+	srv, _, _, _, _, decisionCache := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	decisionCache.invalidateTenantErr = fmt.Errorf("cache down")
+
+	resp := doJSON(t, http.MethodDelete, srv.URL+"/api/v1/cache/decisions", nil, headers)
+
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "failed to clear decision cache", body["error"])
+}
+
 func Test_MissingTenantIDHeader(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 
 	tests := []struct {
 		name   string
@@ -553,6 +1132,7 @@ func Test_MissingTenantIDHeader(t *testing.T) {
 		{"list upstreams", http.MethodGet, "/api/v1/upstreams"},
 		{"create upstream", http.MethodPost, "/api/v1/upstreams"},
 		{"list evaluations", http.MethodGet, "/api/v1/evaluations"},
+		{"clear decision cache", http.MethodDelete, "/api/v1/cache/decisions"},
 	}
 
 	for _, tc := range tests {
@@ -568,7 +1148,7 @@ func Test_MissingTenantIDHeader(t *testing.T) {
 // --- Response DTO Tests ---
 
 func Test_TenantResponseDTO_HasLowercaseJSONTags(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 
 	// Create a tenant and verify the response uses lowercase snake_case fields
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/tenants", map[string]string{"name": "test-tenant"}, nil)
@@ -592,7 +1172,7 @@ func Test_TenantResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 }
 
 func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Create an upstream and verify the response uses lowercase snake_case fields
@@ -611,7 +1191,6 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 
 	// Verify lowercase snake_case keys exist
 	assert.Contains(t, data, "id", "response should have 'id' field (lowercase)")
-	assert.Contains(t, data, "tenant_id", "response should have 'tenant_id' field (lowercase snake_case)")
 	assert.Contains(t, data, "name", "response should have 'name' field (lowercase)")
 	assert.Contains(t, data, "ecosystem", "response should have 'ecosystem' field (lowercase)")
 	assert.Contains(t, data, "base_url", "response should have 'base_url' field (lowercase snake_case)")
@@ -620,7 +1199,6 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 
 	// Verify uppercase keys do NOT exist
 	assert.NotContains(t, data, "ID", "response should not have 'ID' field (capital)")
-	assert.NotContains(t, data, "TenantID", "response should not have 'TenantID' field (capital)")
 	assert.NotContains(t, data, "BaseURL", "response should not have 'BaseURL' field (capital)")
 	assert.NotContains(t, data, "Ecosystem", "response should not have 'Ecosystem' field (capital)")
 	assert.NotContains(t, data, "CreatedAt", "response should not have 'CreatedAt' field (capital)")
@@ -628,17 +1206,18 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 }
 
 func Test_PolicyResponseDTO_HasLowercaseJSONTags(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Create a policy and verify the response uses lowercase snake_case fields
 	body := map[string]any{
-		"name":     "block-critical",
-		"type":     "cvss_threshold",
-		"action":   "deny",
-		"priority": 1,
-		"enabled":  true,
-		"config":   map[string]any{"threshold": 9.0},
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"priority":       1,
+		"enabled":        true,
+		"config":         map[string]any{"max_cvss": 9.0},
 	}
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", body, headers)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -650,10 +1229,10 @@ func Test_PolicyResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 
 	// Verify lowercase snake_case keys exist
 	assert.Contains(t, data, "id", "response should have 'id' field (lowercase)")
-	assert.Contains(t, data, "tenant_id", "response should have 'tenant_id' field (lowercase snake_case)")
 	assert.Contains(t, data, "name", "response should have 'name' field (lowercase)")
 	assert.Contains(t, data, "type", "response should have 'type' field (lowercase)")
 	assert.Contains(t, data, "action", "response should have 'action' field (lowercase)")
+	assert.Contains(t, data, "schema_version", "response should have 'schema_version' field (lowercase snake_case)")
 	assert.Contains(t, data, "config", "response should have 'config' field (lowercase)")
 	assert.Contains(t, data, "priority", "response should have 'priority' field (lowercase)")
 	assert.Contains(t, data, "enabled", "response should have 'enabled' field (lowercase)")
@@ -662,7 +1241,6 @@ func Test_PolicyResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 
 	// Verify uppercase keys do NOT exist
 	assert.NotContains(t, data, "ID", "response should not have 'ID' field (capital)")
-	assert.NotContains(t, data, "TenantID", "response should not have 'TenantID' field (capital)")
 	assert.NotContains(t, data, "Type", "response should not have 'Type' field (capital)")
 	assert.NotContains(t, data, "Action", "response should not have 'Action' field (capital)")
 	assert.NotContains(t, data, "Config", "response should not have 'Config' field (capital)")
@@ -673,7 +1251,7 @@ func Test_PolicyResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 }
 
 func Test_ListResponsesUseLowercaseJSONTags(t *testing.T) {
-	srv, _, policyRepo, upstreamRepo, decisionRepo := setupTestServer(t)
+	srv, _, policyRepo, upstreamRepo, decisionRepo, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Create some test data
@@ -682,6 +1260,7 @@ func Test_ListResponsesUseLowercaseJSONTags(t *testing.T) {
 		Name:     "test-policy",
 		Type:     domain.PolicyTypeCVSSThreshold,
 		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 	})
 	_ = upstreamRepo.Create(context.Background(), &domain.Upstream{
 		TenantID:  "tenant-1",
@@ -712,7 +1291,7 @@ func Test_ListResponsesUseLowercaseJSONTags(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&upstreamList))
 	resp.Body.Close()
 	assert.NotEmpty(t, upstreamList)
-	assert.Contains(t, upstreamList[0], "tenant_id")
+	assert.Contains(t, upstreamList[0], "base_url")
 	assert.NotContains(t, upstreamList[0], "TenantID")
 
 	// Test evaluations list response

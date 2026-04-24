@@ -14,42 +14,38 @@ import (
 )
 
 const (
-	mutableDecisionTTL       = 5 * time.Minute
-	immutableDecisionTTL     = 1 * time.Hour
-	enrichmentMetadataTTL    = 30 * time.Minute
+	mutableDecisionTTL   = 5 * time.Minute
+	immutableDecisionTTL = 1 * time.Hour
 )
 
-// ProxyService orchestrates the full access-request evaluation pipeline.
-type ProxyService struct {
+// AccessService orchestrates the shared access-evaluation pipeline.
+type AccessService struct {
 	policies       port.PolicyRepository
 	decisions      port.DecisionRepository
 	decisionCache  port.DecisionCache
-	metadataCache  port.MetadataCache
-	enricher       port.Enricher
+	enrichment     *EnrichmentService
 	evaluator      *policy.Evaluator
 	upstreamClient port.UpstreamClient
 	upstreamRepo   port.UpstreamRepository
 	logger         *slog.Logger
 }
 
-// NewProxyService creates a new ProxyService.
-func NewProxyService(
+// NewAccessService creates a new AccessService.
+func NewAccessService(
 	policies port.PolicyRepository,
 	decisions port.DecisionRepository,
 	decisionCache port.DecisionCache,
-	metadataCache port.MetadataCache,
-	enricher port.Enricher,
+	enrichment *EnrichmentService,
 	evaluator *policy.Evaluator,
 	upstreamClient port.UpstreamClient,
 	upstreamRepo port.UpstreamRepository,
 	logger *slog.Logger,
-) *ProxyService {
-	return &ProxyService{
+) *AccessService {
+	return &AccessService{
 		policies:       policies,
 		decisions:      decisions,
 		decisionCache:  decisionCache,
-		metadataCache:  metadataCache,
-		enricher:       enricher,
+		enrichment:     enrichment,
 		evaluator:      evaluator,
 		upstreamClient: upstreamClient,
 		upstreamRepo:   upstreamRepo,
@@ -59,7 +55,7 @@ func NewProxyService(
 
 // Evaluate processes an access request through the full pipeline:
 // normalize -> check decision cache -> enrich (with metadata cache) -> evaluate policies -> cache decision -> record decision.
-func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (*domain.Decision, error) {
+func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) (*domain.Decision, error) {
 	// 1. Normalize the artifact identity.
 	normalized, err := domain.NormalizeArtifactIdentity(req.Artifact)
 	if err != nil {
@@ -78,7 +74,7 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 				"tenant_id", req.TenantID,
 			)
 		} else {
-			digest, resolveErr := s.upstreamClient.ResolveTag(ctx, *up, req.Artifact)
+			digest, resolveErr := s.upstreamClient.ResolveReference(ctx, *up, req.Artifact)
 			if resolveErr != nil {
 				s.logger.Warn("tag resolution failed, continuing with tag",
 					"error", resolveErr,
@@ -109,51 +105,16 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 		)
 	}
 
-	// 3. Try metadata cache.
-	metadata, err := s.metadataCache.Get(ctx, req.TenantID, req.Artifact)
-	s.logger.Info("metadata cache check",
-		"tenant_id", req.TenantID,
-		"artifact", req.Artifact.CacheKey(),
-		"cache_hit", metadata != nil,
-		"cache_error", err,
-	)
-	if err != nil && !errors.Is(err, domain.ErrCacheMiss) {
-		s.logger.Warn("metadata cache error",
-			"error", err,
-			"tenant_id", req.TenantID,
-		)
+	// 3. Load enrichment metadata through the dedicated enrichment workflow.
+	metadata, err := s.enrichment.Enrich(ctx, req.TenantID, req.Artifact)
+	if err != nil {
+		return nil, fmt.Errorf("enriching artifact: %w", err)
 	}
 
-	// 4. If metadata cache miss, call enricher and cache the result.
-	if metadata == nil {
-		s.logger.Info("calling enricher",
-			"tenant_id", req.TenantID,
-			"artifact", req.Artifact.CacheKey(),
-		)
-		metadata, err = s.enricher.Enrich(ctx, req.Artifact)
-		if err != nil {
-			// Fail-open: log the error and continue with nil metadata.
-			s.logger.Warn("enrichment failed, continuing with nil metadata",
-				"error", err,
-				"tenant_id", req.TenantID,
-				"artifact", req.Artifact.CacheKey(),
-			)
-			metadata = nil
-		}
-		if metadata != nil {
-			if cacheErr := s.metadataCache.Set(ctx, req.TenantID, req.Artifact, metadata, enrichmentMetadataTTL); cacheErr != nil {
-				s.logger.Warn("failed to cache metadata",
-					"error", cacheErr,
-					"tenant_id", req.TenantID,
-				)
-			}
-		}
-	}
-
-	// 5. Set the metadata on the access request.
+	// 4. Set the metadata on the access request.
 	req.Metadata = metadata
 
-	// 5b. Propagate mutable-tag flag so the block_mutable_tag condition can detect it.
+	// 4b. Propagate mutable-tag flag so the block_mutable_tag condition can detect it.
 	if wasMutableTag {
 		if req.Metadata == nil {
 			req.Metadata = &domain.ArtifactMetadata{}
@@ -161,16 +122,27 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 		req.Metadata.IsMutableTag = true
 	}
 
-	// 6. Load tenant's policies.
+	// 5. Load tenant's policies.
 	policies, err := s.policies.ListByTenant(ctx, req.TenantID)
 	if err != nil {
+		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
+			return s.denyForInvalidPolicySet(ctx, req, err), nil
+		}
 		return nil, fmt.Errorf("loading policies: %w", err)
 	}
+	if err := policy.ValidatePolicies(policies); err != nil {
+		return s.denyForInvalidPolicySet(ctx, req, err), nil
+	}
+	policyHash, err := policy.HashPolicies(policies)
+	if err != nil {
+		return s.denyForInvalidPolicySet(ctx, req, err), nil
+	}
 
-	// 7. Run policy evaluator.
+	// 6. Run policy evaluator.
 	decision := s.evaluator.Evaluate(req, policies)
+	decision.PolicyHash = policyHash
 
-	// 8. Cache the decision (shorter TTL for mutable references).
+	// 7. Cache the decision (shorter TTL for mutable references).
 	ttl := immutableDecisionTTL
 	if req.Artifact.IsMutableReference() {
 		ttl = mutableDecisionTTL
@@ -182,7 +154,7 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 		)
 	}
 
-	// 9. Record the decision in the repository.
+	// 8. Record the decision in the repository.
 	if recordErr := s.decisions.Record(ctx, &decision); recordErr != nil {
 		s.logger.Error("failed to record decision",
 			"error", recordErr,
@@ -194,8 +166,51 @@ func (s *ProxyService) Evaluate(ctx context.Context, req domain.AccessRequest) (
 	return &decision, nil
 }
 
-// HasAllowedManifest checks if there's a recent allow decision for any manifest
-// in the given repository (tenant + ecosystem + namespace + name).
-func (s *ProxyService) HasAllowedManifest(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (bool, error) {
+// HasRecentAllow checks if there's a recent allow decision for the given
+// repository identity (tenant + ecosystem + namespace + name).
+func (s *AccessService) HasRecentAllow(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (bool, error) {
 	return s.decisions.HasRecentAllow(ctx, tenantID, artifact.Ecosystem, artifact.Namespace, artifact.Name)
+}
+
+func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.AccessRequest, validationErr error) *domain.Decision {
+	s.logger.Error("invalid policy set, denying request",
+		"error", validationErr,
+		"tenant_id", req.TenantID,
+		"artifact", req.Artifact.CacheKey(),
+	)
+
+	decision := domain.Decision{
+		TenantID: req.TenantID,
+		Artifact: req.Artifact,
+		Outcome:  domain.DecisionDeny,
+		Reason:   "invalid policy configuration",
+		Reasons: []domain.EvaluationReason{
+			{
+				Category: domain.ReasonCategoryEvaluationError,
+				Action:   domain.PolicyActionDeny,
+				Message:  validationErr.Error(),
+			},
+		},
+		EvaluatedAt: time.Now(),
+	}
+
+	ttl := immutableDecisionTTL
+	if req.Artifact.IsMutableReference() {
+		ttl = mutableDecisionTTL
+	}
+	if cacheErr := s.decisionCache.Set(ctx, &decision, ttl); cacheErr != nil {
+		s.logger.Warn("failed to cache invalid-policy decision",
+			"error", cacheErr,
+			"tenant_id", req.TenantID,
+		)
+	}
+	if recordErr := s.decisions.Record(ctx, &decision); recordErr != nil {
+		s.logger.Error("failed to record invalid-policy decision",
+			"error", recordErr,
+			"tenant_id", req.TenantID,
+			"artifact", req.Artifact.CacheKey(),
+		)
+	}
+
+	return &decision
 }

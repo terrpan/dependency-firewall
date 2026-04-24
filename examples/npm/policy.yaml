@@ -9,6 +9,7 @@ policies:
   # Requires OSV enrichment to be effective.
   - name: block-critical-vulnerabilities
     type: cvss_threshold
+    schema_version: 1
     action: deny
     priority: 10
     config:
@@ -20,26 +21,38 @@ policies:
   # before the community has had time to audit them.
   - name: block-brand-new-packages
     type: minimum_age
+    schema_version: 1
     action: deny
     priority: 20
     config:
       min_age_days: 7
     enabled: true
 
-  # Deny package versions published more than 10 years ago.
-  # Prevents use of extremely outdated or abandoned dependencies.
-  # Tune this value to your organisation's risk tolerance.
+  # Deny package versions published more than 2 years ago.
+  # Prevents use of outdated dependencies while allowing stable transitive
+  # packages that are "done" and unlikely to receive new releases.
+  #
+  # Set dry_run to true to see which packages would be blocked without
+  # actually blocking them. Switch dry_run back to false (the default) once you have
+  # reviewed the warnings and added exclusions for known-stable packages.
   - name: block-outdated-packages
     type: maximum_age
+    schema_version: 1
     action: deny
     priority: 25
     config:
-      max_age_days: 3650
-    enabled: true
+      max_age_days: 730
+      dry_run: false
+      exclude_packages:
+        - unpipe
+        - ee-first
+        - merge-descriptors
+    enabled: false
 
   # Explicitly block known malicious or abandoned scopes.
   - name: block-untrusted-scopes
     type: blocklist
+    schema_version: 1
     action: deny
     priority: 30
     config:
@@ -48,10 +61,27 @@ policies:
         - "abandoned-org"
     enabled: true
 
+  # Allow only packages whose declared licenses are on your approved list.
+  # This policy fails closed: if license metadata is missing, the package is denied.
+  # Use SPDX identifiers from https://spdx.org/licenses/
+  - name: allow-approved-licenses
+    type: license_allowlist
+    schema_version: 1
+    action: deny
+    priority: 30
+    config:
+      licenses:
+        - "MIT"
+        - "Apache-2.0"
+        - "BSD-3-Clause"
+        - "BSD"
+    enabled: true
+
   # Allow packages from your own private registry namespace without restriction.
   # This must run BEFORE generic deny rules that might match internal packages.
   - name: allow-internal-packages
     type: allowlist
+    schema_version: 1
     action: allow
     priority: 5
     config:

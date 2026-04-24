@@ -43,6 +43,12 @@ status: ## Show service status
 test: ## Run tests
 	go test ./...
 
+test-integration: ## Run tests including integration-tagged tests
+	go test ./... -tags integration
+
+test-all: ## Run all tests with race detector and integration tag
+	go test ./... -race -tags integration
+
 test-coverage: ## Run tests with coverage
 	go test ./... -cover
 
@@ -59,10 +65,3 @@ tidy: ## Tidy dependencies
 	go mod tidy
 
 all: clean build test ## Clean, build, and test
-
-
-
-
-
-
-

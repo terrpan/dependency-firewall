@@ -32,10 +32,10 @@ func npmPackagePath(artifact domain.ArtifactIdentity) string {
 	return artifact.Name
 }
 
-// GetManifest fetches package metadata from the npm registry.
-// If the artifact has a semver version, it fetches that specific version;
-// otherwise it fetches the full package document.
-func (c *NPMClient) GetManifest(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+// FetchMetadata fetches package metadata from the npm registry. If the artifact
+// has a semver version, it fetches that specific version; otherwise it fetches
+// the full package document.
+func (c *NPMClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
 	base := strings.TrimRight(upstream.BaseURL, "/")
 	pkgPath := npmPackagePath(artifact)
 
@@ -70,14 +70,14 @@ func (c *NPMClient) GetManifest(ctx context.Context, upstream domain.Upstream, a
 	}, nil
 }
 
-// GetBlob fetches a tarball from the npm registry.
+// FetchContent fetches a tarball from the npm registry.
 // The digest parameter is unused for npm; the URL is constructed from the upstream
 // base URL combined with the package name and version convention:
 // {baseURL}/{packagePath}/-/{name}-{version}.tgz
 //
 // For npm, the caller is expected to encode the tarball reference in the digest
 // string as "name/version" so the client can reconstruct the tarball URL.
-func (c *NPMClient) GetBlob(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
+func (c *NPMClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
 	reqURL := strings.TrimRight(upstream.BaseURL, "/") + "/" + digest
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -110,9 +110,9 @@ type npmDistTags struct {
 	DistTags map[string]string `json:"dist-tags"`
 }
 
-// ResolveTag resolves an npm dist-tag (e.g. "latest") to a semver version string
+// ResolveReference resolves an npm dist-tag (e.g. "latest") to a semver version string
 // by fetching the full package metadata and reading .dist-tags.{tag}.
-func (c *NPMClient) ResolveTag(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
+func (c *NPMClient) ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
 	base := strings.TrimRight(upstream.BaseURL, "/")
 	pkgPath := npmPackagePath(artifact)
 	reqURL := base + "/" + pkgPath

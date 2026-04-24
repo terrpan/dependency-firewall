@@ -21,9 +21,16 @@ type TenantRepository interface {
 type PolicyRepository interface {
 	GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error)
 	ListByTenant(ctx context.Context, tenantID string) ([]domain.Policy, error)
+	ListVersions(ctx context.Context, tenantID, policyID string, limit int) ([]domain.PolicyVersion, error)
+	RollbackToVersion(ctx context.Context, tenantID, policyID string, version int) (*domain.Policy, error)
 	Create(ctx context.Context, policy *domain.Policy) error
 	Update(ctx context.Context, policy *domain.Policy) error
 	Delete(ctx context.Context, tenantID, id string) error
+}
+
+// PolicyRevisionRepository records tenant policy-set revisions for audit.
+type PolicyRevisionRepository interface {
+	Create(ctx context.Context, revision *domain.PolicySetRevision) error
 }
 
 // DecisionRepository records evaluation decisions.

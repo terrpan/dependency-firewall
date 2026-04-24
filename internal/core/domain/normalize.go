@@ -58,6 +58,15 @@ func normalizeNPM(a ArtifactIdentity) (ArtifactIdentity, error) {
 	return a, nil
 }
 
+// FullName returns the canonical package name including namespace if present.
+// For npm: "@scope/name" or "name". For OCI: "namespace/name" or "name".
+func (a ArtifactIdentity) FullName() string {
+	if a.Namespace != "" {
+		return a.Namespace + "/" + a.Name
+	}
+	return a.Name
+}
+
 // CacheKey returns a stable string key for use in caching.
 func (a ArtifactIdentity) CacheKey() string {
 	var b strings.Builder

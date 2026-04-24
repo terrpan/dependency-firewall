@@ -40,26 +40,26 @@ func NewHealthService(
 	}
 }
 
-// HealthResponse is the structured JSON response for the health endpoint.
-type HealthResponse struct {
-	Status       string                     `json:"status"`
-	ServiceName  string                     `json:"service_name"`
-	Version      string                     `json:"version"`
-	Commit       string                     `json:"commit,omitempty"`
-	BuildTime    string                     `json:"build_time,omitempty"`
-	GoVersion    string                     `json:"go_version"`
-	OS           string                     `json:"os"`
-	Arch         string                     `json:"arch"`
-	Timestamp    time.Time                  `json:"timestamp"`
-	Dependencies map[string]DependencyCheck `json:"dependencies"`
+// HealthStatus reports the health of the service and its dependencies.
+type HealthStatus struct {
+	Status       string
+	ServiceName  string
+	Version      string
+	Commit       string
+	BuildTime    string
+	GoVersion    string
+	OS           string
+	Arch         string
+	Timestamp    time.Time
+	Dependencies map[string]DependencyStatus
 }
 
-// DependencyCheck holds the result of a single dependency health check.
-type DependencyCheck struct {
-	Status    string    `json:"status"`
-	Message   string    `json:"message,omitempty"`
-	Duration  int64     `json:"duration_ms"`
-	Timestamp time.Time `json:"timestamp"`
+// DependencyStatus holds the result of a single dependency health check.
+type DependencyStatus struct {
+	Status    string
+	Message   string
+	Duration  int64
+	Timestamp time.Time
 }
 
 const (
@@ -71,8 +71,8 @@ const (
 )
 
 // CheckHealth checks all dependencies and returns a structured health response.
-func (s *HealthService) CheckHealth(ctx context.Context) HealthResponse {
-	deps := make(map[string]DependencyCheck, 2)
+func (s *HealthService) CheckHealth(ctx context.Context) HealthStatus {
+	deps := make(map[string]DependencyStatus, 2)
 
 	deps["postgresql"] = s.checkDependency(ctx, "postgresql", s.dbChecker)
 	deps["valkey"] = s.checkDependency(ctx, "valkey", s.cacheChecker)
@@ -91,7 +91,7 @@ func (s *HealthService) CheckHealth(ctx context.Context) HealthResponse {
 		overall = statusError
 	}
 
-	return HealthResponse{
+	return HealthStatus{
 		Status:       overall,
 		ServiceName:  s.serviceName,
 		Version:      s.version,
@@ -105,7 +105,7 @@ func (s *HealthService) CheckHealth(ctx context.Context) HealthResponse {
 	}
 }
 
-func (s *HealthService) checkDependency(ctx context.Context, name string, checker HealthChecker) DependencyCheck {
+func (s *HealthService) checkDependency(ctx context.Context, name string, checker HealthChecker) DependencyStatus {
 	checkCtx, cancel := context.WithTimeout(ctx, dependencyCheckTimeout)
 	defer cancel()
 
@@ -113,7 +113,7 @@ func (s *HealthService) checkDependency(ctx context.Context, name string, checke
 	err := checker.Ping(checkCtx)
 	duration := time.Since(start)
 
-	check := DependencyCheck{
+	check := DependencyStatus{
 		Duration:  duration.Milliseconds(),
 		Timestamp: time.Now().UTC(),
 	}

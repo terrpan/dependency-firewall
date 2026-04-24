@@ -150,6 +150,7 @@ func run() error {
 	// Instantiate repositories.
 	tenantRepo := postgres.NewTenantRepository(pool)
 	policyRepo := postgres.NewPolicyRepository(pool)
+	policyRevisionRepo := postgres.NewPolicyRevisionRepository(pool)
 	decisionRepo := postgres.NewDecisionRepository(pool)
 	upstreamRepo := postgres.NewUpstreamRepository(pool)
 
@@ -161,18 +162,18 @@ func run() error {
 	osvEnricher := osv.NewClient(&http.Client{}, logger)
 	npmEnricher := npm.NewMetadataEnricher(&http.Client{}, logger)
 	enricher := enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
+	enrichmentService := service.NewEnrichmentService(enricher, metadataCache, logger)
 
 	// Create upstream client.
 	ociClient := upstream.NewOCIClient(&http.Client{Timeout: 30 * time.Second})
 
-	// Create policy evaluator and proxy service.
+	// Create policy evaluator and shared access service.
 	evaluator := policy.NewEvaluator()
-	proxyService := service.NewProxyService(
+	accessService := service.NewAccessService(
 		policyRepo,
 		decisionRepo,
 		decisionCache,
-		metadataCache,
-		enricher,
+		enrichmentService,
 		evaluator,
 		ociClient,
 		upstreamRepo,
@@ -180,11 +181,11 @@ func run() error {
 	)
 
 	// Create OCI handler.
-	ociHandler := ocidelivery.NewHandler(proxyService, ociClient, upstreamRepo, logger)
+	ociHandler := ocidelivery.NewRegistryHandler(accessService, ociClient, upstreamRepo, logger)
 
 	// Create npm handler.
 	npmClient := upstream.NewNPMClient(&http.Client{Timeout: 30 * time.Second})
-	npmHandler := npmdelivery.NewHandler(proxyService, npmClient, upstreamRepo, logger)
+	npmHandler := npmdelivery.NewRegistryHandler(accessService, npmClient, upstreamRepo, logger)
 
 	// Build middleware chain.
 	tenantResolver := middleware.NewTenantResolver(tenantRepo)
@@ -228,13 +229,21 @@ func run() error {
 	mux.Handle("/npm/", npmWrapped)
 
 	// Register control plane API routes (no tenant middleware wrapping).
-	tenantHandler := api.NewTenantHandler(tenantRepo, logger)
-	policyHandler := api.NewPolicyHandler(policyRepo, logger)
-	upstreamHandler := api.NewUpstreamHandler(upstreamRepo, logger)
-	evaluationHandler := api.NewEvaluationHandler(decisionRepo, logger)
+	tenantService := service.NewTenantService(tenantRepo)
+	policyService := service.NewPolicyService(policyRepo, policyRevisionRepo, decisionCache)
+	cacheService := service.NewCacheService(decisionCache)
+	upstreamService := service.NewUpstreamService(upstreamRepo)
+	evaluationService := service.NewEvaluationService(decisionRepo)
+
+	tenantHandler := api.NewTenantHandler(tenantService, logger)
+	policyHandler := api.NewPolicyHandler(policyService, logger)
+	cacheHandler := api.NewCacheHandler(cacheService, logger)
+	upstreamHandler := api.NewUpstreamHandler(upstreamService, logger)
+	evaluationHandler := api.NewEvaluationHandler(evaluationService, logger)
 
 	tenantHandler.RegisterRoutes(mux)
 	policyHandler.RegisterRoutes(mux)
+	cacheHandler.RegisterRoutes(mux)
 	upstreamHandler.RegisterRoutes(mux)
 	evaluationHandler.RegisterRoutes(mux)
 

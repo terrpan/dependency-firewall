@@ -10,6 +10,7 @@ import (
 )
 
 func ptrTime(t time.Time) *time.Time { return &t }
+func ptrInt(v int) *int              { return &v }
 
 func TestMinimumAge(t *testing.T) {
 	cond := MinimumAge{}
@@ -18,7 +19,7 @@ func TestMinimumAge(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       domain.AccessRequest
-		config    map[string]any
+		config    domain.PolicyConfig
 		wantMatch bool
 		wantErr   bool
 	}{
@@ -29,7 +30,7 @@ func TestMinimumAge(t *testing.T) {
 					PublishedAt: ptrTime(now.Add(-60 * 24 * time.Hour)),
 				},
 			},
-			config:    map[string]any{"min_age_days": 30.0},
+			config:    &domain.MinimumAgePolicyConfig{MinAgeDays: ptrInt(30)},
 			wantMatch: false,
 		},
 		{
@@ -39,7 +40,7 @@ func TestMinimumAge(t *testing.T) {
 					PublishedAt: ptrTime(now.Add(-2 * 24 * time.Hour)),
 				},
 			},
-			config:    map[string]any{"min_age_days": 30.0},
+			config:    &domain.MinimumAgePolicyConfig{MinAgeDays: ptrInt(30)},
 			wantMatch: true,
 		},
 		{
@@ -47,7 +48,7 @@ func TestMinimumAge(t *testing.T) {
 			req: domain.AccessRequest{
 				Metadata: &domain.ArtifactMetadata{PublishedAt: nil},
 			},
-			config:    map[string]any{"min_age_days": 30.0},
+			config:    &domain.MinimumAgePolicyConfig{MinAgeDays: ptrInt(30)},
 			wantMatch: false,
 		},
 		{
@@ -55,7 +56,7 @@ func TestMinimumAge(t *testing.T) {
 			req: domain.AccessRequest{
 				Metadata: nil,
 			},
-			config:    map[string]any{"min_age_days": 30.0},
+			config:    &domain.MinimumAgePolicyConfig{MinAgeDays: ptrInt(30)},
 			wantMatch: false,
 		},
 		{
@@ -65,8 +66,22 @@ func TestMinimumAge(t *testing.T) {
 					PublishedAt: ptrTime(now),
 				},
 			},
-			config:  map[string]any{},
+			config:  &domain.MinimumAgePolicyConfig{},
 			wantErr: true,
+		},
+		{
+			name: "excluded package skips check",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Name: "my-pkg"},
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-1 * 24 * time.Hour)),
+				},
+			},
+			config: &domain.MinimumAgePolicyConfig{
+				MinAgeDays:      ptrInt(30),
+				ExcludePackages: []string{"my-pkg"},
+			},
+			wantMatch: false,
 		},
 	}
 
@@ -93,7 +108,7 @@ func TestMaximumAge(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       domain.AccessRequest
-		config    map[string]any
+		config    domain.PolicyConfig
 		wantMatch bool
 		wantErr   bool
 	}{
@@ -104,7 +119,7 @@ func TestMaximumAge(t *testing.T) {
 					PublishedAt: ptrTime(now.Add(-30 * 24 * time.Hour)),
 				},
 			},
-			config:    map[string]any{"max_age_days": 365.0},
+			config:    &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365)},
 			wantMatch: false,
 		},
 		{
@@ -114,7 +129,7 @@ func TestMaximumAge(t *testing.T) {
 					PublishedAt: ptrTime(now.Add(-400 * 24 * time.Hour)),
 				},
 			},
-			config:    map[string]any{"max_age_days": 365.0},
+			config:    &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365)},
 			wantMatch: true,
 		},
 		{
@@ -124,7 +139,7 @@ func TestMaximumAge(t *testing.T) {
 					PublishedAt: ptrTime(now.Add(-366 * 24 * time.Hour)),
 				},
 			},
-			config:    map[string]any{"max_age_days": 365.0},
+			config:    &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365)},
 			wantMatch: true,
 		},
 		{
@@ -132,7 +147,7 @@ func TestMaximumAge(t *testing.T) {
 			req: domain.AccessRequest{
 				Metadata: &domain.ArtifactMetadata{PublishedAt: nil},
 			},
-			config:    map[string]any{"max_age_days": 365.0},
+			config:    &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365)},
 			wantMatch: false,
 		},
 		{
@@ -140,7 +155,7 @@ func TestMaximumAge(t *testing.T) {
 			req: domain.AccessRequest{
 				Metadata: nil,
 			},
-			config:    map[string]any{"max_age_days": 365.0},
+			config:    &domain.MaximumAgePolicyConfig{MaxAgeDays: ptrInt(365)},
 			wantMatch: false,
 		},
 		{
@@ -150,7 +165,7 @@ func TestMaximumAge(t *testing.T) {
 					PublishedAt: ptrTime(now),
 				},
 			},
-			config:  map[string]any{},
+			config:  &domain.MaximumAgePolicyConfig{},
 			wantErr: true,
 		},
 		{
@@ -160,8 +175,50 @@ func TestMaximumAge(t *testing.T) {
 					PublishedAt: ptrTime(now),
 				},
 			},
-			config:  map[string]any{"max_age_days": "not-a-number"},
+			config:  &domain.MaximumAgePolicyConfig{},
 			wantErr: true,
+		},
+		{
+			name: "excluded package skips check",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Name: "unpipe"},
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-4000 * 24 * time.Hour)),
+				},
+			},
+			config: &domain.MaximumAgePolicyConfig{
+				MaxAgeDays:      ptrInt(365),
+				ExcludePackages: []string{"unpipe", "ee-first"},
+			},
+			wantMatch: false,
+		},
+		{
+			name: "excluded scoped package skips check",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "@types", Name: "node"},
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-4000 * 24 * time.Hour)),
+				},
+			},
+			config: &domain.MaximumAgePolicyConfig{
+				MaxAgeDays:      ptrInt(365),
+				ExcludePackages: []string{"@types/node"},
+			},
+			wantMatch: false,
+		},
+		{
+			name: "non-excluded package still blocked",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Name: "other-pkg"},
+				Metadata: &domain.ArtifactMetadata{
+					PublishedAt: ptrTime(now.Add(-4000 * 24 * time.Hour)),
+				},
+			},
+			config: &domain.MaximumAgePolicyConfig{
+				MaxAgeDays:      ptrInt(365),
+				ExcludePackages: []string{"unpipe"},
+			},
+			wantMatch: true,
 		},
 	}
 

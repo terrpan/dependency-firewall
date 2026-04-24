@@ -2,12 +2,10 @@
 package api
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
 
 // Response DTOs with JSON tags for lowercase serialization.
@@ -20,39 +18,67 @@ type TenantResponse struct {
 }
 
 type UpstreamResponse struct {
-	ID        string `json:"id"`
-	TenantID  string `json:"tenant_id"`
-	Name      string `json:"name"`
-	Ecosystem string `json:"ecosystem"`
-	BaseURL   string `json:"base_url"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Ecosystem string    `json:"ecosystem"`
+	BaseURL   string    `json:"base_url"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type PolicyResponse struct {
-	ID        string         `json:"id"`
-	TenantID  string         `json:"tenant_id"`
-	Name      string         `json:"name"`
-	Type      string         `json:"type"`
-	Action    string         `json:"action"`
-	Config    map[string]any `json:"config"`
-	Priority  int            `json:"priority"`
-	Enabled   bool           `json:"enabled"`
-	Version   int            `json:"version"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Type          string    `json:"type"`
+	Action        string    `json:"action"`
+	SchemaVersion int       `json:"schema_version"`
+	Config        any       `json:"config"`
+	Priority      int       `json:"priority"`
+	Enabled       bool      `json:"enabled"`
+	Version       int       `json:"version"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type PolicyVersionResponse struct {
+	Version       int       `json:"version"`
+	Name          string    `json:"name"`
+	Type          string    `json:"type"`
+	Action        string    `json:"action"`
+	SchemaVersion int       `json:"schema_version"`
+	Config        any       `json:"config"`
+	Priority      int       `json:"priority"`
+	Enabled       bool      `json:"enabled"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type PolicyTypeResponse struct {
+	Type                    string   `json:"type"`
+	Summary                 string   `json:"summary"`
+	Description             string   `json:"description"`
+	Help                    string   `json:"help"`
+	CurrentSchemaVersion    int      `json:"current_schema_version"`
+	SupportedSchemaVersions []int    `json:"supported_schema_versions"`
+	SupportedActions        []string `json:"supported_actions"`
+	Example                 string   `json:"example"`
 }
 
 type DecisionResponse struct {
-	ID          string                   `json:"id"`
-	TenantID    string                   `json:"tenant_id"`
-	Artifact    ArtifactIdentityResponse `json:"artifact"`
-	Outcome     string                   `json:"outcome"`
-	PolicyID    string                   `json:"policy_id"`
-	Reason      string                   `json:"reason"`
+	ID          string                     `json:"id"`
+	Artifact    ArtifactIdentityResponse   `json:"artifact"`
+	Outcome     string                     `json:"outcome"`
+	PolicyID    string                     `json:"policy_id"`
+	PolicyHash  string                     `json:"policy_hash,omitempty"`
+	Reason      string                     `json:"reason"`
+	Warnings    []string                   `json:"warnings,omitempty"`
 	Reasons     []EvaluationReasonResponse `json:"reasons"`
-	CachedAt    *time.Time               `json:"cached_at,omitempty"`
-	EvaluatedAt time.Time                `json:"evaluated_at"`
+	CachedAt    *time.Time                 `json:"cached_at,omitempty"`
+	EvaluatedAt time.Time                  `json:"evaluated_at"`
+}
+
+type cacheClearResponse struct {
+	Status string `json:"status"`
+	Cache  string `json:"cache"`
 }
 
 type ArtifactIdentityResponse struct {
@@ -93,7 +119,6 @@ func toTenantsResponse(tenants []domain.Tenant) []*TenantResponse {
 func toUpstreamResponse(u *domain.Upstream) *UpstreamResponse {
 	return &UpstreamResponse{
 		ID:        u.ID,
-		TenantID:  u.TenantID,
 		Name:      u.Name,
 		Ecosystem: string(u.Ecosystem),
 		BaseURL:   u.BaseURL,
@@ -112,17 +137,17 @@ func toUpstreamsResponse(upstreams []domain.Upstream) []*UpstreamResponse {
 
 func toPolicyResponse(p *domain.Policy) *PolicyResponse {
 	return &PolicyResponse{
-		ID:        p.ID,
-		TenantID:  p.TenantID,
-		Name:      p.Name,
-		Type:      string(p.Type),
-		Action:    string(p.Action),
-		Config:    p.Config,
-		Priority:  p.Priority,
-		Enabled:   p.Enabled,
-		Version:   p.Version,
-		CreatedAt: p.CreatedAt,
-		UpdatedAt: p.UpdatedAt,
+		ID:            p.ID,
+		Name:          p.Name,
+		Type:          string(p.Type),
+		Action:        string(p.Action),
+		SchemaVersion: p.SchemaVersion,
+		Config:        p.Config,
+		Priority:      p.Priority,
+		Enabled:       p.Enabled,
+		Version:       p.Version,
+		CreatedAt:     p.CreatedAt,
+		UpdatedAt:     p.UpdatedAt,
 	}
 }
 
@@ -130,6 +155,54 @@ func toPoliciesResponse(policies []domain.Policy) []*PolicyResponse {
 	result := make([]*PolicyResponse, len(policies))
 	for i := range policies {
 		result[i] = toPolicyResponse(&policies[i])
+	}
+	return result
+}
+
+func toPolicyVersionResponse(version *domain.PolicyVersion) *PolicyVersionResponse {
+	return &PolicyVersionResponse{
+		Version:       version.Version,
+		Name:          version.Name,
+		Type:          string(version.Type),
+		Action:        string(version.Action),
+		SchemaVersion: version.SchemaVersion,
+		Config:        version.Config,
+		Priority:      version.Priority,
+		Enabled:       version.Enabled,
+		CreatedAt:     version.CreatedAt,
+	}
+}
+
+func toPolicyVersionsResponse(versions []domain.PolicyVersion) []*PolicyVersionResponse {
+	result := make([]*PolicyVersionResponse, len(versions))
+	for i := range versions {
+		result[i] = toPolicyVersionResponse(&versions[i])
+	}
+	return result
+}
+
+func toPolicyTypeResponse(d domain.PolicyTypeDescriptor) *PolicyTypeResponse {
+	actions := make([]string, len(d.SupportedActions))
+	for i := range d.SupportedActions {
+		actions[i] = string(d.SupportedActions[i])
+	}
+
+	return &PolicyTypeResponse{
+		Type:                    string(d.Type),
+		Summary:                 d.Summary,
+		Description:             d.Description,
+		Help:                    d.Help,
+		CurrentSchemaVersion:    d.CurrentSchemaVersion,
+		SupportedSchemaVersions: append([]int(nil), d.SupportedSchemaVersions...),
+		SupportedActions:        actions,
+		Example:                 d.Example,
+	}
+}
+
+func toPolicyTypesResponse(descriptors []domain.PolicyTypeDescriptor) []*PolicyTypeResponse {
+	result := make([]*PolicyTypeResponse, len(descriptors))
+	for i := range descriptors {
+		result[i] = toPolicyTypeResponse(descriptors[i])
 	}
 	return result
 }
@@ -156,11 +229,12 @@ func toDecisionResponse(d *domain.Decision) *DecisionResponse {
 
 	return &DecisionResponse{
 		ID:          d.ID,
-		TenantID:    d.TenantID,
 		Artifact:    artifact,
 		Outcome:     string(d.Outcome),
 		PolicyID:    d.PolicyID,
+		PolicyHash:  d.PolicyHash,
 		Reason:      d.Reason,
+		Warnings:    d.Warnings,
 		Reasons:     reasons,
 		CachedAt:    d.CachedAt,
 		EvaluatedAt: d.EvaluatedAt,
@@ -175,37 +249,47 @@ func toDecisionsResponse(decisions []domain.Decision) []*DecisionResponse {
 	return result
 }
 
-// HTTP helpers.
-
-func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, "encoding response", http.StatusInternalServerError)
-	}
+type healthResponse struct {
+	Status       string                        `json:"status"`
+	ServiceName  string                        `json:"service_name"`
+	Version      string                        `json:"version"`
+	Commit       string                        `json:"commit,omitempty"`
+	BuildTime    string                        `json:"build_time,omitempty"`
+	GoVersion    string                        `json:"go_version"`
+	OS           string                        `json:"os"`
+	Arch         string                        `json:"arch"`
+	Timestamp    time.Time                     `json:"timestamp"`
+	Dependencies map[string]dependencyResponse `json:"dependencies"`
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+type dependencyResponse struct {
+	Status    string    `json:"status"`
+	Message   string    `json:"message,omitempty"`
+	Duration  int64     `json:"duration_ms"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
-func readJSON(r *http.Request, dst any) error {
-	if r.Body == nil {
-		return fmt.Errorf("empty request body")
+func toHealthResponse(status service.HealthStatus) healthResponse {
+	dependencies := make(map[string]dependencyResponse, len(status.Dependencies))
+	for name, dep := range status.Dependencies {
+		dependencies[name] = dependencyResponse{
+			Status:    dep.Status,
+			Message:   dep.Message,
+			Duration:  dep.Duration,
+			Timestamp: dep.Timestamp,
+		}
 	}
-	defer r.Body.Close()
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
-	}
-	return nil
-}
 
-func tenantIDFromHeader(r *http.Request) (string, error) {
-	id := r.Header.Get("X-Tenant-ID")
-	if id == "" {
-		return "", fmt.Errorf("missing X-Tenant-ID header")
+	return healthResponse{
+		Status:       status.Status,
+		ServiceName:  status.ServiceName,
+		Version:      status.Version,
+		Commit:       status.Commit,
+		BuildTime:    status.BuildTime,
+		GoVersion:    status.GoVersion,
+		OS:           status.OS,
+		Arch:         status.Arch,
+		Timestamp:    status.Timestamp,
+		Dependencies: dependencies,
 	}
-	return id, nil
 }

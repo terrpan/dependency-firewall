@@ -14,7 +14,7 @@ func TestBlockMutableTag(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       domain.AccessRequest
-		config    map[string]any
+		config    domain.PolicyConfig
 		wantMatch bool
 		wantErr   bool
 	}{
@@ -24,7 +24,7 @@ func TestBlockMutableTag(t *testing.T) {
 				Artifact: domain.ArtifactIdentity{Version: "latest"},
 				Metadata: &domain.ArtifactMetadata{IsMutableTag: true},
 			},
-			config:    map[string]any{"tags": []string{"latest"}},
+			config:    &domain.BlockMutableTagPolicyConfig{Tags: []string{"latest"}},
 			wantMatch: true,
 		},
 		{
@@ -33,7 +33,7 @@ func TestBlockMutableTag(t *testing.T) {
 				Artifact: domain.ArtifactIdentity{Version: "latest", Digest: "sha256:abc123"},
 				Metadata: &domain.ArtifactMetadata{IsMutableTag: false},
 			},
-			config:    map[string]any{"tags": []string{"latest"}},
+			config:    &domain.BlockMutableTagPolicyConfig{Tags: []string{"latest"}},
 			wantMatch: false,
 		},
 		{
@@ -42,7 +42,7 @@ func TestBlockMutableTag(t *testing.T) {
 				Artifact: domain.ArtifactIdentity{Version: "v1.0.0"},
 				Metadata: &domain.ArtifactMetadata{IsMutableTag: true},
 			},
-			config:    map[string]any{"tags": []string{"latest"}},
+			config:    &domain.BlockMutableTagPolicyConfig{Tags: []string{"latest"}},
 			wantMatch: false,
 		},
 		{
@@ -51,7 +51,7 @@ func TestBlockMutableTag(t *testing.T) {
 				Artifact: domain.ArtifactIdentity{Version: "latest"},
 				Metadata: nil,
 			},
-			config:    map[string]any{"tags": []string{"latest"}},
+			config:    &domain.BlockMutableTagPolicyConfig{Tags: []string{"latest"}},
 			wantMatch: false,
 		},
 		{
@@ -60,7 +60,7 @@ func TestBlockMutableTag(t *testing.T) {
 				Artifact: domain.ArtifactIdentity{Version: "latest"},
 				Metadata: &domain.ArtifactMetadata{IsMutableTag: true},
 			},
-			config:  map[string]any{},
+			config:  &domain.BlockMutableTagPolicyConfig{},
 			wantErr: true,
 		},
 	}

@@ -14,7 +14,7 @@ func TestAllowlist(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       domain.AccessRequest
-		config    map[string]any
+		config    domain.PolicyConfig
 		wantMatch bool
 		wantErr   bool
 	}{
@@ -23,7 +23,7 @@ func TestAllowlist(t *testing.T) {
 			req: domain.AccessRequest{
 				Artifact: domain.ArtifactIdentity{Namespace: "internal"},
 			},
-			config:    map[string]any{"namespaces": []string{"internal", "company"}},
+			config:    &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal", "company"}},
 			wantMatch: true,
 		},
 		{
@@ -31,7 +31,7 @@ func TestAllowlist(t *testing.T) {
 			req: domain.AccessRequest{
 				Artifact: domain.ArtifactIdentity{Namespace: "external"},
 			},
-			config:    map[string]any{"namespaces": []string{"internal", "company"}},
+			config:    &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal", "company"}},
 			wantMatch: false,
 		},
 		{
@@ -39,7 +39,7 @@ func TestAllowlist(t *testing.T) {
 			req: domain.AccessRequest{
 				Artifact: domain.ArtifactIdentity{Namespace: "internal"},
 			},
-			config:  map[string]any{},
+			config:  &domain.NamespaceListPolicyConfig{},
 			wantErr: true,
 		},
 	}
@@ -66,7 +66,7 @@ func TestBlocklist(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       domain.AccessRequest
-		config    map[string]any
+		config    domain.PolicyConfig
 		wantMatch bool
 		wantErr   bool
 	}{
@@ -75,7 +75,7 @@ func TestBlocklist(t *testing.T) {
 			req: domain.AccessRequest{
 				Artifact: domain.ArtifactIdentity{Namespace: "untrusted"},
 			},
-			config:    map[string]any{"namespaces": []string{"untrusted", "malicious"}},
+			config:    &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted", "malicious"}},
 			wantMatch: true,
 		},
 		{
@@ -83,7 +83,7 @@ func TestBlocklist(t *testing.T) {
 			req: domain.AccessRequest{
 				Artifact: domain.ArtifactIdentity{Namespace: "trusted"},
 			},
-			config:    map[string]any{"namespaces": []string{"untrusted", "malicious"}},
+			config:    &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted", "malicious"}},
 			wantMatch: false,
 		},
 		{
@@ -91,7 +91,7 @@ func TestBlocklist(t *testing.T) {
 			req: domain.AccessRequest{
 				Artifact: domain.ArtifactIdentity{Namespace: "untrusted"},
 			},
-			config:  map[string]any{},
+			config:  &domain.NamespaceListPolicyConfig{},
 			wantErr: true,
 		},
 	}

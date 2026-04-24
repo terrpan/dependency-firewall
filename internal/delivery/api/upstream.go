@@ -6,18 +6,18 @@ import (
 	"net/http"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
 
 // UpstreamHandler handles upstream registry CRUD endpoints.
 type UpstreamHandler struct {
-	repo   port.UpstreamRepository
-	logger *slog.Logger
+	upstreams *service.UpstreamService
+	logger    *slog.Logger
 }
 
 // NewUpstreamHandler creates a new UpstreamHandler.
-func NewUpstreamHandler(repo port.UpstreamRepository, logger *slog.Logger) *UpstreamHandler {
-	return &UpstreamHandler{repo: repo, logger: logger}
+func NewUpstreamHandler(upstreams *service.UpstreamService, logger *slog.Logger) *UpstreamHandler {
+	return &UpstreamHandler{upstreams: upstreams, logger: logger}
 }
 
 // RegisterRoutes registers upstream API routes on the given mux.
@@ -30,9 +30,9 @@ func (h *UpstreamHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type createUpstreamRequest struct {
-	Name      string              `json:"name"`
-	Ecosystem domain.EcosystemType `json:"ecosystem"`
-	BaseURL   string              `json:"base_url"`
+	Name      string               `json:"name" validate:"notblank"`
+	Ecosystem domain.EcosystemType `json:"ecosystem" validate:"required,oneof=npm oci"`
+	BaseURL   string               `json:"base_url" validate:"notblank,url"`
 }
 
 func (h *UpstreamHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +47,8 @@ func (h *UpstreamHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+	if err := validateRequest(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -58,7 +58,15 @@ func (h *UpstreamHandler) create(w http.ResponseWriter, r *http.Request) {
 		Ecosystem: req.Ecosystem,
 		BaseURL:   req.BaseURL,
 	}
-	if err := h.repo.Create(r.Context(), upstream); err != nil {
+	if err := h.upstreams.Create(r.Context(), upstream); err != nil {
+		if errors.Is(err, domain.ErrUpstreamNameConflict) {
+			writeError(w, http.StatusConflict, "upstream name already exists")
+			return
+		}
+		if errors.Is(err, domain.ErrUpstreamScopeConflict) {
+			writeError(w, http.StatusConflict, "upstream for ecosystem already exists")
+			return
+		}
 		h.logger.Error("creating upstream", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create upstream")
 		return
@@ -73,7 +81,7 @@ func (h *UpstreamHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstreams, err := h.repo.ListByTenant(r.Context(), tenantID)
+	upstreams, err := h.upstreams.ListByTenant(r.Context(), tenantID)
 	if err != nil {
 		h.logger.Error("listing upstreams", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to list upstreams")
@@ -90,7 +98,7 @@ func (h *UpstreamHandler) get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	u, err := h.repo.GetByID(r.Context(), tenantID, id)
+	u, err := h.upstreams.GetByID(r.Context(), tenantID, id)
 	if err != nil {
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			writeError(w, http.StatusNotFound, "upstream not found")
@@ -116,6 +124,10 @@ func (h *UpstreamHandler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateRequest(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	upstream := &domain.Upstream{
 		ID:        id,
@@ -124,7 +136,15 @@ func (h *UpstreamHandler) update(w http.ResponseWriter, r *http.Request) {
 		Ecosystem: req.Ecosystem,
 		BaseURL:   req.BaseURL,
 	}
-	if err := h.repo.Update(r.Context(), upstream); err != nil {
+	if err := h.upstreams.Update(r.Context(), upstream); err != nil {
+		if errors.Is(err, domain.ErrUpstreamNameConflict) {
+			writeError(w, http.StatusConflict, "upstream name already exists")
+			return
+		}
+		if errors.Is(err, domain.ErrUpstreamScopeConflict) {
+			writeError(w, http.StatusConflict, "upstream for ecosystem already exists")
+			return
+		}
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			writeError(w, http.StatusNotFound, "upstream not found")
 			return
@@ -144,7 +164,7 @@ func (h *UpstreamHandler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	if err := h.repo.Delete(r.Context(), tenantID, id); err != nil {
+	if err := h.upstreams.Delete(r.Context(), tenantID, id); err != nil {
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			writeError(w, http.StatusNotFound, "upstream not found")
 			return

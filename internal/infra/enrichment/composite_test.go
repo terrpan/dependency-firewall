@@ -61,6 +61,9 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 		if len(meta.Vulnerabilities) != 1 {
 			t.Errorf("Vulnerabilities not merged correctly")
 		}
+		if len(meta.Licenses) != 0 {
+			t.Errorf("Licenses should be empty when no enricher sets them")
+		}
 	})
 
 	t.Run("continues if one enricher fails", func(t *testing.T) {
@@ -189,6 +192,29 @@ func TestCompositeEnricher_Enrich(t *testing.T) {
 		}
 		if !meta.IsMutableTag {
 			t.Error("expected IsMutableTag to be true")
+		}
+	})
+
+	t.Run("appends licenses from multiple enrichers", func(t *testing.T) {
+		e1 := &mockEnricher{
+			meta: &domain.ArtifactMetadata{
+				Licenses: []string{"MIT"},
+			},
+		}
+		e2 := &mockEnricher{
+			meta: &domain.ArtifactMetadata{
+				Licenses: []string{"Apache-2.0"},
+			},
+		}
+
+		composite := NewCompositeEnricher(logger, e1, e2)
+		meta, err := composite.Enrich(ctx, artifact)
+
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(meta.Licenses) != 2 {
+			t.Fatalf("expected 2 licenses, got %d", len(meta.Licenses))
 		}
 	})
 }

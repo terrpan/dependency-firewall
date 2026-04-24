@@ -16,23 +16,23 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
-// Handler handles OCI registry protocol requests.
-type Handler struct {
-	proxy     *service.ProxyService
+// RegistryHandler handles OCI registry protocol requests.
+type RegistryHandler struct {
+	access    *service.AccessService
 	upstream  port.UpstreamClient
 	upstreams port.UpstreamRepository
 	logger    *slog.Logger
 }
 
-// NewHandler creates a new OCI Handler.
-func NewHandler(
-	proxy *service.ProxyService,
+// NewRegistryHandler creates a new OCI RegistryHandler.
+func NewRegistryHandler(
+	access *service.AccessService,
 	upstream port.UpstreamClient,
 	upstreams port.UpstreamRepository,
 	logger *slog.Logger,
-) *Handler {
-	return &Handler{
-		proxy:     proxy,
+) *RegistryHandler {
+	return &RegistryHandler{
+		access:    access,
 		upstream:  upstream,
 		upstreams: upstreams,
 		logger:    logger,
@@ -40,12 +40,12 @@ func NewHandler(
 }
 
 // RegisterRoutes registers OCI protocol routes on the given mux.
-func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+func (h *RegistryHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v2/", h.route)
 }
 
 // route dispatches requests based on path structure.
-func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
+func (h *RegistryHandler) route(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	// GET /v2/ — version check
@@ -73,14 +73,14 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 }
 
 // versionCheck implements the OCI version check endpoint.
-func (h *Handler) versionCheck(w http.ResponseWriter, _ *http.Request) {
+func (h *RegistryHandler) versionCheck(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("{}"))
 }
 
 // handleManifest processes manifest pull requests.
-func (h *Handler) handleManifest(w http.ResponseWriter, r *http.Request, repo, reference string) {
+func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request, repo, reference string) {
 	tenant, ok := middleware.TenantFromContext(r.Context())
 	if !ok {
 		writeOCIError(w, "UNAUTHORIZED", "tenant not identified", http.StatusUnauthorized)
@@ -112,7 +112,7 @@ func (h *Handler) handleManifest(w http.ResponseWriter, r *http.Request, repo, r
 		Timestamp: time.Now(),
 	}
 
-	decision, err := h.proxy.Evaluate(r.Context(), req)
+	decision, err := h.access.Evaluate(r.Context(), req)
 	if err != nil {
 		h.logger.Error("policy evaluation failed",
 			"error", err,
@@ -130,7 +130,7 @@ func (h *Handler) handleManifest(w http.ResponseWriter, r *http.Request, repo, r
 	}
 
 	// Allowed — fetch from upstream and stream to client.
-	resp, err := h.upstream.GetManifest(r.Context(), *upstream, artifact)
+	resp, err := h.upstream.FetchMetadata(r.Context(), *upstream, artifact)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
 			writeOCIError(w, "MANIFEST_UNKNOWN", "manifest not found", http.StatusNotFound)
@@ -151,7 +151,7 @@ func (h *Handler) handleManifest(w http.ResponseWriter, r *http.Request, repo, r
 
 // handleBlob processes blob requests. Blobs are only served if the
 // tenant has a recent manifest-level allow decision for the repository.
-func (h *Handler) handleBlob(w http.ResponseWriter, r *http.Request, repo, digest string) {
+func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, repo, digest string) {
 	tenant, ok := middleware.TenantFromContext(r.Context())
 	if !ok {
 		writeOCIError(w, "UNAUTHORIZED", "tenant not identified", http.StatusUnauthorized)
@@ -165,7 +165,7 @@ func (h *Handler) handleBlob(w http.ResponseWriter, r *http.Request, repo, diges
 		Namespace: namespace,
 		Name:      name,
 	}
-	allowed, err := h.proxy.HasAllowedManifest(r.Context(), tenant.ID, artifact)
+	allowed, err := h.access.HasRecentAllow(r.Context(), tenant.ID, artifact)
 	if err != nil {
 		h.logger.Error("failed to check manifest allow decision",
 			"error", err,
@@ -191,7 +191,7 @@ func (h *Handler) handleBlob(w http.ResponseWriter, r *http.Request, repo, diges
 	blobUpstream := *upstream
 	blobUpstream.BaseURL = strings.TrimRight(upstream.BaseURL, "/") + "/v2/" + repo
 
-	resp, err := h.upstream.GetBlob(r.Context(), blobUpstream, digest)
+	resp, err := h.upstream.FetchContent(r.Context(), blobUpstream, digest)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
 			writeOCIError(w, "BLOB_UNKNOWN", "blob not found", http.StatusNotFound)

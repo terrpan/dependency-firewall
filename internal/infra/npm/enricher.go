@@ -28,7 +28,17 @@ type MetadataEnricher struct {
 
 // npmPackageResponse is the relevant subset of the npm registry package JSON response.
 type npmPackageResponse struct {
-	Time map[string]string `json:"time"` // version -> ISO8601 timestamp
+	Time     map[string]string            `json:"time"`     // version -> ISO8601 timestamp
+	Versions map[string]npmPackageVersion `json:"versions"` // version -> package.json fields
+}
+
+type npmPackageVersion struct {
+	License  any                `json:"license"`
+	Licenses []npmLicenseObject `json:"licenses"`
+}
+
+type npmLicenseObject struct {
+	Type string `json:"type"`
 }
 
 // NewMetadataEnricher creates a new npm metadata enricher.
@@ -45,7 +55,7 @@ func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger) *Metadata
 	}
 }
 
-// Enrich fetches package metadata from the npm registry to populate PublishedAt.
+// Enrich fetches package metadata from the npm registry to populate PublishedAt and Licenses.
 func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
 	e.logger.InfoContext(ctx, "npm enricher called",
 		"ecosystem", artifact.Ecosystem,
@@ -137,6 +147,10 @@ func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactI
 		)
 	}
 
+	if versionData, ok := pkgData.Versions[artifact.Version]; ok {
+		meta.Licenses = extractVersionLicenses(versionData)
+	}
+
 	return meta, nil
 }
 
@@ -146,4 +160,77 @@ func buildPackageName(artifact domain.ArtifactIdentity) string {
 		return artifact.Namespace + "/" + artifact.Name
 	}
 	return artifact.Name
+}
+
+func extractVersionLicenses(version npmPackageVersion) []string {
+	var licenses []string
+	seen := make(map[string]struct{})
+
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		licenses = append(licenses, value)
+	}
+
+	switch license := version.License.(type) {
+	case string:
+		for _, item := range splitLicenseExpression(license) {
+			add(item)
+		}
+	case map[string]any:
+		if licenseType, ok := license["type"].(string); ok {
+			for _, item := range splitLicenseExpression(licenseType) {
+				add(item)
+			}
+		}
+	}
+
+	for _, item := range version.Licenses {
+		for _, token := range splitLicenseExpression(item.Type) {
+			add(token)
+		}
+	}
+
+	return licenses
+}
+
+func splitLicenseExpression(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		switch r {
+		case '(', ')':
+			return true
+		}
+		return false
+	})
+
+	var result []string
+	for _, field := range fields {
+		for _, token := range strings.Fields(field) {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+			switch strings.ToUpper(token) {
+			case "AND", "OR", "WITH":
+				continue
+			}
+			result = append(result, token)
+		}
+	}
+
+	if len(result) == 0 {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return []string{trimmed}
+		}
+	}
+
+	return result
 }

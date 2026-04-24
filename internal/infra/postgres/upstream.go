@@ -16,6 +16,11 @@ type UpstreamRepository struct {
 	pool *pgxpool.Pool
 }
 
+var upstreamConstraintErrors = map[string]error{
+	"upstreams_tenant_id_name_key":  domain.ErrUpstreamNameConflict,
+	"uq_upstreams_tenant_ecosystem": domain.ErrUpstreamScopeConflict,
+}
+
 // NewUpstreamRepository creates a new UpstreamRepository.
 func NewUpstreamRepository(pool *pgxpool.Pool) *UpstreamRepository {
 	return &UpstreamRepository{pool: pool}
@@ -86,6 +91,9 @@ func (r *UpstreamRepository) Create(ctx context.Context, upstream *domain.Upstre
 		upstream.TenantID, upstream.Name, upstream.Ecosystem, upstream.BaseURL,
 	).Scan(&upstream.ID, &upstream.CreatedAt, &upstream.UpdatedAt)
 	if err != nil {
+		if mappedErr := mapConstraintError(err, upstreamConstraintErrors); mappedErr != err {
+			return mappedErr
+		}
 		return fmt.Errorf("creating upstream: %w", err)
 	}
 	return nil
@@ -100,6 +108,9 @@ func (r *UpstreamRepository) Update(ctx context.Context, upstream *domain.Upstre
 		upstream.TenantID, upstream.ID,
 	)
 	if err != nil {
+		if mappedErr := mapConstraintError(err, upstreamConstraintErrors); mappedErr != err {
+			return mappedErr
+		}
 		return fmt.Errorf("updating upstream: %w", err)
 	}
 	if ct.RowsAffected() == 0 {

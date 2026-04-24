@@ -7,43 +7,47 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"github.com/danielterry/dependency-firewall/internal/validation"
 )
+
+var configValidator = validation.New("mapstructure")
 
 // Config holds all application configuration sections.
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Valkey   ValkeyConfig   `mapstructure:"valkey"`
-	Log      LogConfig      `mapstructure:"log"`
+	Server   ServerConfig   `mapstructure:"server" validate:"required"`
+	Database DatabaseConfig `mapstructure:"database" validate:"required"`
+	Valkey   ValkeyConfig   `mapstructure:"valkey" validate:"required"`
+	Log      LogConfig      `mapstructure:"log" validate:"required"`
 }
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port         int           `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout time.Duration `mapstructure:"write_timeout"`
-	IdleTimeout  time.Duration `mapstructure:"idle_timeout"`
+	Port         int           `mapstructure:"port" validate:"gte=1,lte=65535"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout" validate:"gt=0"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout" validate:"gt=0"`
+	IdleTimeout  time.Duration `mapstructure:"idle_timeout" validate:"gt=0"`
 }
 
 // DatabaseConfig holds PostgreSQL connection settings.
 type DatabaseConfig struct {
-	DSN             string        `mapstructure:"dsn"`
-	MaxOpenConns    int           `mapstructure:"max_open_conns"`
-	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
-	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+	DSN             string        `mapstructure:"dsn" validate:"notblank"`
+	MaxOpenConns    int           `mapstructure:"max_open_conns" validate:"gt=0"`
+	MaxIdleConns    int           `mapstructure:"max_idle_conns" validate:"gte=0"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime" validate:"gt=0"`
 }
 
 // ValkeyConfig holds Valkey connection settings.
 type ValkeyConfig struct {
-	Addr     string `mapstructure:"addr"`
+	Addr     string `mapstructure:"addr" validate:"notblank"`
 	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
+	DB       int    `mapstructure:"db" validate:"gte=0"`
 }
 
 // LogConfig holds structured logging settings.
 type LogConfig struct {
-	Level  string `mapstructure:"level"`
-	Format string `mapstructure:"format"`
+	Level  string `mapstructure:"level" validate:"oneof=debug info warn error"`
+	Format string `mapstructure:"format" validate:"oneof=json text"`
 }
 
 // Load reads configuration from environment variables and an optional
@@ -88,5 +92,26 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshalling config: %w", err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// Validate validates the configuration after file and environment decoding.
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("invalid config: config is required")
+	}
+
+	if err := configValidator.Struct(c); err != nil {
+		return fmt.Errorf("invalid config: %s", validation.ErrorMessage(err))
+	}
+
+	if c.Database.MaxIdleConns > c.Database.MaxOpenConns {
+		return fmt.Errorf("invalid config: field %q must be less than or equal to %q", "database.max_idle_conns", "database.max_open_conns")
+	}
+
+	return nil
 }
