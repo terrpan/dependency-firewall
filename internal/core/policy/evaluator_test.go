@@ -195,6 +195,53 @@ func TestEvaluate(t *testing.T) {
 			wantReasonSub: "no matching policy",
 		},
 		{
+			name: "namespace allowlist denies namespace outside approved set",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemOCI,
+					Namespace: "random-org",
+					Name:      "nginx",
+					Version:   "1.25.3",
+				},
+				Metadata:  &domain.ArtifactMetadata{},
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-namespace-allowlist", TenantID: "tenant-1", Name: "allow-only-approved-namespaces",
+					Type: domain.PolicyTypeNamespaceAllowlist, Action: domain.PolicyActionDeny,
+					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"library", "docker"}}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionDeny,
+			wantReasonSub: `namespace "random-org" is not in the approved namespace list`,
+			wantDenyCount: 1,
+		},
+		{
+			name: "namespace allowlist allows approved namespace",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemOCI,
+					Namespace: "library",
+					Name:      "nginx",
+					Version:   "1.25.3",
+				},
+				Metadata:  &domain.ArtifactMetadata{},
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-namespace-allowlist", TenantID: "tenant-1", Name: "allow-only-approved-namespaces",
+					Type: domain.PolicyTypeNamespaceAllowlist, Action: domain.PolicyActionDeny,
+					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"library", "docker"}}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionAllow,
+			wantReasonSub: "no matching policy",
+		},
+		{
 			name: "mixed allow and deny, deny wins",
 			req: domain.AccessRequest{
 				TenantID: "tenant-1",

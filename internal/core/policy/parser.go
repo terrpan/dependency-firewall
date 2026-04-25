@@ -10,14 +10,15 @@ import (
 )
 
 var knownPolicyTypes = map[string]domain.PolicyType{
-	string(domain.PolicyTypeCVSSThreshold):    domain.PolicyTypeCVSSThreshold,
-	string(domain.PolicyTypeMinimumAge):       domain.PolicyTypeMinimumAge,
-	string(domain.PolicyTypeMaximumAge):       domain.PolicyTypeMaximumAge,
-	string(domain.PolicyTypeBlockMutableTag):  domain.PolicyTypeBlockMutableTag,
-	string(domain.PolicyTypeLicense):          domain.PolicyTypeLicense,
-	string(domain.PolicyTypeLicenseAllowlist): domain.PolicyTypeLicenseAllowlist,
-	string(domain.PolicyTypeAllowlist):        domain.PolicyTypeAllowlist,
-	string(domain.PolicyTypeBlocklist):        domain.PolicyTypeBlocklist,
+	string(domain.PolicyTypeCVSSThreshold):      domain.PolicyTypeCVSSThreshold,
+	string(domain.PolicyTypeMinimumAge):         domain.PolicyTypeMinimumAge,
+	string(domain.PolicyTypeMaximumAge):         domain.PolicyTypeMaximumAge,
+	string(domain.PolicyTypeBlockMutableTag):    domain.PolicyTypeBlockMutableTag,
+	string(domain.PolicyTypeLicense):            domain.PolicyTypeLicense,
+	string(domain.PolicyTypeLicenseAllowlist):   domain.PolicyTypeLicenseAllowlist,
+	string(domain.PolicyTypeAllowlist):          domain.PolicyTypeAllowlist,
+	string(domain.PolicyTypeNamespaceAllowlist): domain.PolicyTypeNamespaceAllowlist,
+	string(domain.PolicyTypeBlocklist):          domain.PolicyTypeBlocklist,
 }
 
 var validActions = map[string]domain.PolicyAction{

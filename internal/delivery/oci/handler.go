@@ -69,7 +69,7 @@ func (h *RegistryHandler) route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeOCIError(w, "NAME_UNKNOWN", "unsupported OCI endpoint", http.StatusNotFound)
+	writeOCIError(w, r, "NAME_UNKNOWN", "unsupported OCI endpoint", http.StatusNotFound)
 }
 
 // versionCheck implements the OCI version check endpoint.
@@ -83,7 +83,7 @@ func (h *RegistryHandler) versionCheck(w http.ResponseWriter, _ *http.Request) {
 func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request, repo, reference string) {
 	tenant, ok := middleware.TenantFromContext(r.Context())
 	if !ok {
-		writeOCIError(w, "UNAUTHORIZED", "tenant not identified", http.StatusUnauthorized)
+		writeOCIError(w, r, "UNAUTHORIZED", "tenant not identified", http.StatusUnauthorized)
 		return
 	}
 
@@ -93,7 +93,7 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 			"error", err,
 			"tenant_id", tenant.ID,
 		)
-		writeOCIError(w, "NAME_UNKNOWN", "no OCI upstream configured", http.StatusNotFound)
+		writeOCIError(w, r, "NAME_UNKNOWN", "no OCI upstream configured", http.StatusNotFound)
 		return
 	}
 
@@ -120,20 +120,20 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 			"repo", repo,
 			"reference", reference,
 		)
-		writeOCIError(w, "DENIED", "policy evaluation error", http.StatusInternalServerError)
+		writeOCIError(w, r, "DENIED", "policy evaluation error", http.StatusInternalServerError)
 		return
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
-		writeOCIError(w, "DENIED", "policy violation: "+decision.Reason, http.StatusForbidden)
+		writeOCIError(w, r, "DENIED", "policy violation: "+decision.Reason, http.StatusForbidden)
 		return
 	}
 
 	// Allowed — fetch from upstream and stream to client.
-	resp, err := h.upstream.FetchMetadata(r.Context(), *upstream, artifact)
+	resp, err := h.upstream.FetchMetadata(r.Context(), *upstream, decision.Artifact)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
-			writeOCIError(w, "MANIFEST_UNKNOWN", "manifest not found", http.StatusNotFound)
+			writeOCIError(w, r, "MANIFEST_UNKNOWN", "manifest not found", http.StatusNotFound)
 			return
 		}
 		h.logger.Error("upstream manifest fetch failed",
@@ -141,7 +141,7 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 			"tenant_id", tenant.ID,
 			"repo", repo,
 		)
-		writeOCIError(w, "MANIFEST_UNKNOWN", "upstream error", http.StatusBadGateway)
+		writeOCIError(w, r, "MANIFEST_UNKNOWN", "upstream error", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -154,7 +154,7 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, repo, digest string) {
 	tenant, ok := middleware.TenantFromContext(r.Context())
 	if !ok {
-		writeOCIError(w, "UNAUTHORIZED", "tenant not identified", http.StatusUnauthorized)
+		writeOCIError(w, r, "UNAUTHORIZED", "tenant not identified", http.StatusUnauthorized)
 		return
 	}
 
@@ -172,17 +172,17 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 			"tenant_id", tenant.ID,
 			"repo", repo,
 		)
-		writeOCIError(w, "DENIED", "policy check error", http.StatusInternalServerError)
+		writeOCIError(w, r, "DENIED", "policy check error", http.StatusInternalServerError)
 		return
 	}
 	if !allowed {
-		writeOCIError(w, "DENIED", "no manifest-level allow decision for this repository", http.StatusForbidden)
+		writeOCIError(w, r, "DENIED", "no manifest-level allow decision for this repository", http.StatusForbidden)
 		return
 	}
 
 	upstream, err := h.upstreams.GetByEcosystem(r.Context(), tenant.ID, domain.EcosystemOCI)
 	if err != nil {
-		writeOCIError(w, "NAME_UNKNOWN", "no OCI upstream configured", http.StatusNotFound)
+		writeOCIError(w, r, "NAME_UNKNOWN", "no OCI upstream configured", http.StatusNotFound)
 		return
 	}
 
@@ -194,7 +194,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 	resp, err := h.upstream.FetchContent(r.Context(), blobUpstream, digest)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
-			writeOCIError(w, "BLOB_UNKNOWN", "blob not found", http.StatusNotFound)
+			writeOCIError(w, r, "BLOB_UNKNOWN", "blob not found", http.StatusNotFound)
 			return
 		}
 		h.logger.Error("upstream blob fetch failed",
@@ -202,7 +202,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 			"tenant_id", tenant.ID,
 			"repo", repo,
 		)
-		writeOCIError(w, "BLOB_UNKNOWN", "upstream error", http.StatusBadGateway)
+		writeOCIError(w, r, "BLOB_UNKNOWN", "upstream error", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -278,9 +278,14 @@ type ociError struct {
 }
 
 // writeOCIError writes an OCI-spec error response.
-func writeOCIError(w http.ResponseWriter, code string, message string, status int) {
+func writeOCIError(w http.ResponseWriter, r *http.Request, code string, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
+	w.Header().Set("X-Dependency-Firewall-Reason", message)
 	w.WriteHeader(status)
+	if r.Method == http.MethodHead {
+		return
+	}
 	_ = json.NewEncoder(w).Encode(ociErrorResponse{
 		Errors: []ociError{{Code: code, Message: message, Detail: map[string]any{}}},
 	})

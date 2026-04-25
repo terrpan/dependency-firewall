@@ -2,7 +2,8 @@
 # setup.sh — Bootstrap the OCI proxy example.
 #
 # Creates a tenant, registers a Docker Hub OCI upstream, and imports the
-# example policy set. Prints the tenant ID and Docker daemon config at the end.
+# example policy set. Prints the tenant ID and tenant-specific OCI hostname at
+# the end.
 #
 # Usage:
 #   ./setup.sh [FIREWALL_URL]
@@ -50,6 +51,7 @@ TENANT=$(curl -sf -X POST "${FIREWALL}/api/v1/tenants" \
   -H "Content-Type: application/json" \
   -d "{\"name\": \"oci-example-$(date +%s)\"}")
 TENANT_ID=$(echo "$TENANT" | jq -r '.id')
+TENANT_HOST="${TENANT_ID}.localhost:8080"
 echo "    tenant_id: ${TENANT_ID}"
 
 echo
@@ -81,24 +83,23 @@ echo "════════════════════════�
 echo "  Setup complete!"
 echo ""
 echo "  Tenant ID : ${TENANT_ID}"
+echo "  OCI Host  : ${TENANT_HOST}"
 echo ""
-echo "  To proxy OCI pulls through the firewall, add this"
-echo "  to /etc/docker/daemon.json and restart Docker:"
+echo "  Use this hostname directly with Docker or other OCI clients:"
 echo ""
-echo "    {"
-echo "      \"registry-mirrors\": [\"http://localhost:8080\"]"
-echo "    }"
+echo "    docker pull ${TENANT_HOST}/library/nginx:1.25.3"
 echo ""
-echo "  The firewall expects X-Tenant-ID on every request."
+echo "  OCI tenant routing is host-based for Docker-compatible traffic."
+echo "  docker login is not required for this example."
+echo "  For local transparent docker pull nginx:... workflows only,"
+echo "  you can also configure Docker to use ${TENANT_HOST} as a mirror."
 echo "  For direct curl tests:"
 echo ""
-echo "    # Allowed — pinned by digest"
-echo "    curl -H \"X-Tenant-ID: ${TENANT_ID}\" \\"
-echo "         http://localhost:8080/v2/library/nginx/manifests/1.25.3"
+echo "    # Allowed — version tag not blocked by the mutable-tag policy"
+echo "    curl http://${TENANT_HOST}/v2/library/nginx/manifests/1.25.3"
 echo ""
 echo "    # Denied — mutable tag 'latest'"
-echo "    curl -H \"X-Tenant-ID: ${TENANT_ID}\" \\"
-echo "         http://localhost:8080/v2/library/nginx/manifests/latest"
+echo "    curl http://${TENANT_HOST}/v2/library/nginx/manifests/latest"
 echo ""
 echo "  Review decisions:"
 echo ""

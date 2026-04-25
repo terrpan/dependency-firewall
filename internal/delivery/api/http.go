@@ -51,7 +51,11 @@ func readJSON(r *http.Request, dst any) error {
 }
 
 func tenantIDFromHeader(r *http.Request) (string, error) {
-	id := strings.TrimSpace(r.Header.Get("X-Tenant-ID"))
+	return tenantIDFromValue(r.Header.Get("X-Tenant-ID"))
+}
+
+func tenantIDFromValue(value string) (string, error) {
+	id := strings.TrimSpace(value)
 	if id == "" {
 		return "", fmt.Errorf("missing X-Tenant-ID header")
 	}

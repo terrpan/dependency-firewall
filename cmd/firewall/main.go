@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
+	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 	"github.com/danielterry/dependency-firewall/internal/delivery/api"
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
@@ -28,6 +30,7 @@ import (
 	ocidelivery "github.com/danielterry/dependency-firewall/internal/delivery/oci"
 	"github.com/danielterry/dependency-firewall/internal/infra/enrichment"
 	"github.com/danielterry/dependency-firewall/internal/infra/npm"
+	"github.com/danielterry/dependency-firewall/internal/infra/ocicache"
 	"github.com/danielterry/dependency-firewall/internal/infra/osv"
 	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
 	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
@@ -165,7 +168,15 @@ func run() error {
 	enrichmentService := service.NewEnrichmentService(enricher, metadataCache, logger)
 
 	// Create upstream client.
-	ociClient := upstream.NewOCIClient(&http.Client{Timeout: 30 * time.Second})
+	baseOCIClient := upstream.NewOCIClient(newOCIHTTPClient())
+	var ociClient port.UpstreamClient = baseOCIClient
+	if cfg.OCICache.Enabled {
+		artifactCache, err := newOCIArtifactCache(cfg.OCICache)
+		if err != nil {
+			return fmt.Errorf("creating OCI cache: %w", err)
+		}
+		ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
+	}
 
 	// Create policy evaluator and shared access service.
 	evaluator := policy.NewEvaluator()
@@ -201,9 +212,10 @@ func run() error {
 	healthHandler := api.NewHealthHandler(healthService, logger)
 
 	mux := http.NewServeMux()
+	controlPlaneAPI := api.NewControlPlaneAPI(mux, ver)
 
 	// Health check (no middleware).
-	healthHandler.RegisterRoutes(mux)
+	healthHandler.RegisterHumaRoutes(controlPlaneAPI)
 
 	// Register OCI routes.
 	ociMux := http.NewServeMux()
@@ -216,6 +228,7 @@ func run() error {
 	// Apply middleware chain: recovery -> logging -> tenant resolution -> handler.
 	var ociWrapped http.Handler = ociMux
 	ociWrapped = tenantResolver.Middleware(ociWrapped)
+	ociWrapped = middleware.OCITenantFromHost()(ociWrapped)
 	ociWrapped = middleware.RequestLogging(logger)(ociWrapped)
 	ociWrapped = middleware.Recovery(logger)(ociWrapped)
 
@@ -241,11 +254,11 @@ func run() error {
 	upstreamHandler := api.NewUpstreamHandler(upstreamService, logger)
 	evaluationHandler := api.NewEvaluationHandler(evaluationService, logger)
 
-	tenantHandler.RegisterRoutes(mux)
-	policyHandler.RegisterRoutes(mux)
-	cacheHandler.RegisterRoutes(mux)
-	upstreamHandler.RegisterRoutes(mux)
-	evaluationHandler.RegisterRoutes(mux)
+	tenantHandler.RegisterHumaRoutes(controlPlaneAPI)
+	policyHandler.RegisterHumaRoutes(controlPlaneAPI)
+	cacheHandler.RegisterHumaRoutes(controlPlaneAPI)
+	upstreamHandler.RegisterHumaRoutes(controlPlaneAPI)
+	evaluationHandler.RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
@@ -280,4 +293,34 @@ func run() error {
 
 	logger.Info("shutdown complete")
 	return nil
+}
+
+func newOCIHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ExpectContinueTimeout = 1 * time.Second
+	transport.DialContext = (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+
+	return &http.Client{Transport: transport}
+}
+
+func newOCIArtifactCache(cfg config.OCICacheConfig) (port.OCIArtifactCache, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.Backend)) {
+	case "", "disk":
+		return ocicache.NewDiskCache(ocicache.DiskCacheOptions{
+			RootDir:    cfg.RootDir,
+			MaxBytes:   cfg.MaxBytes,
+			MaxAge:     cfg.MaxAge,
+			MaxEntries: cfg.MaxEntries,
+		})
+	case "s3", "gcs":
+		return nil, fmt.Errorf("OCI cache backend %q is not implemented yet", cfg.Backend)
+	default:
+		return nil, fmt.Errorf("unsupported OCI cache backend %q", cfg.Backend)
+	}
 }

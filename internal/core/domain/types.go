@@ -34,14 +34,15 @@ const (
 type PolicyType string
 
 const (
-	PolicyTypeCVSSThreshold    PolicyType = "cvss_threshold"
-	PolicyTypeMinimumAge       PolicyType = "minimum_age"
-	PolicyTypeMaximumAge       PolicyType = "maximum_age"
-	PolicyTypeBlockMutableTag  PolicyType = "block_mutable_tag"
-	PolicyTypeLicense          PolicyType = "license"
-	PolicyTypeLicenseAllowlist PolicyType = "license_allowlist"
-	PolicyTypeAllowlist        PolicyType = "allowlist"
-	PolicyTypeBlocklist        PolicyType = "blocklist"
+	PolicyTypeCVSSThreshold      PolicyType = "cvss_threshold"
+	PolicyTypeMinimumAge         PolicyType = "minimum_age"
+	PolicyTypeMaximumAge         PolicyType = "maximum_age"
+	PolicyTypeBlockMutableTag    PolicyType = "block_mutable_tag"
+	PolicyTypeLicense            PolicyType = "license"
+	PolicyTypeLicenseAllowlist   PolicyType = "license_allowlist"
+	PolicyTypeAllowlist          PolicyType = "allowlist"
+	PolicyTypeNamespaceAllowlist PolicyType = "namespace_allowlist"
+	PolicyTypeBlocklist          PolicyType = "blocklist"
 )
 
 // PolicyConfig is the typed configuration for a policy.

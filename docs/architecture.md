@@ -13,8 +13,9 @@ The system has two surfaces:
    - npm and OCI protocol adapters
 
 2. Control plane
-   - management API for policies, policy rollback/history, upstreams, evaluations, and cache maintenance
-   - intended for UI and automation
+    - management API for policies, policy rollback/history, upstreams, evaluations, and cache maintenance
+    - intended for UI and automation
+    - Huma is used only on control-plane endpoints where code explicitly uses it
 
 ## System context
 
@@ -30,11 +31,13 @@ flowchart LR
         dataplane --> deliveryProxy[delivery/npm + delivery/oci]
         controlplane --> deliveryAPI[delivery/api]
         deliveryProxy --> core[core services + policy engine]
+        deliveryProxy --> ociProxy[cache-backed OCI proxy path]
         deliveryAPI --> core
         core --> postgres[(PostgreSQL)]
         core --> valkey[(Valkey)]
+        ociProxy --> ociCache[(tenant-aware OCI artifact cache)]
         core --> osv[OSV API]
-        core --> upstreams[upstream registries]
+        ociProxy --> upstreams[upstream registries]
     end
 ```
 
@@ -43,8 +46,14 @@ flowchart LR
 ### Delivery
 - HTTP handlers
 - npm and OCI protocol parsing
+- npm and OCI proxy routes stay on plain `net/http` handlers
+- OCI proxy delivery may resolve tenant identity from the request hostname for Docker-compatible traffic
+- OCI delivery should support both direct registry-hostname usage in hosted deployments and optional Docker mirror usage for transparent local development
 - protocol-specific response rendering
 - control-plane request DTO parsing and response DTO rendering
+- Huma may be used on control-plane routes for OpenAPI/docs generation and typed request/response modeling
+- Huma remains control-plane only
+- the current Huma-backed control-plane set includes health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, decision-cache clearing, and upstream CRUD
 - boundary request validation
 - handlers call core services, not repositories or parser packages
 
@@ -60,6 +69,7 @@ flowchart LR
 ### Infrastructure
 - PostgreSQL repositories
 - Valkey cache implementations
+- tenant-aware OCI artifact cache implementations
 - OSV enricher
 - upstream registry clients
 
@@ -88,6 +98,9 @@ flowchart TB
         pgRepos[PostgreSQL repositories]
         valkeyCache[Valkey caches]
         upstreamClients[upstream clients]
+        cachedOCI[cache-backed OCI client]
+        ociCache[tenant-aware OCI artifact cache]
+        ociStorage[disk backend today / future S3 or GCS]
         enrichers[OSV + npm enrichers]
     end
 
@@ -113,6 +126,10 @@ flowchart TB
     evaluationService --> pgRepos
     enrichmentService --> valkeyCache
     enrichmentService --> enrichers
+    ociDelivery --> cachedOCI
+    cachedOCI --> ociCache
+    cachedOCI --> upstreamClients
+    ociCache --> ociStorage
 ```
 
 ## Dependency direction
@@ -120,6 +137,27 @@ flowchart TB
 - delivery depends on core
 - infrastructure depends on core ports and domain
 - core depends on neither delivery nor infrastructure
+
+## Control-plane Huma boundary
+
+### In scope
+
+- control-plane API delivery only
+- OpenAPI/docs generation at the HTTP boundary
+- typed request and response models for the control-plane endpoints that use Huma
+- current Huma-backed control-plane endpoints include health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, decision-cache clearing, and upstream CRUD
+- per-endpoint Huma coverage remains explicit and human-controlled
+
+### Out of scope
+
+- npm delivery
+- OCI delivery
+- assuming every control-plane endpoint uses Huma
+- assuming every future control-plane endpoint must use Huma automatically
+- core service signatures or domain models
+- infrastructure repositories, caches, enrichers, or upstream clients
+
+Huma is a delivery-layer tool. It must not move policy logic, tenant workflows, or persistence concerns out of core and infrastructure. Endpoint coverage stays human-controlled and must reflect explicit code changes, not inferred drift from shared helpers or documentation alone.
 
 ## Boundary rules
 
@@ -133,6 +171,7 @@ flowchart TB
 - core policy config must use typed structs per policy type, not `map[string]any`
 - approved-license policies must keep missing license metadata behavior explicit; current `license_allowlist` behavior is fail-closed
 - shared ports in core must avoid ecosystem-specific names such as manifest, blob, or tag unless the port is OCI-only
+- OCI artifact cache ports may be OCI-specific, but cache ownership, lookup, and lifecycle must remain tenant-aware across the full app lifecycle
 
 ## Data-plane evaluation flow
 
@@ -145,6 +184,7 @@ sequenceDiagram
     participant enrich as core.EnrichmentService
     participant policyrepo as PostgreSQL policy repository
     participant decisionrepo as PostgreSQL decision repository
+    participant ocicache as OCI artifact cache
     participant upstream as upstream client
 
     client->>delivery: proxy request
@@ -171,8 +211,14 @@ sequenceDiagram
         delivery-->>client: protocol-specific denied response
     else allow
         access-->>delivery: allow decision
-        delivery->>upstream: fetch metadata/content
-        upstream-->>delivery: upstream response stream
+        delivery->>ocicache: lookup tenant-scoped digest entry
+        alt cache hit
+            ocicache-->>delivery: cached response stream
+        else cache miss
+            delivery->>upstream: fetch metadata/content
+            upstream-->>delivery: upstream response stream
+            delivery->>ocicache: opportunistic tenant-scoped cache fill
+        end
         delivery-->>client: registry-compatible response
     end
 ```
@@ -210,7 +256,8 @@ sequenceDiagram
 2. Delivery resolves tenant and normalizes the request.
 3. Core evaluates access using cache, enrichment, and policy.
 4. If denied, delivery renders a protocol-specific error.
-5. If allowed, delivery streams content from upstream.
+5. If allowed, OCI delivery checks the tenant-aware artifact cache by digest before going upstream.
+6. On OCI cache miss, delivery streams content from upstream while opportunistically filling the cache.
 
 ## Deferred goal: graph-backed npm dependency context
 

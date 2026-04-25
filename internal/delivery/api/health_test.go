@@ -33,7 +33,7 @@ func setupHealthServer(t *testing.T, dbErr, cacheErr error) *httptest.Server {
 	)
 	handler := NewHealthHandler(healthSvc, slog.Default())
 	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	handler.RegisterHumaRoutes(NewControlPlaneAPI(mux, "1.0.0"))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

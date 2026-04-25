@@ -125,6 +125,24 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
       - internal`,
 	},
 	{
+		Type:                    domain.PolicyTypeNamespaceAllowlist,
+		Summary:                 "Allow only approved namespaces",
+		Description:             "Denies artifacts whose namespace is outside the configured approved namespace list.",
+		Help:                    "Use this for fail-closed namespace enforcement such as allowing only official OCI namespaces like library or approved internal orgs.",
+		CurrentSchemaVersion:    1,
+		SupportedSchemaVersions: []int{1},
+		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		Example: `- name: allow-only-approved-namespaces
+  type: namespace_allowlist
+  schema_version: 1
+  action: deny
+  priority: 10
+  config:
+    namespaces:
+      - library
+      - docker`,
+	},
+	{
 		Type:                    domain.PolicyTypeBlocklist,
 		Summary:                 "Block specific namespaces",
 		Description:             "Matches artifacts whose namespace is in the configured blocked list.",

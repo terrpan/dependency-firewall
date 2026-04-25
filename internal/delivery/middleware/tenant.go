@@ -4,6 +4,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 
@@ -69,10 +70,10 @@ func NPMTenantFromPath() func(http.Handler) http.Handler {
 				parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/npm/t/"), "/", 2)
 				if len(parts) >= 1 && parts[0] != "" {
 					tenantID := parts[0]
-					
+
 					// Inject tenant ID as header for the TenantResolver middleware
 					r.Header.Set("X-Tenant-ID", tenantID)
-					
+
 					// Rewrite path to /npm/{package...} for the handler
 					if len(parts) == 2 {
 						r.URL.Path = "/npm/" + parts[1]
@@ -84,6 +85,47 @@ func NPMTenantFromPath() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// OCITenantFromHost extracts a tenant ID from the left-most hostname label for
+// OCI requests and injects it as X-Tenant-ID when the request does not already
+// provide the header directly.
+func OCITenantFromHost() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Tenant-ID") == "" {
+				if tenantID := tenantIDFromHost(r.Host); tenantID != "" {
+					r.Header.Set("X-Tenant-ID", tenantID)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func tenantIDFromHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.Trim(host, "[]")
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || host == "localhost" || net.ParseIP(host) != nil {
+		return ""
+	}
+
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 || labels[0] == "" {
+		return ""
+	}
+
+	return labels[0]
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {

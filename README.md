@@ -114,13 +114,40 @@ go run ./cmd/firewall
 
 ## Configuration
 
-| Key            | Env override            | Default          | Description                                  |
-| -------------- | ----------------------- | ---------------- | -------------------------------------------- |
-| `server.port`  | `FIREWALL_SERVER_PORT`  | `8080`           | HTTP listen port                             |
-| `database.dsn` | `FIREWALL_DATABASE_DSN` | —                | PostgreSQL connection string                 |
-| `valkey.addr`  | `FIREWALL_VALKEY_ADDR`  | `localhost:6379` | Valkey (Redis-compatible) address            |
-| `log.level`    | `FIREWALL_LOG_LEVEL`    | `info`           | Log level (`debug`, `info`, `warn`, `error`) |
-| `log.format`   | `FIREWALL_LOG_FORMAT`   | `json`           | Log format (`json`, `text`)                  |
+| Key | Env override | Default | Description |
+| --- | --- | --- | --- |
+| `server.port` | `FIREWALL_SERVER_PORT` | `8080` | HTTP listen port |
+| `server.read_timeout` | `FIREWALL_SERVER_READ_TIMEOUT` | `5s` | Max time to read request headers/body |
+| `server.write_timeout` | `FIREWALL_SERVER_WRITE_TIMEOUT` | `0s` | Max time to write responses; `0s` disables the deadline for proxy streaming |
+| `server.idle_timeout` | `FIREWALL_SERVER_IDLE_TIMEOUT` | `120s` | Keep-alive idle timeout |
+| `oci_cache.enabled` | `FIREWALL_OCI_CACHE_ENABLED` | `false` | Enable the tenant-aware OCI manifest/blob cache |
+| `oci_cache.backend` | `FIREWALL_OCI_CACHE_BACKEND` | `disk` | OCI cache backend (`disk` today; `s3`/`gcs` reserved) |
+| `oci_cache.root_dir` | `FIREWALL_OCI_CACHE_ROOT_DIR` | `os.TempDir()/dependency-firewall/oci` | Local disk root for tenant-scoped OCI cache entries |
+| `oci_cache.max_bytes` | `FIREWALL_OCI_CACHE_MAX_BYTES` | `0` | Per-tenant disk cache byte limit; `0` disables size-based eviction |
+| `oci_cache.max_age` | `FIREWALL_OCI_CACHE_MAX_AGE` | `0s` | Per-tenant max cache age; `0s` disables age-based eviction |
+| `oci_cache.max_entries` | `FIREWALL_OCI_CACHE_MAX_ENTRIES` | `0` | Per-tenant object-count limit; `0` disables count-based eviction |
+| `database.dsn` | `FIREWALL_DATABASE_DSN` | — | PostgreSQL connection string |
+| `valkey.addr` | `FIREWALL_VALKEY_ADDR` | `localhost:6379` | Valkey (Redis-compatible) address |
+| `log.level` | `FIREWALL_LOG_LEVEL` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+| `log.format` | `FIREWALL_LOG_FORMAT` | `json` | Log format (`json`, `text`) |
+
+For OCI proxying, keep `server.write_timeout` at `0s` unless you are sure large blob downloads will always complete within your configured deadline.
+
+To enable the first local-disk OCI cache in development:
+
+```yaml
+ociCache:
+  enabled: true
+  backend: disk
+  rootDir: "/tmp/dependency-firewall/oci"
+  maxBytes: 2147483648
+  maxAge: 24h
+  maxEntries: 500
+```
+
+The OCI cache is **tenant-aware** throughout lookup, on-disk layout, and eviction. Future S3/GCS config surfaces are reserved, but only the disk backend is implemented today.
+
+For deployments that prefer a writable runtime path such as `/tmp/dependency-firewall/oci` or mount a writable volume and point `oci_cache.root_dir` at it.
 
 ## Setting up a tenant
 
@@ -172,7 +199,8 @@ Each policy item must declare an explicit `schema_version`. This version belongs
 | `block_mutable_tag` | Deny images pulled by a mutable tag (e.g. `latest`)                      |
 | `license`           | Match specific declared licenses using SPDX identifiers                  |
 | `license_allowlist` | Deny artifacts whose declared licenses are outside an approved SPDX list |
-| `allowlist`         | Allow only named packages/namespaces; implicitly deny others             |
+| `allowlist`         | Record positive matches for trusted packages or namespaces               |
+| `namespace_allowlist` | Deny artifacts whose namespace is outside an approved list            |
 | `blocklist`         | Explicitly deny packages/namespaces                                      |
 
 ### Example policy file
@@ -315,25 +343,35 @@ npm error 403 Forbidden: policy "block-critical-vulnerabilities" denied: CVSS sc
 
 ## OCI proxy example
 
-Point Docker at the firewall by configuring it as a [registry mirror](https://docs.docker.com/registry/recipes/mirror/):
+For Docker-compatible OCI traffic, the firewall derives the tenant from a **tenant-specific hostname**.
+
+The primary hosted-registry flow is to pull through that hostname directly:
 
 ```bash
 # Pull an image manifest through the firewall
-curl -H "X-Tenant-ID: <tenant-id>" \
-  http://localhost:8080/v2/library/nginx/manifests/1.25.3
+curl http://<tenant-id>.localhost:8080/v2/library/nginx/manifests/1.25.3
 
 # Pull by digest (bypasses mutable-tag policy)
-curl -H "X-Tenant-ID: <tenant-id>" \
-  "http://localhost:8080/v2/library/nginx/manifests/sha256:abc123..."
+curl "http://<tenant-id>.localhost:8080/v2/library/nginx/manifests/sha256:abc123..."
+
+# Hosted-registry Docker UX
+docker pull <tenant-id>.localhost:8080/library/nginx:1.25.3
 ```
 
-**Configure Docker daemon** (`/etc/docker/daemon.json`) to proxy through the firewall:
+`docker login` is not required for this example. The firewall currently supports host-based tenant routing for anonymous pulls, but it does not implement OCI registry authentication.
+
+Use Docker mirror configuration only when you want **transparent local pulls** like `docker pull nginx:1.25.3` to be redirected through the firewall:
+
+**Optional local mirror config** (`/etc/docker/daemon.json`):
 
 ```json
 {
-  "registry-mirrors": ["http://localhost:8080"]
+  "registry-mirrors": ["http://<tenant-id>.localhost:8080"],
+  "insecure-registries": ["<tenant-id>.localhost:8080"]
 }
 ```
+
+For local development, make sure `<tenant-id>.localhost` resolves to the firewall host if your environment does not already resolve `*.localhost`.
 
 When a pull is **denied**, Docker returns:
 

@@ -51,6 +51,24 @@ func TestConfigValidate(t *testing.T) {
 		assert.Contains(t, err.Error(), "database.max_idle_conns")
 		assert.Contains(t, err.Error(), "database.max_open_conns")
 	})
+
+	t.Run("zero write timeout is allowed for streaming responses", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Server.WriteTimeout = 0
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("enabled disk OCI cache requires a root directory", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.OCICache.Enabled = true
+		cfg.OCICache.Backend = "disk"
+		cfg.OCICache.RootDir = "   "
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "oci_cache.root_dir")
+	})
 }
 
 func validConfig() *Config {
@@ -58,8 +76,12 @@ func validConfig() *Config {
 		Server: ServerConfig{
 			Port:         8080,
 			ReadTimeout:  5 * time.Second,
-			WriteTimeout: 10 * time.Second,
+			WriteTimeout: 0,
 			IdleTimeout:  120 * time.Second,
+		},
+		OCICache: OCICacheConfig{
+			Backend: "disk",
+			RootDir: defaultOCICacheRootDir(),
 		},
 		Database: DatabaseConfig{
 			DSN:             "postgres://localhost:5432/firewall?sslmode=disable",

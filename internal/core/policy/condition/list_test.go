@@ -111,3 +111,55 @@ func TestBlocklist(t *testing.T) {
 		})
 	}
 }
+
+func TestNamespaceAllowlist(t *testing.T) {
+	cond := NamespaceAllowlist{}
+
+	tests := []struct {
+		name      string
+		req       domain.AccessRequest
+		config    domain.PolicyConfig
+		wantMatch bool
+		wantErr   bool
+	}{
+		{
+			name: "namespace in approved list, no match",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "library"},
+			},
+			config:    &domain.NamespaceListPolicyConfig{Namespaces: []string{"library", "docker"}},
+			wantMatch: false,
+		},
+		{
+			name: "namespace outside approved list, match",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "random-org"},
+			},
+			config:    &domain.NamespaceListPolicyConfig{Namespaces: []string{"library", "docker"}},
+			wantMatch: true,
+		},
+		{
+			name: "missing config key, error",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{Namespace: "random-org"},
+			},
+			config:  &domain.NamespaceListPolicyConfig{},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, reason, err := cond.Evaluate(tt.req, tt.config)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMatch, matched)
+			if matched {
+				assert.Contains(t, reason, "approved namespace list")
+			}
+		})
+	}
+}

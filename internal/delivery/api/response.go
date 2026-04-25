@@ -81,6 +81,10 @@ type cacheClearResponse struct {
 	Cache  string `json:"cache"`
 }
 
+type policyImportResponse struct {
+	Imported int `json:"imported"`
+}
+
 type ArtifactIdentityResponse struct {
 	Ecosystem string `json:"ecosystem"`
 	Namespace string `json:"namespace,omitempty"`

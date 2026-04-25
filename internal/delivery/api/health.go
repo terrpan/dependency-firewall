@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
@@ -18,18 +21,34 @@ func NewHealthHandler(healthService *service.HealthService, logger *slog.Logger)
 	return &HealthHandler{healthService: healthService}
 }
 
-// RegisterRoutes registers health check routes on the given mux.
-func (h *HealthHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /healthz", h.handleHealthCheck)
+type healthOutput struct {
+	Status int
+	Body   healthResponse
 }
 
-func (h *HealthHandler) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-	status := h.healthService.CheckHealth(r.Context())
+// RegisterHumaRoutes registers health check routes on the control-plane Huma API.
+func (h *HealthHandler) RegisterHumaRoutes(api huma.API) {
+	huma.Get(api, "/healthz", h.handleHealthCheck,
+		huma.OperationTags("health"),
+		func(o *huma.Operation) {
+			o.OperationID = "get-health"
+			o.Summary = "Get service health"
+			o.Description = "Returns process health for control-plane readiness checks. Responds with 503 when the service is unhealthy."
+		},
+	)
+	removeValidationResponse(api, "/healthz", http.MethodGet)
+}
+
+func (h *HealthHandler) handleHealthCheck(ctx context.Context, _ *struct{}) (*healthOutput, error) {
+	status := h.healthService.CheckHealth(ctx)
 
 	httpStatus := http.StatusOK
 	if status.Status != "healthy" {
 		httpStatus = http.StatusServiceUnavailable
 	}
 
-	writeJSON(w, httpStatus, toHealthResponse(status))
+	return &healthOutput{
+		Status: httpStatus,
+		Body:   toHealthResponse(status),
+	}, nil
 }

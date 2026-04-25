@@ -2,6 +2,7 @@ package port
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -19,4 +20,31 @@ type DecisionCache interface {
 type MetadataCache interface {
 	Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error)
 	Set(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, metadata *domain.ArtifactMetadata, ttl time.Duration) error
+}
+
+// OCIArtifactKind identifies the OCI artifact type stored in the cache.
+type OCIArtifactKind string
+
+const (
+	OCIArtifactManifest OCIArtifactKind = "manifests"
+	OCIArtifactBlob     OCIArtifactKind = "blobs"
+)
+
+// OCIArtifactDescriptor stores cacheable response metadata for an OCI artifact.
+type OCIArtifactDescriptor struct {
+	ContentType string
+	Headers     map[string]string
+}
+
+// OCIArtifactWriter stages a cache write for an OCI artifact.
+type OCIArtifactWriter interface {
+	io.Writer
+	Commit(ctx context.Context) error
+	Abort() error
+}
+
+// OCIArtifactCache caches OCI manifests and blobs by tenant and immutable digest.
+type OCIArtifactCache interface {
+	Get(ctx context.Context, tenantID string, kind OCIArtifactKind, digest string) (*UpstreamResponse, error)
+	StartWrite(ctx context.Context, tenantID string, kind OCIArtifactKind, digest string, descriptor OCIArtifactDescriptor) (OCIArtifactWriter, error)
 }

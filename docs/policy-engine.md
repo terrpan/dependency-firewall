@@ -203,6 +203,26 @@ Matches artifacts whose namespace is in the configured list. Use with `action: a
 
 - Namespace is the npm scope (without `@`) or OCI registry/org.
 - Allowlist matches do **not** override deny policies. The evaluator remains deny-wins.
+- Allowlist is **not** fail-closed. Artifacts outside the list still allow unless another deny policy matches.
+
+### `namespace_allowlist`
+
+Denies artifacts whose namespace is outside the configured approved list. Use with `action: deny` for fail-closed namespace enforcement.
+
+```yaml
+- name: allow-only-approved-images
+  type: namespace_allowlist
+  action: deny
+  priority: 10
+  config:
+    namespaces:
+      - library
+      - docker
+```
+
+- Namespace is the npm scope (without `@`) or OCI registry/org.
+- `namespace_allowlist` must use `action: deny`.
+- This is the strict namespace policy for cases like allowing only official OCI images from `library`.
 
 ### `blocklist`
 
@@ -266,9 +286,10 @@ Some policy types depend on metadata from enrichment sources:
 | `license` | `Licenses` | npm registry |
 | `license_allowlist` | `Licenses` | npm registry |
 | `allowlist` | namespace (from artifact identity) | none |
+| `namespace_allowlist` | namespace (from artifact identity) | none |
 | `blocklist` | namespace (from artifact identity) | none |
 
-If enrichment fails or metadata is unavailable, age, CVSS, and license conditions **skip** (no match), meaning the artifact is not blocked by that rule. Allowlist and blocklist conditions work without enrichment.
+If enrichment fails or metadata is unavailable, age, CVSS, and license conditions **skip** (no match), meaning the artifact is not blocked by that rule. Allowlist, namespace allowlist, and blocklist conditions work without enrichment.
 
 ## Deferred goal: dependency-context selectors
 

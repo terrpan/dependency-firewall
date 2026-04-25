@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"mime"
 	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
@@ -25,56 +27,234 @@ func NewPolicyHandler(policies *service.PolicyService, logger *slog.Logger) *Pol
 }
 
 type policyRequest struct {
-	Name          string              `json:"name" validate:"notblank"`
-	Type          domain.PolicyType   `json:"type" validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag license license_allowlist allowlist blocklist"`
-	Action        domain.PolicyAction `json:"action" validate:"required,oneof=allow deny"`
-	SchemaVersion int                 `json:"schema_version" validate:"required,gte=1"`
-	Config        json.RawMessage     `json:"config" validate:"required"`
-	Priority      int                 `json:"priority"`
-	Enabled       bool                `json:"enabled"`
+	Name          string              `json:"name,omitempty" validate:"notblank"`
+	Type          domain.PolicyType   `json:"type,omitempty" validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag license license_allowlist allowlist namespace_allowlist blocklist"`
+	Action        domain.PolicyAction `json:"action,omitempty" validate:"required,oneof=allow deny"`
+	SchemaVersion int                 `json:"schema_version,omitempty" validate:"required,gte=1"`
+	Config        json.RawMessage     `json:"config,omitempty" validate:"required"`
+	Priority      int                 `json:"priority,omitempty"`
+	Enabled       bool                `json:"enabled,omitempty"`
 }
 
 type policyRollbackRequest struct {
-	Version int `json:"version" validate:"required,gte=1"`
+	Version int `json:"version,omitempty" validate:"required,gte=1"`
 }
 
 // RegisterRoutes registers policy API routes on the given mux.
 func (h *PolicyHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/policy-types", h.listTypes)
-	mux.HandleFunc("POST /api/v1/policies/import", h.importPolicies)
-	mux.HandleFunc("POST /api/v1/policies", h.create)
-	mux.HandleFunc("GET /api/v1/policies", h.list)
-	mux.HandleFunc("GET /api/v1/policies/{id}/versions", h.listVersions)
-	mux.HandleFunc("POST /api/v1/policies/{id}/rollback", h.rollback)
-	mux.HandleFunc("GET /api/v1/policies/{id}", h.get)
-	mux.HandleFunc("PUT /api/v1/policies/{id}", h.update)
-	mux.HandleFunc("DELETE /api/v1/policies/{id}", h.delete)
 }
 
-func (h *PolicyHandler) listTypes(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, toPolicyTypesResponse(h.policies.ListTypes()))
+// RegisterHumaRoutes registers policy metadata routes on the control-plane Huma API.
+func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-policy",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/policies",
+		Summary:       "Create a policy",
+		Description:   "Creates a tenant-scoped policy definition used during proxy policy evaluation.",
+		DefaultStatus: http.StatusCreated,
+		Tags:          []string{"policies"},
+		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+	}, h.create)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-policies",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies",
+		Summary:     "List policies",
+		Description: "Lists the policies currently configured for the tenant.",
+		Tags:        []string{"policies"},
+		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+	}, h.list)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-policy",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/{id}",
+		Summary:     "Get a policy by ID",
+		Description: "Returns one tenant-scoped policy definition by ID.",
+		Tags:        []string{"policies"},
+		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError},
+	}, h.get)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-policy",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/policies/{id}",
+		Summary:     "Update a policy",
+		Description: "Updates an existing tenant-scoped policy definition.",
+		Tags:        []string{"policies"},
+		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
+	}, h.update)
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-policy",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/policies/{id}",
+		Summary:       "Delete a policy",
+		Description:   "Deletes a tenant-scoped policy definition by ID.",
+		DefaultStatus: http.StatusNoContent,
+		Tags:          []string{"policies"},
+		Errors:        []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	}, h.delete)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-policy-versions",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policies/{id}/versions",
+		Summary:     "List policy versions",
+		Description: "Lists the retained version history for a tenant-scoped policy definition.",
+		Tags:        []string{"policies"},
+		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError},
+	}, h.listVersions)
+	huma.Register(api, huma.Operation{
+		OperationID: "rollback-policy",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/policies/{id}/rollback",
+		Summary:     "Rollback a policy",
+		Description: "Restores a tenant-scoped policy definition from a retained version snapshot.",
+		Tags:        []string{"policies"},
+		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError},
+	}, h.rollback)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-policy-types",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/policy-types",
+		Summary:     "List policy types",
+		Description: "Lists the supported policy types, actions, schema versions, and authoring metadata available to the control plane.",
+		Tags:        []string{"policies"},
+	}, h.listTypesHuma)
+	huma.Register(api, huma.Operation{
+		OperationID: "import-policies",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/policies/import",
+		Summary:     "Import policies",
+		Description: "Imports a tenant policy document from YAML or JSON and upserts policies by name within the tenant.",
+		Tags:        []string{"policies"},
+		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusUnsupportedMediaType, http.StatusInternalServerError},
+	}, h.importPoliciesHuma)
+	removeValidationResponse(api, "/api/v1/policies", http.MethodGet, http.MethodPost)
+	removeValidationResponse(api, "/api/v1/policies/{id}", http.MethodGet, http.MethodPut, http.MethodDelete)
+	removeValidationResponse(api, "/api/v1/policies/{id}/versions", http.MethodGet)
+	removeValidationResponse(api, "/api/v1/policies/{id}/rollback", http.MethodPost)
+	removeValidationResponse(api, "/api/v1/policy-types", http.MethodGet)
+	removeValidationResponse(api, "/api/v1/policies/import", http.MethodPost)
+	setRequestBodyContentTypes(api, "/api/v1/policies/import", http.MethodPost,
+		"application/json",
+		"application/x-yaml",
+		"application/yaml",
+		"text/yaml",
+		"text/x-yaml",
+	)
 }
 
-func (h *PolicyHandler) create(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+type policyTypesOutput struct {
+	Body []*PolicyTypeResponse
+}
+
+type policyHeaderInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+}
+
+type createPolicyInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+	Body     policyRequest
+}
+
+type policyIDInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+	ID       string `path:"id" doc:"Policy identifier"`
+}
+
+type updatePolicyInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+	ID       string `path:"id" doc:"Policy identifier"`
+	Body     policyRequest
+}
+
+type rollbackPolicyInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+	ID       string `path:"id" doc:"Policy identifier"`
+	Body     policyRollbackRequest
+}
+
+type policyOutput struct {
+	Body *PolicyResponse
+}
+
+type policyListOutput struct {
+	Body []*PolicyResponse
+}
+
+type policyVersionListOutput struct {
+	Body []*PolicyVersionResponse
+}
+
+func (h *PolicyHandler) listTypesHuma(context.Context, *struct{}) (*policyTypesOutput, error) {
+	return &policyTypesOutput{Body: toPolicyTypesResponse(h.policies.ListTypes())}, nil
+}
+
+func (h *PolicyHandler) create(ctx context.Context, input *createPolicyInput) (*policyOutput, error) {
+	resp, err := h.createPolicy(ctx, input.TenantID, input.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, err
 	}
+	return &policyOutput{Body: resp}, nil
+}
 
-	var req policyRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+func (h *PolicyHandler) list(ctx context.Context, input *policyHeaderInput) (*policyListOutput, error) {
+	resp, err := h.listPolicies(ctx, input.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	return &policyListOutput{Body: resp}, nil
+}
+
+func (h *PolicyHandler) listVersions(ctx context.Context, input *policyIDInput) (*policyVersionListOutput, error) {
+	resp, err := h.listPolicyVersions(ctx, input.TenantID, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &policyVersionListOutput{Body: resp}, nil
+}
+
+func (h *PolicyHandler) get(ctx context.Context, input *policyIDInput) (*policyOutput, error) {
+	resp, err := h.getPolicy(ctx, input.TenantID, input.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &policyOutput{Body: resp}, nil
+}
+
+func (h *PolicyHandler) update(ctx context.Context, input *updatePolicyInput) (*policyOutput, error) {
+	resp, err := h.updatePolicy(ctx, input.TenantID, input.ID, input.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &policyOutput{Body: resp}, nil
+}
+
+func (h *PolicyHandler) rollback(ctx context.Context, input *rollbackPolicyInput) (*policyOutput, error) {
+	resp, err := h.rollbackPolicy(ctx, input.TenantID, input.ID, input.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &policyOutput{Body: resp}, nil
+}
+
+func (h *PolicyHandler) delete(ctx context.Context, input *policyIDInput) (*struct{}, error) {
+	if err := h.deletePolicy(ctx, input.TenantID, input.ID); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, req policyRequest) (*PolicyResponse, error) {
+	tenantID, err := tenantIDFromValue(rawTenantID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := validateRequest(req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	config, err := corepolicy.DecodeConfigJSON(req.Type, req.SchemaVersion, req.Config)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	p := &domain.Policy{
 		TenantID:      tenantID,
@@ -87,175 +267,105 @@ func (h *PolicyHandler) create(w http.ResponseWriter, r *http.Request) {
 		Enabled:       req.Enabled,
 	}
 
-	if err := h.policies.Create(r.Context(), p); err != nil {
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+
+	if err := h.policies.Create(ctx, p); err != nil {
 		if errors.Is(err, domain.ErrInvalidPolicy) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if errors.Is(err, domain.ErrPolicyNameConflict) {
-			writeError(w, http.StatusConflict, "policy name already exists")
-			return
+			return nil, huma.Error409Conflict("policy name already exists")
 		}
-		h.logger.Error("creating policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to create policy")
-		return
+		h.logger.Error("creating policy", "error", err, "tenant_id", tenantID)
+		return nil, huma.Error500InternalServerError("failed to create policy")
 	}
-	writeJSON(w, http.StatusCreated, toPolicyResponse(p))
+
+	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) importPolicies(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+func (h *PolicyHandler) listPolicies(ctx context.Context, rawTenantID string) ([]*PolicyResponse, error) {
+	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	mediaType, err := parseMediaType(r.Header.Get("Content-Type"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if mediaType != "" && !isSupportedPolicyImportContentType(mediaType) {
-		writeError(w, http.StatusUnsupportedMediaType, "unsupported Content-Type for policy import")
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body")
-		return
-	}
-	defer r.Body.Close()
-
-	count, err := h.policies.ImportPolicies(r.Context(), tenantID, body)
-	if err != nil {
-		if errors.Is(err, domain.ErrInvalidPolicy) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if errors.Is(err, domain.ErrPolicyNameConflict) {
-			writeError(w, http.StatusConflict, "policy name already exists")
-			return
-		}
-		h.logger.Error("importing policies", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to import policies")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]int{"imported": count})
-}
-
-func (h *PolicyHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	policies, err := h.policies.ListByTenant(r.Context(), tenantID)
+	policies, err := h.policies.ListByTenant(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			writeError(w, http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
 		}
-		h.logger.Error("listing policies", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to list policies")
-		return
+		h.logger.Error("listing policies", "error", err, "tenant_id", tenantID)
+		return nil, huma.Error500InternalServerError("failed to list policies")
 	}
-	writeJSON(w, http.StatusOK, toPoliciesResponse(policies))
+	return toPoliciesResponse(policies), nil
 }
 
-func (h *PolicyHandler) listVersions(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+func (h *PolicyHandler) listPolicyVersions(ctx context.Context, rawTenantID, id string) ([]*PolicyVersionResponse, error) {
+	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	versions, err := h.policies.ListVersions(r.Context(), tenantID, r.PathValue("id"))
+	versions, err := h.policies.ListVersions(ctx, tenantID, id)
 	if err != nil {
 		if errors.Is(err, domain.ErrPolicyNotFound) {
-			writeError(w, http.StatusNotFound, "policy not found")
-			return
+			return nil, huma.Error404NotFound("policy not found")
 		}
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			writeError(w, http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
 		}
-		h.logger.Error("listing policy versions", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to list policy versions")
-		return
+		h.logger.Error("listing policy versions", "error", err, "tenant_id", tenantID, "policy_id", id)
+		return nil, huma.Error500InternalServerError("failed to list policy versions")
 	}
-
-	writeJSON(w, http.StatusOK, toPolicyVersionsResponse(versions))
+	return toPolicyVersionsResponse(versions), nil
 }
 
-func (h *PolicyHandler) get(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+func (h *PolicyHandler) getPolicy(ctx context.Context, rawTenantID, id string) (*PolicyResponse, error) {
+	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	id := r.PathValue("id")
-	p, err := h.policies.GetByID(r.Context(), tenantID, id)
+	p, err := h.policies.GetByID(ctx, tenantID, id)
 	if err != nil {
 		if errors.Is(err, domain.ErrPolicyNotFound) {
-			writeError(w, http.StatusNotFound, "policy not found")
-			return
+			return nil, huma.Error404NotFound("policy not found")
 		}
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			writeError(w, http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
 		}
-		h.logger.Error("getting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to get policy")
-		return
+		h.logger.Error("getting policy", "error", err, "tenant_id", tenantID, "policy_id", id)
+		return nil, huma.Error500InternalServerError("failed to get policy")
 	}
-	writeJSON(w, http.StatusOK, toPolicyResponse(p))
+	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) update(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string, req policyRequest) (*PolicyResponse, error) {
+	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	id := r.PathValue("id")
-	var req policyRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := validateRequest(req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
+
 	config, err := corepolicy.DecodeConfigJSON(req.Type, req.SchemaVersion, req.Config)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	p := &domain.Policy{
 		ID:            id,
@@ -269,95 +379,72 @@ func (h *PolicyHandler) update(w http.ResponseWriter, r *http.Request) {
 		Enabled:       req.Enabled,
 	}
 
-	if err := h.policies.Update(r.Context(), p); err != nil {
+	if err := h.policies.Update(ctx, p); err != nil {
 		if errors.Is(err, domain.ErrInvalidPolicy) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if errors.Is(err, domain.ErrPolicyNameConflict) {
-			writeError(w, http.StatusConflict, "policy name already exists")
-			return
+			return nil, huma.Error409Conflict("policy name already exists")
 		}
 		if errors.Is(err, domain.ErrPolicyNotFound) {
-			writeError(w, http.StatusNotFound, "policy not found")
-			return
+			return nil, huma.Error404NotFound("policy not found")
 		}
-		h.logger.Error("updating policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to update policy")
-		return
+		h.logger.Error("updating policy", "error", err, "tenant_id", tenantID, "policy_id", id)
+		return nil, huma.Error500InternalServerError("failed to update policy")
 	}
-	writeJSON(w, http.StatusOK, toPolicyResponse(p))
+	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) rollback(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+func (h *PolicyHandler) rollbackPolicy(ctx context.Context, rawTenantID, id string, req policyRollbackRequest) (*PolicyResponse, error) {
+	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	var req policyRollbackRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := validateRequest(req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	p, err := h.policies.RollbackToVersion(r.Context(), tenantID, r.PathValue("id"), req.Version)
+	p, err := h.policies.RollbackToVersion(ctx, tenantID, id, req.Version)
 	if err != nil {
 		if errors.Is(err, domain.ErrPolicyNotFound) {
-			writeError(w, http.StatusNotFound, "policy not found")
-			return
+			return nil, huma.Error404NotFound("policy not found")
 		}
 		if errors.Is(err, domain.ErrPolicyVersionNotFound) {
-			writeError(w, http.StatusNotFound, "policy version not found")
-			return
+			return nil, huma.Error404NotFound("policy version not found")
 		}
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			writeError(w, http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			writeError(w, http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
-			return
+			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
 		}
 		if errors.Is(err, domain.ErrInvalidPolicy) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
-		h.logger.Error("rolling back policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to rollback policy")
-		return
+		h.logger.Error("rolling back policy", "error", err, "tenant_id", tenantID, "policy_id", id)
+		return nil, huma.Error500InternalServerError("failed to rollback policy")
 	}
 
-	writeJSON(w, http.StatusOK, toPolicyResponse(p))
+	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) delete(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
+func (h *PolicyHandler) deletePolicy(ctx context.Context, rawTenantID, id string) error {
+	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return huma.Error400BadRequest(err.Error())
 	}
 
-	id := r.PathValue("id")
-	if err := h.policies.Delete(r.Context(), tenantID, id); err != nil {
+	if err := h.policies.Delete(ctx, tenantID, id); err != nil {
 		if errors.Is(err, domain.ErrPolicyNotFound) {
-			writeError(w, http.StatusNotFound, "policy not found")
-			return
+			return huma.Error404NotFound("policy not found")
 		}
-		h.logger.Error("deleting policy", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to delete policy")
-		return
+		h.logger.Error("deleting policy", "error", err, "tenant_id", tenantID, "policy_id", id)
+		return huma.Error500InternalServerError("failed to delete policy")
 	}
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func parseMediaType(value string) (string, error) {

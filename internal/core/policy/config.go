@@ -93,7 +93,7 @@ func newConfigForType(policyType domain.PolicyType, schemaVersion int) (domain.P
 			return &domain.LicensePolicyConfig{}, nil
 		case domain.PolicyTypeLicenseAllowlist:
 			return &domain.LicenseAllowlistPolicyConfig{}, nil
-		case domain.PolicyTypeAllowlist, domain.PolicyTypeBlocklist:
+		case domain.PolicyTypeAllowlist, domain.PolicyTypeNamespaceAllowlist, domain.PolicyTypeBlocklist:
 			return &domain.NamespaceListPolicyConfig{}, nil
 		default:
 			return nil, invalidPolicyf("unknown policy type %q", policyType)
@@ -139,7 +139,7 @@ func configTypeMatchesPolicy(policyType domain.PolicyType, config domain.PolicyC
 	case domain.PolicyTypeLicenseAllowlist:
 		_, ok := config.(*domain.LicenseAllowlistPolicyConfig)
 		return ok
-	case domain.PolicyTypeAllowlist, domain.PolicyTypeBlocklist:
+	case domain.PolicyTypeAllowlist, domain.PolicyTypeNamespaceAllowlist, domain.PolicyTypeBlocklist:
 		_, ok := config.(*domain.NamespaceListPolicyConfig)
 		return ok
 	default:

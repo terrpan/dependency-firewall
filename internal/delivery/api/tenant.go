@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
@@ -20,107 +23,163 @@ func NewTenantHandler(tenants *service.TenantService, logger *slog.Logger) *Tena
 	return &TenantHandler{tenants: tenants, logger: logger}
 }
 
-// RegisterRoutes registers tenant API routes on the given mux.
-func (h *TenantHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/v1/tenants", h.create)
-	mux.HandleFunc("GET /api/v1/tenants", h.list)
-	mux.HandleFunc("GET /api/v1/tenants/{id}", h.get)
-	mux.HandleFunc("PUT /api/v1/tenants/{id}", h.update)
-	mux.HandleFunc("DELETE /api/v1/tenants/{id}", h.delete)
+// RegisterHumaRoutes registers tenant API routes on the control-plane Huma API.
+func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-tenant",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/tenants",
+		Summary:       "Create a tenant",
+		Description:   "Creates a tenant record used to scope control-plane resources and proxy policy decisions.",
+		DefaultStatus: http.StatusCreated,
+		Tags:          []string{"tenants"},
+		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+	}, h.create)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-tenants",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/tenants",
+		Summary:     "List tenants",
+		Description: "Lists all configured tenants managed by the control plane.",
+		Tags:        []string{"tenants"},
+		Errors:      []int{http.StatusInternalServerError},
+	}, h.list)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-tenant",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/tenants/{id}",
+		Summary:     "Get a tenant by ID",
+		Description: "Returns one tenant record by its identifier.",
+		Tags:        []string{"tenants"},
+		Errors:      []int{http.StatusNotFound, http.StatusInternalServerError},
+	}, h.get)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-tenant",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/tenants/{id}",
+		Summary:     "Update a tenant",
+		Description: "Updates the mutable fields of an existing tenant record.",
+		Tags:        []string{"tenants"},
+		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
+	}, h.update)
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-tenant",
+		Method:        http.MethodDelete,
+		Path:          "/api/v1/tenants/{id}",
+		Summary:       "Delete a tenant",
+		Description:   "Deletes a tenant record by ID.",
+		DefaultStatus: http.StatusNoContent,
+		Tags:          []string{"tenants"},
+		Errors:        []int{http.StatusNotFound, http.StatusInternalServerError},
+	}, h.delete)
+	removeValidationResponse(api, "/api/v1/tenants", http.MethodGet, http.MethodPost)
+	removeValidationResponse(api, "/api/v1/tenants/{id}", http.MethodGet, http.MethodPut, http.MethodDelete)
 }
 
 type createTenantRequest struct {
-	Name string `json:"name" validate:"notblank"`
+	Name string `json:"name" validate:"notblank" doc:"Tenant display name"`
 }
 
-func (h *TenantHandler) create(w http.ResponseWriter, r *http.Request) {
-	var req createTenantRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+type createTenantInput struct {
+	Body createTenantRequest
+}
+
+type tenantIDInput struct {
+	ID string `path:"id" doc:"Tenant identifier"`
+}
+
+type updateTenantInput struct {
+	ID   string `path:"id" doc:"Tenant identifier"`
+	Body createTenantRequest
+}
+
+type tenantOutput struct {
+	Body *TenantResponse
+}
+
+type tenantListOutput struct {
+	Body []*TenantResponse
+}
+
+func (h *TenantHandler) create(ctx context.Context, input *createTenantInput) (*tenantOutput, error) {
+	resp, err := h.createTenant(ctx, input.Body)
+	if err != nil {
+		return nil, err
 	}
+	return &tenantOutput{Body: resp}, nil
+}
+
+func (h *TenantHandler) list(ctx context.Context, _ *struct{}) (*tenantListOutput, error) {
+	tenants, err := h.tenants.List(ctx)
+	if err != nil {
+		h.logger.Error("listing tenants", "error", err)
+		return nil, huma.Error500InternalServerError("failed to list tenants")
+	}
+	return &tenantListOutput{Body: toTenantsResponse(tenants)}, nil
+}
+
+func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantOutput, error) {
+	tenant, err := h.tenants.GetByID(ctx, input.ID)
+	if err != nil {
+		if errors.Is(err, domain.ErrTenantNotFound) {
+			return nil, huma.Error404NotFound("tenant not found")
+		}
+		h.logger.Error("getting tenant", "error", err)
+		return nil, huma.Error500InternalServerError("failed to get tenant")
+	}
+	return &tenantOutput{Body: toTenantResponse(tenant)}, nil
+}
+
+func (h *TenantHandler) update(ctx context.Context, input *updateTenantInput) (*tenantOutput, error) {
+	resp, err := h.updateTenant(ctx, input.ID, input.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &tenantOutput{Body: resp}, nil
+}
+
+func (h *TenantHandler) delete(ctx context.Context, input *tenantIDInput) (*struct{}, error) {
+	if err := h.tenants.Delete(ctx, input.ID); err != nil {
+		if errors.Is(err, domain.ErrTenantNotFound) {
+			return nil, huma.Error404NotFound("tenant not found")
+		}
+		h.logger.Error("deleting tenant", "error", err)
+		return nil, huma.Error500InternalServerError("failed to delete tenant")
+	}
+	return nil, nil
+}
+
+func (h *TenantHandler) createTenant(ctx context.Context, req createTenantRequest) (*TenantResponse, error) {
 	if err := validateRequest(req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
 	tenant := &domain.Tenant{Name: req.Name}
-	if err := h.tenants.Create(r.Context(), tenant); err != nil {
+	if err := h.tenants.Create(ctx, tenant); err != nil {
 		if errors.Is(err, domain.ErrTenantNameConflict) {
-			writeError(w, http.StatusConflict, "tenant name already exists")
-			return
+			return nil, huma.Error409Conflict("tenant name already exists")
 		}
 		h.logger.Error("creating tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to create tenant")
-		return
+		return nil, huma.Error500InternalServerError("failed to create tenant")
 	}
-	writeJSON(w, http.StatusCreated, toTenantResponse(tenant))
+	return toTenantResponse(tenant), nil
 }
 
-func (h *TenantHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenants, err := h.tenants.List(r.Context())
-	if err != nil {
-		h.logger.Error("listing tenants", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to list tenants")
-		return
-	}
-	writeJSON(w, http.StatusOK, toTenantsResponse(tenants))
-}
-
-func (h *TenantHandler) get(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	tenant, err := h.tenants.GetByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, domain.ErrTenantNotFound) {
-			writeError(w, http.StatusNotFound, "tenant not found")
-			return
-		}
-		h.logger.Error("getting tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to get tenant")
-		return
-	}
-	writeJSON(w, http.StatusOK, toTenantResponse(tenant))
-}
-
-func (h *TenantHandler) update(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	var req createTenantRequest
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
+func (h *TenantHandler) updateTenant(ctx context.Context, id string, req createTenantRequest) (*TenantResponse, error) {
 	if err := validateRequest(req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
 	tenant := &domain.Tenant{ID: id, Name: req.Name}
-	if err := h.tenants.Update(r.Context(), tenant); err != nil {
+	if err := h.tenants.Update(ctx, tenant); err != nil {
 		if errors.Is(err, domain.ErrTenantNameConflict) {
-			writeError(w, http.StatusConflict, "tenant name already exists")
-			return
+			return nil, huma.Error409Conflict("tenant name already exists")
 		}
 		if errors.Is(err, domain.ErrTenantNotFound) {
-			writeError(w, http.StatusNotFound, "tenant not found")
-			return
+			return nil, huma.Error404NotFound("tenant not found")
 		}
 		h.logger.Error("updating tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to update tenant")
-		return
+		return nil, huma.Error500InternalServerError("failed to update tenant")
 	}
-	writeJSON(w, http.StatusOK, toTenantResponse(tenant))
-}
-
-func (h *TenantHandler) delete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := h.tenants.Delete(r.Context(), id); err != nil {
-		if errors.Is(err, domain.ErrTenantNotFound) {
-			writeError(w, http.StatusNotFound, "tenant not found")
-			return
-		}
-		h.logger.Error("deleting tenant", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to delete tenant")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	return toTenantResponse(tenant), nil
 }

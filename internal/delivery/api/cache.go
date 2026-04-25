@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
@@ -20,7 +23,28 @@ func NewCacheHandler(caches *service.CacheService, logger *slog.Logger) *CacheHa
 
 // RegisterRoutes registers cache API routes on the given mux.
 func (h *CacheHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("DELETE /api/v1/cache/decisions", h.clearDecisionCache)
+}
+
+// RegisterHumaRoutes registers cache maintenance routes on the control-plane Huma API.
+func (h *CacheHandler) RegisterHumaRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "clear-decision-cache",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/cache/decisions",
+		Summary:     "Clear tenant decision cache",
+		Description: "Invalidates cached policy decisions for the tenant so subsequent proxy requests are evaluated again.",
+		Tags:        []string{"cache"},
+		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+	}, h.clearDecisionCacheHuma)
+	removeValidationResponse(api, "/api/v1/cache/decisions", http.MethodDelete)
+}
+
+type cacheTenantInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+}
+
+type cacheClearOutput struct {
+	Body cacheClearResponse
 }
 
 func (h *CacheHandler) clearDecisionCache(w http.ResponseWriter, r *http.Request) {
@@ -40,4 +64,23 @@ func (h *CacheHandler) clearDecisionCache(w http.ResponseWriter, r *http.Request
 		Status: "cleared",
 		Cache:  "decisions",
 	})
+}
+
+func (h *CacheHandler) clearDecisionCacheHuma(ctx context.Context, input *cacheTenantInput) (*cacheClearOutput, error) {
+	tenantID, err := tenantIDFromValue(input.TenantID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+
+	if err := h.caches.ClearTenantDecisions(ctx, tenantID); err != nil {
+		h.logger.Error("clearing tenant decision cache", "error", err, "tenant_id", tenantID)
+		return nil, huma.Error500InternalServerError("failed to clear decision cache")
+	}
+
+	return &cacheClearOutput{
+		Body: cacheClearResponse{
+			Status: "cleared",
+			Cache:  "decisions",
+		},
+	}, nil
 }

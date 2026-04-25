@@ -10,6 +10,7 @@ policies:
   # different digest at any time, making builds non-reproducible.
   - name: block-mutable-tags
     type: block_mutable_tag
+    schema_version: 1
     action: deny
     priority: 10
     config:
@@ -24,6 +25,7 @@ policies:
   # will have no effect until OCI enrichment is wired in.
   - name: block-vulnerable-images
     type: cvss_threshold
+    schema_version: 1
     action: deny
     priority: 20
     config:
@@ -33,6 +35,7 @@ policies:
   # Block images from untrusted registries or organizations.
   - name: block-untrusted-registries
     type: blocklist
+    schema_version: 1
     action: deny
     priority: 30
     config:
@@ -45,10 +48,22 @@ policies:
   # Set this at a lower priority number so it is checked first.
   - name: allow-internal-images
     type: allowlist
+    schema_version: 1
     action: allow
     priority: 5
     config:
       namespaces:
         - "registry.mycompany.internal"
         - "mycompany"
+    enabled: true
+
+  - name: allow-only-official-images
+    type: namespace_allowlist
+    schema_version: 1
+    action: deny
+    priority: 10
+    config:
+      namespaces:
+        - library
+        - docker
     enabled: true

@@ -150,18 +150,20 @@ func (s *PolicyService) Delete(ctx context.Context, tenantID, id string) error {
 	return nil
 }
 
-// ImportPolicies parses a YAML or JSON policy document for a tenant and
-// persists the resulting policies. The tenant argument is authoritative and
-// overrides tenant_id from the document when present.
-func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, data []byte) (int, error) {
-	file, err := policy.ParseFile(data)
-	if err != nil {
-		return 0, fmt.Errorf("parsing policy document: %w", err)
+// ImportPolicies persists typed policy definitions for a tenant. The tenant
+// argument is authoritative and overrides tenant IDs on imported policies.
+func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, imported []domain.Policy) (int, error) {
+	policies := make([]domain.Policy, len(imported))
+	for i := range imported {
+		policies[i] = imported[i]
+		policies[i].TenantID = tenantID
+		if policies[i].Version == 0 {
+			policies[i].Version = 1
+		}
 	}
 
-	policies, err := policy.ToDomainPoliciesForTenant(file, tenantID)
-	if err != nil {
-		return 0, fmt.Errorf("converting policy document: %w", err)
+	if err := policy.ValidatePolicies(policies); err != nil {
+		return 0, fmt.Errorf("validating imported policies: %w", err)
 	}
 
 	existingPolicies, err := s.repo.ListByTenant(ctx, tenantID)

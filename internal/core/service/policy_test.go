@@ -26,6 +26,30 @@ type spyPolicyServiceRepo struct {
 func intPtr(v int) *int             { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
 
+func importedPolicies(tenantID string) []domain.Policy {
+	return []domain.Policy{
+		{
+			TenantID:      tenantID,
+			Name:          "block-high",
+			Type:          domain.PolicyTypeCVSSThreshold,
+			Action:        domain.PolicyActionDeny,
+			SchemaVersion: 1,
+			Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.5)},
+			Enabled:       true,
+		},
+		{
+			TenantID:      tenantID,
+			Name:          "block-old",
+			Type:          domain.PolicyTypeMinimumAge,
+			Action:        domain.PolicyActionDeny,
+			SchemaVersion: 1,
+			Config:        &domain.MinimumAgePolicyConfig{MinAgeDays: intPtr(30)},
+			Priority:      1,
+			Enabled:       true,
+		},
+	}
+}
+
 func (s *spyPolicyServiceRepo) Create(_ context.Context, policy *domain.Policy) error {
 	s.createCalls++
 	if s.createErrAt > 0 && s.createCalls == s.createErrAt {
@@ -265,21 +289,7 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 		cache := &spyPolicyDecisionCache{}
 		service := NewPolicyService(repo, revisions, cache)
 
-		count, err := service.ImportPolicies(context.Background(), "tenant-1", []byte(`
-policies:
-  - name: block-high
-    type: cvss_threshold
-    schema_version: 1
-    action: deny
-    config:
-      max_cvss: 7.5
-  - name: block-old
-    type: minimum_age
-    schema_version: 1
-    action: deny
-    config:
-      min_age_days: 30
-`))
+		count, err := service.ImportPolicies(context.Background(), "tenant-1", importedPolicies("tenant-1"))
 
 		require.NoError(t, err)
 		assert.Equal(t, 2, count)
@@ -308,16 +318,18 @@ policies:
 		cache := &spyPolicyDecisionCache{}
 		service := NewPolicyService(repo, revisions, cache)
 
-		count, err := service.ImportPolicies(context.Background(), "tenant-1", []byte(`
-policies:
-  - name: block-high
-    type: cvss_threshold
-    schema_version: 1
-    action: deny
-    priority: 10
-    config:
-      max_cvss: 9.5
-`))
+		count, err := service.ImportPolicies(context.Background(), "tenant-1", []domain.Policy{
+			{
+				TenantID:      "different-tenant",
+				Name:          "block-high",
+				Type:          domain.PolicyTypeCVSSThreshold,
+				Action:        domain.PolicyActionDeny,
+				SchemaVersion: 1,
+				Priority:      10,
+				Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.5)},
+				Enabled:       true,
+			},
+		})
 
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
@@ -344,6 +356,7 @@ func TestPolicyService_ListTypes(t *testing.T) {
 	assert.Equal(t, domain.PolicyTypeCVSSThreshold, types[0].Type)
 
 	var foundAllowlist bool
+	var foundNamespaceAllowlist bool
 	for _, descriptor := range types {
 		if descriptor.Type == domain.PolicyTypeLicenseAllowlist {
 			foundAllowlist = true
@@ -352,8 +365,16 @@ func TestPolicyService_ListTypes(t *testing.T) {
 			assert.Contains(t, descriptor.Example, "license_allowlist")
 			assert.Equal(t, []domain.PolicyAction{domain.PolicyActionDeny}, descriptor.SupportedActions)
 		}
+		if descriptor.Type == domain.PolicyTypeNamespaceAllowlist {
+			foundNamespaceAllowlist = true
+			assert.NotEmpty(t, descriptor.Help)
+			assert.NotEmpty(t, descriptor.Description)
+			assert.Contains(t, descriptor.Example, "namespace_allowlist")
+			assert.Equal(t, []domain.PolicyAction{domain.PolicyActionDeny}, descriptor.SupportedActions)
+		}
 	}
 	assert.True(t, foundAllowlist)
+	assert.True(t, foundNamespaceAllowlist)
 }
 
 func TestPolicyService_ImportPolicies_InvalidatesAfterPartialMutationFailure(t *testing.T) {
@@ -362,21 +383,7 @@ func TestPolicyService_ImportPolicies_InvalidatesAfterPartialMutationFailure(t *
 	cache := &spyPolicyDecisionCache{}
 	service := NewPolicyService(repo, revisions, cache)
 
-	count, err := service.ImportPolicies(context.Background(), "tenant-1", []byte(`
-policies:
-  - name: block-high
-    type: cvss_threshold
-    schema_version: 1
-    action: deny
-    config:
-      max_cvss: 7.5
-  - name: block-old
-    type: minimum_age
-    schema_version: 1
-    action: deny
-    config:
-      min_age_days: 30
-`))
+	count, err := service.ImportPolicies(context.Background(), "tenant-1", importedPolicies("tenant-1"))
 
 	require.Error(t, err)
 	assert.Zero(t, count)
@@ -393,21 +400,27 @@ func TestPolicyService_ImportPolicies_RejectsDuplicateNamesInDocument(t *testing
 	cache := &spyPolicyDecisionCache{}
 	service := NewPolicyService(repo, revisions, cache)
 
-	count, err := service.ImportPolicies(context.Background(), "tenant-1", []byte(`
-policies:
-  - name: block-high
-    type: cvss_threshold
-    schema_version: 1
-    action: deny
-    config:
-      max_cvss: 7.5
-  - name: block-high
-    type: minimum_age
-    schema_version: 1
-    action: deny
-    config:
-      min_age_days: 30
-`))
+	count, err := service.ImportPolicies(context.Background(), "tenant-1", []domain.Policy{
+		{
+			TenantID:      "tenant-1",
+			Name:          "block-high",
+			Type:          domain.PolicyTypeCVSSThreshold,
+			Action:        domain.PolicyActionDeny,
+			SchemaVersion: 1,
+			Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.5)},
+			Enabled:       true,
+		},
+		{
+			TenantID:      "tenant-1",
+			Name:          "block-high",
+			Type:          domain.PolicyTypeMinimumAge,
+			Action:        domain.PolicyActionDeny,
+			SchemaVersion: 1,
+			Config:        &domain.MinimumAgePolicyConfig{MinAgeDays: intPtr(30)},
+			Priority:      1,
+			Enabled:       true,
+		},
+	})
 
 	require.Error(t, err)
 	assert.Zero(t, count)
@@ -471,16 +484,17 @@ func TestPolicyService_RejectsDeprecatedEnforceConfig(t *testing.T) {
 		cache := &spyPolicyDecisionCache{}
 		service := NewPolicyService(repo, revisions, cache)
 
-		count, err := service.ImportPolicies(context.Background(), "tenant-1", []byte(`
-policies:
-  - name: block-high
-    type: cvss_threshold
-    schema_version: 1
-    action: deny
-    config:
-      max_cvss: 7.5
-      enforce: warn
-`))
+		count, err := service.ImportPolicies(context.Background(), "tenant-1", []domain.Policy{
+			{
+				TenantID:      "tenant-1",
+				Name:          "block-high",
+				Type:          domain.PolicyTypeCVSSThreshold,
+				Action:        domain.PolicyActionDeny,
+				SchemaVersion: 1,
+				Config:        &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}},
+				Enabled:       true,
+			},
+		})
 
 		require.Error(t, err)
 		assert.ErrorIs(t, err, domain.ErrInvalidPolicy)

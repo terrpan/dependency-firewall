@@ -3,9 +3,12 @@ package upstream
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -19,6 +22,8 @@ var ociAcceptHeaders = strings.Join([]string{
 	"application/vnd.oci.image.index.v1+json",
 	"application/vnd.docker.distribution.manifest.list.v2+json",
 }, ", ")
+
+var bearerChallengeParamRE = regexp.MustCompile(`([A-Za-z]+)="([^"]*)"`)
 
 // OCIClient implements port.UpstreamClient for OCI-compatible registries.
 type OCIClient struct {
@@ -40,9 +45,9 @@ func repoPath(artifact domain.ArtifactIdentity) string {
 
 // FetchMetadata fetches a manifest from the upstream registry.
 func (c *OCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
-	ref := artifact.Version
+	ref := artifact.Digest
 	if ref == "" {
-		ref = artifact.Digest
+		ref = artifact.Version
 	}
 
 	url := fmt.Sprintf("%s/v2/%s/manifests/%s",
@@ -57,7 +62,7 @@ func (c *OCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream,
 	}
 	req.Header.Set("Accept", ociAcceptHeaders)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doOCIRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -92,7 +97,7 @@ func (c *OCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, 
 		return nil, fmt.Errorf("creating blob request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doOCIRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -137,7 +142,7 @@ func (c *OCIClient) resolveTagHead(ctx context.Context, url string) (string, err
 	}
 	req.Header.Set("Accept", ociAcceptHeaders)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doOCIRequest(req)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -161,7 +166,7 @@ func (c *OCIClient) resolveTagGet(ctx context.Context, url string) (string, erro
 	}
 	req.Header.Set("Accept", ociAcceptHeaders)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doOCIRequest(req)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -196,4 +201,115 @@ func extractHeaders(resp *http.Response) map[string]string {
 		}
 	}
 	return headers
+}
+
+func (c *OCIClient) doOCIRequest(req *http.Request) (*http.Response, error) {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		return resp, nil
+	}
+
+	token, ok, err := c.fetchBearerToken(req.Context(), resp.Header.Get("WWW-Authenticate"))
+	if err != nil {
+		resp.Body.Close()
+		return nil, err
+	}
+	if !ok {
+		return resp, nil
+	}
+
+	resp.Body.Close()
+
+	retry := req.Clone(req.Context())
+	retry.Header = req.Header.Clone()
+	retry.Header.Set("Authorization", "Bearer "+token)
+
+	return c.httpClient.Do(retry)
+}
+
+func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string) (string, bool, error) {
+	params, ok := parseBearerChallenge(challenge)
+	if !ok {
+		return "", false, nil
+	}
+
+	realm, ok := params["realm"]
+	if !ok || realm == "" {
+		return "", false, fmt.Errorf("bearer challenge missing realm")
+	}
+
+	tokenURL, err := url.Parse(realm)
+	if err != nil {
+		return "", false, fmt.Errorf("parsing bearer token realm: %w", err)
+	}
+
+	query := tokenURL.Query()
+	if service := params["service"]; service != "" {
+		query.Set("service", service)
+	}
+	if scope := params["scope"]; scope != "" {
+		query.Set("scope", scope)
+	}
+	tokenURL.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL.String(), nil)
+	if err != nil {
+		return "", false, fmt.Errorf("creating bearer token request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", false, fmt.Errorf("unexpected bearer token status: %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Token       string `json:"token"`
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", false, fmt.Errorf("decoding bearer token response: %w", err)
+	}
+
+	if payload.Token != "" {
+		return payload.Token, true, nil
+	}
+	if payload.AccessToken != "" {
+		return payload.AccessToken, true, nil
+	}
+
+	return "", false, fmt.Errorf("bearer token response missing token")
+}
+
+func parseBearerChallenge(challenge string) (map[string]string, bool) {
+	challenge = strings.TrimSpace(challenge)
+	if challenge == "" || !strings.HasPrefix(strings.ToLower(challenge), "bearer ") {
+		return nil, false
+	}
+
+	matches := bearerChallengeParamRE.FindAllStringSubmatch(challenge, -1)
+	if len(matches) == 0 {
+		return nil, false
+	}
+
+	params := make(map[string]string, len(matches))
+	for _, match := range matches {
+		if len(match) != 3 {
+			continue
+		}
+		params[strings.ToLower(match[1])] = match[2]
+	}
+
+	if len(params) == 0 {
+		return nil, false
+	}
+
+	return params, true
 }

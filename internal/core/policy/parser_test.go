@@ -147,6 +147,25 @@ func TestToDomainPolicies(t *testing.T) {
 		assert.Equal(t, domain.PolicyTypeLicenseAllowlist, policies[0].Type)
 	})
 
+	t.Run("namespace allowlist policy type is accepted", func(t *testing.T) {
+		pf := &PolicyFile{
+			TenantID: "t1",
+			Policies: []PolicyDef{
+				{
+					Name:          "allow-only-official-images",
+					Type:          "namespace_allowlist",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Config:        map[string]any{"namespaces": []string{"library", "docker"}},
+				},
+			},
+		}
+		policies, err := ToDomainPolicies(pf)
+		require.NoError(t, err)
+		require.Len(t, policies, 1)
+		assert.Equal(t, domain.PolicyTypeNamespaceAllowlist, policies[0].Type)
+	})
+
 	t.Run("tenant override allows files without tenant_id", func(t *testing.T) {
 		pf := &PolicyFile{
 			Policies: []PolicyDef{{

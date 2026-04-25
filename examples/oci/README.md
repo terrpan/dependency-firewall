@@ -32,43 +32,46 @@ chmod +x setup.sh
 ./setup.sh http://firewall.internal:8080
 ```
 
-The script prints your tenant ID and a Docker daemon config snippet at the end:
+The script prints your tenant ID and a tenant-specific OCI hostname at the end:
 
 ```
 ══════════════════════════════════════════════════════
   Setup complete!
 
   Tenant ID : 01920abc-...
+  OCI Host  : 01920abc-....localhost:8080
 
-  To proxy OCI pulls through the firewall, add this
-  to /etc/docker/daemon.json and restart Docker:
+  Use this hostname directly in image references:
 
-    {
-      "registry-mirrors": ["http://localhost:8080"]
-    }
+    docker pull 01920abc-....localhost:8080/library/nginx:1.25.3
 ══════════════════════════════════════════════════════
 ```
 
 ## Try it out
 
+### Registry-hostname flow
+
+This is the primary hosted-registry UX. It is closer to Artifactory-style remote repositories than the local mirror flow because clients pull through the firewall hostname directly.
+
 ```bash
 TENANT_ID="<id from setup>"
+TENANT_HOST="${TENANT_ID}.localhost:8080"
 
-# Allowed — pinned by immutable digest
-curl -s -H "X-Tenant-ID: $TENANT_ID" \
-  http://localhost:8080/v2/library/nginx/manifests/1.25.3 \
+# Allowed — version tag not blocked by the mutable-tag policy
+curl -s \
+  "http://${TENANT_HOST}/v2/library/nginx/manifests/1.25.3" \
   -o /dev/null -w "%{http_code}\n"
 # → 200
 
 # Denied — mutable tag "latest"
-curl -s -H "X-Tenant-ID: $TENANT_ID" \
-  http://localhost:8080/v2/library/nginx/manifests/latest \
+curl -s \
+  "http://${TENANT_HOST}/v2/library/nginx/manifests/latest" \
   -o /dev/null -w "%{http_code}\n"
 # → 403
 
 # See the deny reason
-curl -s -H "X-Tenant-ID: $TENANT_ID" \
-  http://localhost:8080/v2/library/nginx/manifests/latest | jq .
+curl -s \
+  "http://${TENANT_HOST}/v2/library/nginx/manifests/latest" | jq .
 # {
 #   "errors": [
 #     {
@@ -79,19 +82,40 @@ curl -s -H "X-Tenant-ID: $TENANT_ID" \
 # }
 ```
 
-## Configure Docker daemon as a mirror
+If Docker is talking to the firewall hostname directly, use image references like:
 
-Add to `/etc/docker/daemon.json` and restart Docker:
+```bash
+docker pull "${TENANT_HOST}/library/nginx:1.25.3"   # allowed
+docker pull "${TENANT_HOST}/library/nginx:latest"   # denied
+```
+
+`docker login` is not required for this example. The firewall currently supports host-based tenant routing for anonymous pulls, but it does not implement OCI registry authentication.
+
+## Optional: configure Docker daemon as a mirror
+
+Use this only when you want local `docker pull nginx:1.25.3` traffic to be redirected through the firewall without changing image names.
+
+Point a tenant-specific hostname at the firewall and add it to `/etc/docker/daemon.json`.
+For local development, map `<tenant-id>.localhost` to `127.0.0.1` if your environment does not already resolve `*.localhost`.
+
+Example `/etc/hosts` entry:
+
+```text
+127.0.0.1 <tenant-id>.localhost
+```
+
+Example `/etc/docker/daemon.json`:
 
 ```json
 {
-  "registry-mirrors": ["http://localhost:8080"]
+  "registry-mirrors": ["http://<tenant-id>.localhost:8080"],
+  "insecure-registries": ["<tenant-id>.localhost:8080"]
 }
 ```
 
-> **Note:** Docker registry mirrors don't forward custom HTTP headers automatically. For header-based tenant routing, use the firewall behind a reverse proxy that injects `X-Tenant-ID`, or use host-based tenant resolution when implemented.
+> **Note:** OCI tenant selection for Docker-compatible traffic is host-based. The firewall derives the tenant from the left-most hostname label and still accepts `X-Tenant-ID` as a direct-test fallback for raw HTTP clients.
 
-Once configured, regular Docker pulls are intercepted:
+Once the mirror is configured, regular Docker pulls are intercepted:
 
 ```bash
 docker pull nginx:1.25.3      # allowed — pinned version

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -421,11 +422,19 @@ func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPoli
 	decisionCache := &mockDecisionCache{}
 
 	mux := http.NewServeMux()
-	NewTenantHandler(service.NewTenantService(tenantRepo), logger).RegisterRoutes(mux)
-	NewPolicyHandler(service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache), logger).RegisterRoutes(mux)
-	NewCacheHandler(service.NewCacheService(decisionCache), logger).RegisterRoutes(mux)
-	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo), logger).RegisterRoutes(mux)
-	NewEvaluationHandler(service.NewEvaluationService(decisionRepo), logger).RegisterRoutes(mux)
+	controlPlaneAPI := NewControlPlaneAPI(mux, "test")
+	healthSvc := service.NewHealthService(
+		"test-firewall", "1.0.0", "abc123", "2024-01-01T00:00:00Z",
+		&stubHealthChecker{},
+		&stubHealthChecker{},
+		logger,
+	)
+	NewHealthHandler(healthSvc, logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewTenantHandler(service.NewTenantService(tenantRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewPolicyHandler(service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewCacheHandler(service.NewCacheService(decisionCache), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewEvaluationHandler(service.NewEvaluationService(decisionRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -468,6 +477,21 @@ func decodeJSON[T any](t *testing.T, resp *http.Response) T {
 	var v T
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&v))
 	return v
+}
+
+func decodeBodyString(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body)
+}
+
+func encodeJSON(t *testing.T, value any) string {
+	t.Helper()
+	body, err := json.Marshal(value)
+	require.NoError(t, err)
+	return string(body)
 }
 
 // --- Tests ---
@@ -531,7 +555,147 @@ func Test_TenantValidation(t *testing.T) {
 	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/tenants", []byte(`{"name":"acme","slug":"acme"}`), "application/json", nil)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body = decodeJSON[map[string]string](t, resp)
-	assert.Contains(t, body["error"], `unknown field "slug"`)
+	assert.Equal(t, `invalid JSON: unknown field "slug"`, body["error"])
+
+	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/tenants", []byte(`{"name":"acme"} trailing`), "application/json", nil)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "invalid JSON: invalid character 't' after top-level value", body["error"])
+}
+
+func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+
+	resp := doJSON(t, http.MethodGet, srv.URL+controlPlaneOpenAPIPath+".json", nil, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/openapi+json", resp.Header.Get("Content-Type"))
+
+	spec := decodeJSON[map[string]any](t, resp)
+	paths, ok := spec["paths"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, paths, "/healthz")
+	assert.Contains(t, paths, "/api/v1/tenants")
+	assert.Contains(t, paths, "/api/v1/tenants/{id}")
+	assert.Contains(t, paths, "/api/v1/upstreams")
+	assert.Contains(t, paths, "/api/v1/upstreams/{id}")
+	assert.Contains(t, paths, "/api/v1/policies")
+	assert.Contains(t, paths, "/api/v1/policies/{id}")
+	assert.Contains(t, paths, "/api/v1/policies/{id}/versions")
+	assert.Contains(t, paths, "/api/v1/policies/{id}/rollback")
+	assert.Contains(t, paths, "/api/v1/policy-types")
+	assert.Contains(t, paths, "/api/v1/policies/import")
+	assert.Contains(t, paths, "/api/v1/evaluations")
+	assert.Contains(t, paths, "/api/v1/cache/decisions")
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/{id}"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/{id}/versions"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/{id}/rollback"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/tenants"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/tenants/{id}"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/upstreams"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/upstreams/{id}"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policy-types"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/import"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/evaluations"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/cache/decisions"]), `"422"`)
+	assertOpenAPIDescription(t, paths, "/healthz", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/tenants", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/tenants", "post")
+	assertOpenAPIDescription(t, paths, "/api/v1/tenants/{id}", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/tenants/{id}", "put")
+	assertOpenAPIDescription(t, paths, "/api/v1/tenants/{id}", "delete")
+	assertOpenAPIDescription(t, paths, "/api/v1/upstreams", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/upstreams", "post")
+	assertOpenAPIDescription(t, paths, "/api/v1/upstreams/{id}", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/upstreams/{id}", "put")
+	assertOpenAPIDescription(t, paths, "/api/v1/upstreams/{id}", "delete")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies", "post")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies/{id}", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies/{id}", "put")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies/{id}", "delete")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies/{id}/versions", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies/{id}/rollback", "post")
+	assertOpenAPIDescription(t, paths, "/api/v1/policy-types", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/policies/import", "post")
+	assertOpenAPIDescription(t, paths, "/api/v1/evaluations", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/cache/decisions", "delete")
+	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies", "post", "application/json")
+	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies/{id}", "put", "application/json")
+	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies/{id}/rollback", "post", "application/json")
+	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies/import", "post",
+		"application/json",
+		"application/x-yaml",
+		"application/yaml",
+		"text/yaml",
+		"text/x-yaml",
+	)
+	assertOpenAPIParameterAbsent(t, paths, "/api/v1/policies/import", "post", "header", "Content-Type")
+
+	resp = doJSON(t, http.MethodGet, srv.URL+controlPlaneDocsPath, nil, nil)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
+	body := decodeBodyString(t, resp)
+	assert.Contains(t, body, controlPlaneOpenAPIPath+".yaml")
+}
+
+func assertOpenAPIDescription(t *testing.T, paths map[string]any, path, method string) {
+	t.Helper()
+
+	pathItem, ok := paths[path].(map[string]any)
+	require.Truef(t, ok, "path %s missing or invalid", path)
+
+	operation, ok := pathItem[method].(map[string]any)
+	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+	assert.NotEmptyf(t, operation["description"], "description missing for %s %s", method, path)
+}
+
+func assertOpenAPIRequestBodyContentTypes(t *testing.T, paths map[string]any, path, method string, contentTypes ...string) {
+	t.Helper()
+
+	pathItem, ok := paths[path].(map[string]any)
+	require.Truef(t, ok, "path %s missing or invalid", path)
+
+	operation, ok := pathItem[method].(map[string]any)
+	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+
+	requestBody, ok := operation["requestBody"].(map[string]any)
+	require.Truef(t, ok, "requestBody missing for %s %s", method, path)
+
+	content, ok := requestBody["content"].(map[string]any)
+	require.Truef(t, ok, "requestBody content missing for %s %s", method, path)
+
+	for _, contentType := range contentTypes {
+		assert.Containsf(t, content, contentType, "requestBody content type %s missing for %s %s", contentType, method, path)
+	}
+}
+
+func assertOpenAPIParameterAbsent(t *testing.T, paths map[string]any, path, method, location, name string) {
+	t.Helper()
+
+	pathItem, ok := paths[path].(map[string]any)
+	require.Truef(t, ok, "path %s missing or invalid", path)
+
+	operation, ok := pathItem[method].(map[string]any)
+	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+
+	parameters, ok := operation["parameters"].([]any)
+	if !ok {
+		return
+	}
+
+	for _, rawParameter := range parameters {
+		parameter, ok := rawParameter.(map[string]any)
+		require.True(t, ok)
+		assert.Falsef(t,
+			parameter["in"] == location && parameter["name"] == name,
+			"unexpected %s parameter %q present for %s %s",
+			location,
+			name,
+			method,
+			path,
+		)
+	}
 }
 
 func Test_PolicyCRUD(t *testing.T) {
@@ -698,6 +862,21 @@ func Test_PolicyTypesEndpoint(t *testing.T) {
 			assert.NotEmpty(t, descriptor.Description)
 			assert.NotEmpty(t, descriptor.Help)
 			assert.Contains(t, descriptor.Example, "license_allowlist")
+			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
+			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
+			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
+		}
+	}
+	assert.True(t, found)
+
+	found = false
+	for _, descriptor := range types {
+		if descriptor.Type == "namespace_allowlist" {
+			found = true
+			assert.NotEmpty(t, descriptor.Summary)
+			assert.NotEmpty(t, descriptor.Description)
+			assert.NotEmpty(t, descriptor.Help)
+			assert.Contains(t, descriptor.Example, "namespace_allowlist")
 			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
 			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
 			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
@@ -1094,6 +1273,24 @@ func Test_EvaluationList(t *testing.T) {
 	assert.Len(t, list, 2)
 }
 
+func Test_EvaluationList_InvalidPaginationFallsBackToDefaults(t *testing.T) {
+	srv, _, _, _, decisionRepo, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	for i := range 3 {
+		_ = decisionRepo.Record(context.Background(), &domain.Decision{
+			ID:       fmt.Sprintf("d-%d", i),
+			TenantID: "tenant-1",
+			Outcome:  domain.DecisionAllow,
+		})
+	}
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/evaluations?limit=bogus&offset=-5", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	list := decodeJSON[[]DecisionResponse](t, resp)
+	assert.Len(t, list, 3)
+}
+
 func Test_ClearDecisionCache(t *testing.T) {
 	srv, _, _, _, _, decisionCache := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
@@ -1126,18 +1323,29 @@ func Test_MissingTenantIDHeader(t *testing.T) {
 		name   string
 		method string
 		path   string
+		body   any
 	}{
-		{"list policies", http.MethodGet, "/api/v1/policies"},
-		{"create policy", http.MethodPost, "/api/v1/policies"},
-		{"list upstreams", http.MethodGet, "/api/v1/upstreams"},
-		{"create upstream", http.MethodPost, "/api/v1/upstreams"},
-		{"list evaluations", http.MethodGet, "/api/v1/evaluations"},
-		{"clear decision cache", http.MethodDelete, "/api/v1/cache/decisions"},
+		{"list policies", http.MethodGet, "/api/v1/policies", nil},
+		{"create policy", http.MethodPost, "/api/v1/policies", map[string]any{
+			"name":           "block-critical",
+			"type":           "cvss_threshold",
+			"schema_version": 1,
+			"action":         "deny",
+			"config":         map[string]any{"max_cvss": 7.0},
+		}},
+		{"list upstreams", http.MethodGet, "/api/v1/upstreams", nil},
+		{"create upstream", http.MethodPost, "/api/v1/upstreams", map[string]string{
+			"name":      "npmjs",
+			"ecosystem": "npm",
+			"base_url":  "https://registry.npmjs.org",
+		}},
+		{"list evaluations", http.MethodGet, "/api/v1/evaluations", nil},
+		{"clear decision cache", http.MethodDelete, "/api/v1/cache/decisions", nil},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := doJSON(t, tc.method, srv.URL+tc.path, map[string]string{"name": "x"}, nil)
+			resp := doJSON(t, tc.method, srv.URL+tc.path, tc.body, nil)
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			body := decodeJSON[map[string]string](t, resp)
 			assert.Contains(t, body["error"], "X-Tenant-ID")
