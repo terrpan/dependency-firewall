@@ -28,6 +28,7 @@ func TestTypeCatalog_CoversSupportedPolicyTypes(t *testing.T) {
 		assert.NotEmpty(t, descriptor.SupportedSchemaVersions, "supported schema versions for %q", descriptor.Type)
 		assert.Contains(t, descriptor.SupportedSchemaVersions, descriptor.CurrentSchemaVersion, "current schema version for %q", descriptor.Type)
 		assert.NotEmpty(t, descriptor.SupportedActions, "supported actions for %q", descriptor.Type)
+		assert.NotEmpty(t, descriptor.SupportedEcosystems, "supported ecosystems for %q", descriptor.Type)
 
 		_, err := newConfigForType(descriptor.Type, descriptor.CurrentSchemaVersion)
 		require.NoError(t, err, "catalog type %q must have a config decoder", descriptor.Type)
@@ -41,4 +42,40 @@ func TestTypeCatalog_CoversSupportedPolicyTypes(t *testing.T) {
 		_, ok := seen[policyType]
 		assert.True(t, ok, "supported policy type %q is missing from the catalog", policyType)
 	}
+}
+
+func TestValidateUpstreamCompatibility(t *testing.T) {
+	npm := domain.Upstream{
+		ID:           "u-npm",
+		Name:         "npmjs",
+		Ecosystem:    domain.EcosystemNPM,
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
+	}
+	oci := domain.Upstream{
+		ID:           "u-oci",
+		Name:         "docker-hub",
+		Ecosystem:    domain.EcosystemOCI,
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemOCI),
+	}
+	npmWithoutLicenses := domain.Upstream{
+		ID:           "u-npm-limited",
+		Name:         "npm-limited",
+		Ecosystem:    domain.EcosystemNPM,
+		Capabilities: []domain.UpstreamCapability{domain.UpstreamCapabilityPublishTime},
+	}
+
+	require.NoError(t, ValidateUpstreamCompatibility(domain.PolicyTypeMinimumAge, npm))
+	require.NoError(t, ValidateUpstreamCompatibility(domain.PolicyTypeBlockMutableTag, oci))
+	require.NoError(t, ValidateUpstreamCompatibility(domain.PolicyTypeBlocklist, npm))
+	require.NoError(t, ValidateUpstreamCompatibility(domain.PolicyTypeBlocklist, oci))
+
+	err := ValidateUpstreamCompatibility(domain.PolicyTypeBlockMutableTag, npm)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrPolicyUpstreamIncompatible)
+	assert.Contains(t, err.Error(), "only supports oci upstreams")
+
+	err = ValidateUpstreamCompatibility(domain.PolicyTypeLicense, npmWithoutLicenses)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrPolicyUpstreamIncompatible)
+	assert.Contains(t, err.Error(), "requires upstream capabilities licenses")
 }

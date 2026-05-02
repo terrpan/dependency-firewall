@@ -9,8 +9,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	gocvss30 "github.com/pandatix/go-cvss/30"
+	gocvss31 "github.com/pandatix/go-cvss/31"
+	gocvss40 "github.com/pandatix/go-cvss/40"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
@@ -179,31 +184,57 @@ func toArtifactMetadata(resp queryResponse) *domain.ArtifactMetadata {
 }
 
 // extractSeverity picks the best severity string and CVSS score from the OSV
-// severity array, preferring CVSS_V3 over other types.
+// severity array using the highest successfully parsed score.
 func extractSeverity(severities []osvSeverity) (string, float64) {
 	if len(severities) == 0 {
 		return "", 0
 	}
 
-	// Prefer CVSS_V3 entries.
-	for _, s := range severities {
-		if s.Type == "CVSS_V3" {
-			return s.Score, parseCVSSScore(s.Score)
+	bestSeverity := severities[0].Score
+	bestScore := parseCVSSScore(severities[0].Score)
+
+	for _, severity := range severities[1:] {
+		score := parseCVSSScore(severity.Score)
+		if score <= bestScore {
+			continue
 		}
+		bestSeverity = severity.Score
+		bestScore = score
 	}
 
-	// Fall back to the first entry.
-	return severities[0].Score, parseCVSSScore(severities[0].Score)
+	return bestSeverity, bestScore
 }
 
 // parseCVSSScore extracts the base score from a CVSS vector string.
 // OSV returns CVSS vectors like "CVSS:3.1/AV:N/AC:L/..." — we parse the
 // numeric score from severity data. If it is already a plain number, parse that.
 func parseCVSSScore(vector string) float64 {
-	var score float64
-	// Try plain float first.
-	if _, err := fmt.Sscanf(vector, "%f", &score); err == nil {
+	trimmed := strings.TrimSpace(vector)
+	if trimmed == "" {
+		return 0
+	}
+
+	if score, err := strconv.ParseFloat(trimmed, 64); err == nil {
 		return score
 	}
+
+	switch {
+	case strings.HasPrefix(trimmed, "CVSS:3.0/"):
+		cvss30, err := gocvss30.ParseVector(trimmed)
+		if err == nil {
+			return cvss30.BaseScore()
+		}
+	case strings.HasPrefix(trimmed, "CVSS:3.1/"):
+		cvss31, err := gocvss31.ParseVector(trimmed)
+		if err == nil {
+			return cvss31.BaseScore()
+		}
+	case strings.HasPrefix(trimmed, "CVSS:4.0/"):
+		cvss40, err := gocvss40.ParseVector(trimmed)
+		if err == nil {
+			return cvss40.Score()
+		}
+	}
+
 	return 0
 }

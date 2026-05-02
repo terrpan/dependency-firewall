@@ -2,11 +2,15 @@
 package npm
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,7 +72,7 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	upstream, err := h.upstreams.GetByEcosystem(r.Context(), tenant.ID, domain.EcosystemNPM)
+	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
 	if err != nil {
 		h.logger.Error("failed to look up npm upstream",
 			"error", err,
@@ -127,6 +131,25 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 	}
 	defer resp.Body.Close()
 
+	if isJSONContentType(resp.ContentType) {
+		rewrittenBody, rewriteErr := rewriteMetadataTarballs(r, resp.Body, tenant.ID, upstream.ID)
+		if rewriteErr != nil {
+			h.logger.Error("failed to rewrite npm metadata tarball URLs",
+				"error", rewriteErr,
+				"tenant_id", tenant.ID,
+				"package", name,
+			)
+			writeNPMError(w, "upstream metadata error", http.StatusBadGateway)
+			return
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(rewrittenBody))
+		if resp.Headers == nil {
+			resp.Headers = make(map[string]string)
+		}
+		delete(resp.Headers, "ETag")
+		resp.Headers["Content-Length"] = strconv.Itoa(len(rewrittenBody))
+	}
+
 	streamResponse(w, resp)
 }
 
@@ -138,7 +161,7 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	upstream, err := h.upstreams.GetByEcosystem(r.Context(), tenant.ID, domain.EcosystemNPM)
+	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
 	if err != nil {
 		writeNPMError(w, "no npm upstream configured", http.StatusNotFound)
 		return
@@ -283,6 +306,106 @@ func addWarningHeaders(w http.ResponseWriter, decision *domain.Decision) {
 	}
 }
 
+func isJSONContentType(contentType string) bool {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func rewriteMetadataTarballs(r *http.Request, body io.Reader, tenantID, upstreamID string) ([]byte, error) {
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+
+	proxyBase := npmProxyBaseURL(r, tenantID, upstreamID)
+	rewriteTarballURLs(payload, proxyBase)
+
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return rewritten, nil
+}
+
+func rewriteTarballURLs(value any, proxyBase string) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			rewriteTarballURLs(child, proxyBase)
+			if key != "tarball" {
+				continue
+			}
+			tarball, ok := child.(string)
+			if !ok || strings.TrimSpace(tarball) == "" {
+				continue
+			}
+			typed[key] = proxyBase + strings.TrimPrefix(tarballPath(tarball), "/")
+		}
+	case []any:
+		for _, child := range typed {
+			rewriteTarballURLs(child, proxyBase)
+		}
+	}
+}
+
+func tarballPath(tarballURL string) string {
+	parsed, err := url.Parse(tarballURL)
+	if err != nil {
+		return tarballURL
+	}
+	if parsed.RawPath != "" {
+		return parsed.RawPath
+	}
+	if parsed.Path != "" {
+		return parsed.Path
+	}
+	return tarballURL
+}
+
+func npmProxyBaseURL(r *http.Request, tenantID, upstreamID string) string {
+	base := requestBaseURL(r)
+	var path strings.Builder
+	path.WriteString("/npm/t/")
+	path.WriteString(tenantID)
+	path.WriteByte('/')
+	if upstreamID != "" {
+		path.WriteString("u/")
+		path.WriteString(upstreamID)
+		path.WriteByte('/')
+	}
+	return strings.TrimRight(base, "/") + path.String()
+}
+
+func requestBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if forwardedProto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+		scheme = forwardedProto
+	}
+
+	host := firstHeaderValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+
+	return scheme + "://" + host
+}
+
+func firstHeaderValue(value string) string {
+	if value == "" {
+		return ""
+	}
+	part, _, _ := strings.Cut(value, ",")
+	return strings.TrimSpace(part)
+}
+
 // streamResponse copies upstream response headers and body to the client.
 func streamResponse(w http.ResponseWriter, resp *port.UpstreamResponse) {
 	for k, v := range resp.Headers {
@@ -293,6 +416,21 @@ func streamResponse(w http.ResponseWriter, resp *port.UpstreamResponse) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func (h *RegistryHandler) resolveUpstream(ctx context.Context, tenantID string) (*domain.Upstream, error) {
+	if upstreamID, ok := middleware.UpstreamIDFromContext(ctx); ok && upstreamID != "" {
+		upstream, err := h.upstreams.GetByID(ctx, tenantID, upstreamID)
+		if err != nil {
+			return nil, err
+		}
+		if upstream.Ecosystem != domain.EcosystemNPM {
+			return nil, domain.ErrUpstreamNotFound
+		}
+		return upstream, nil
+	}
+
+	return h.upstreams.GetByEcosystem(ctx, tenantID, domain.EcosystemNPM)
 }
 
 // npmErrorResponse is the npm-compatible error format.

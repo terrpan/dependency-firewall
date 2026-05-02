@@ -11,6 +11,7 @@ import (
 )
 
 type hashablePolicy struct {
+	UpstreamID    string              `json:"upstream_id,omitempty"`
 	Name          string              `json:"name"`
 	Type          domain.PolicyType   `json:"type"`
 	Action        domain.PolicyAction `json:"action"`
@@ -25,6 +26,7 @@ func HashPolicies(policies []domain.Policy) (string, error) {
 	hashable := make([]hashablePolicy, len(policies))
 	for i, p := range policies {
 		hashable[i] = hashablePolicy{
+			UpstreamID:    p.UpstreamID,
 			Name:          p.Name,
 			Type:          p.Type,
 			Action:        p.Action,
@@ -41,6 +43,9 @@ func HashPolicies(policies []domain.Policy) (string, error) {
 		}
 		if hashable[i].Name != hashable[j].Name {
 			return hashable[i].Name < hashable[j].Name
+		}
+		if hashable[i].UpstreamID != hashable[j].UpstreamID {
+			return hashable[i].UpstreamID < hashable[j].UpstreamID
 		}
 		if hashable[i].Type != hashable[j].Type {
 			return hashable[i].Type < hashable[j].Type

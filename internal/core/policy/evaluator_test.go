@@ -51,7 +51,7 @@ func TestEvaluate(t *testing.T) {
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
-			wantReasonSub: "CVSS score 9.0 exceeding threshold 7.0",
+			wantReasonSub: "CVSS score 9.0 at or above threshold 7.0",
 			wantDenyCount: 1,
 		},
 		{

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -44,39 +45,11 @@ type evaluationListInput struct {
 	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
 	Limit    string `query:"limit" doc:"Maximum evaluations to return"`
 	Offset   string `query:"offset" doc:"Evaluations to skip"`
+	Search   string `query:"search" doc:"Case-insensitive artifact search across namespace, name, version, and digest"`
 }
 
 type evaluationListOutput struct {
 	Body []*DecisionResponse
-}
-
-func (h *EvaluationHandler) list(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	limit := 50
-	offset := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
-		}
-	}
-
-	decisions, err := h.evaluations.ListByTenant(r.Context(), tenantID, limit, offset)
-	if err != nil {
-		h.logger.Error("listing evaluations", "error", err)
-		writeError(w, http.StatusInternalServerError, "failed to list evaluations")
-		return
-	}
-	writeJSON(w, http.StatusOK, toDecisionsResponse(decisions))
 }
 
 func (h *EvaluationHandler) listHuma(ctx context.Context, input *evaluationListInput) (*evaluationListOutput, error) {
@@ -86,7 +59,7 @@ func (h *EvaluationHandler) listHuma(ctx context.Context, input *evaluationListI
 	}
 
 	limit, offset := parseEvaluationPagination(input.Limit, input.Offset)
-	decisions, err := h.evaluations.ListByTenant(ctx, tenantID, limit, offset)
+	decisions, err := h.evaluations.ListByTenant(ctx, tenantID, limit, offset, strings.TrimSpace(input.Search))
 	if err != nil {
 		h.logger.Error("listing evaluations", "error", err)
 		return nil, huma.Error500InternalServerError("failed to list evaluations")

@@ -45,9 +45,9 @@ func (m *mockPolicyRepository) RollbackToVersion(_ context.Context, _, _ string,
 	return nil, domain.ErrPolicyNotFound
 }
 
-func (m *mockPolicyRepository) Create(_ context.Context, _ *domain.Policy) error { return nil }
-func (m *mockPolicyRepository) Update(_ context.Context, _ *domain.Policy) error { return nil }
-func (m *mockPolicyRepository) Delete(_ context.Context, _, _ string) error      { return nil }
+func (m *mockPolicyRepository) Create(_ context.Context, _ *domain.Policy) error    { return nil }
+func (m *mockPolicyRepository) Update(_ context.Context, _ *domain.Policy) error    { return nil }
+func (m *mockPolicyRepository) Delete(_ context.Context, _, _ string, _ bool) error { return nil }
 
 type mockDecisionRepository struct {
 	hasRecentAllow bool
@@ -59,7 +59,7 @@ func (m *mockDecisionRepository) GetByArtifact(_ context.Context, _ string, _ do
 	return nil, domain.ErrCacheMiss
 }
 
-func (m *mockDecisionRepository) ListByTenant(_ context.Context, _ string, _, _ int) ([]domain.Decision, error) {
+func (m *mockDecisionRepository) ListByTenant(_ context.Context, _ string, _, _ int, _ string) ([]domain.Decision, error) {
 	return nil, nil
 }
 
@@ -92,6 +92,10 @@ func (m *mockMetadataCache) Get(_ context.Context, _ string, _ domain.ArtifactId
 }
 
 func (m *mockMetadataCache) Set(_ context.Context, _ string, _ domain.ArtifactIdentity, _ *domain.ArtifactMetadata, _ time.Duration) error {
+	return nil
+}
+
+func (m *mockMetadataCache) InvalidateTenant(_ context.Context, _ string) error {
 	return nil
 }
 
@@ -490,4 +494,66 @@ func Test_handleMetadata_unversionedRequestSkipsLicenseAllowlistButTarballStillD
 	err := json.NewDecoder(tarballRR.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp.Error, "license metadata is unavailable")
+}
+
+func Test_handleMetadata_rewritesTarballURLsToFirewall(t *testing.T) {
+	upstream := &domain.Upstream{
+		ID:        "up-1",
+		TenantID:  "t-1",
+		Name:      "npmjs",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
+	upstreamClient := &mockUpstreamClient{
+		manifestBody: `{
+			"name":"express",
+			"dist-tags":{"latest":"4.18.2"},
+			"versions":{
+				"4.18.2":{
+					"name":"express",
+					"version":"4.18.2",
+					"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}
+				}
+			}
+		}`,
+		blobBody: "fake-tarball-content",
+	}
+	upstreamRepo := &mockUpstreamRepository{upstream: upstream}
+	enrichmentService := service.NewEnrichmentService(&mockEnricher{}, &mockMetadataCache{}, slog.Default())
+	accessSvc := service.NewAccessService(
+		&mockPolicyRepository{},
+		&mockDecisionRepository{},
+		&mockDecisionCache{},
+		enrichmentService,
+		policy.NewEvaluator(),
+		upstreamClient,
+		upstreamRepo,
+		slog.Default(),
+	)
+
+	h := NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/npm/express", nil)
+	req = withTenant(req)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var payload struct {
+		Versions map[string]struct {
+			Dist struct {
+				Tarball string `json:"tarball"`
+			} `json:"dist"`
+		} `json:"versions"`
+	}
+	err := json.NewDecoder(rr.Body).Decode(&payload)
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		"http://example.com/npm/t/t-1/u/up-1/express/-/express-4.18.2.tgz",
+		payload.Versions["4.18.2"].Dist.Tarball,
+	)
 }

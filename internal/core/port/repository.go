@@ -25,7 +25,7 @@ type PolicyRepository interface {
 	RollbackToVersion(ctx context.Context, tenantID, policyID string, version int) (*domain.Policy, error)
 	Create(ctx context.Context, policy *domain.Policy) error
 	Update(ctx context.Context, policy *domain.Policy) error
-	Delete(ctx context.Context, tenantID, id string) error
+	Delete(ctx context.Context, tenantID, id string, force bool) error
 }
 
 // PolicyRevisionRepository records tenant policy-set revisions for audit.
@@ -37,7 +37,7 @@ type PolicyRevisionRepository interface {
 type DecisionRepository interface {
 	Record(ctx context.Context, decision *domain.Decision) error
 	GetByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error)
-	ListByTenant(ctx context.Context, tenantID string, limit, offset int) ([]domain.Decision, error)
+	ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error)
 	HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error)
 }
 

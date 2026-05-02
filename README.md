@@ -112,6 +112,21 @@ FIREWALL_VALKEY_ADDR="localhost:6379" \
 go run ./cmd/firewall
 ```
 
+## Control-plane UI development
+
+The React control-plane UI lives in `web/` and consumes generated TypeScript types from the Huma OpenAPI document.
+
+```bash
+npm --prefix web install
+npm --prefix web run generate:api
+npm --prefix web run dev
+```
+
+- Run `npm --prefix web run generate:api` after changing Go control-plane request DTOs, response DTOs, or policy type metadata.
+- The generated OpenAPI snapshot is committed at `web/openapi/control-plane.json`.
+- The generated TypeScript bindings live at `web/src/lib/api/generated/openapi.ts`.
+- See `web/README.md` for the full frontend workflow and environment variables.
+
 ## Configuration
 
 | Key | Env override | Default | Description |
@@ -166,7 +181,8 @@ curl -s -X POST http://localhost:8080/api/v1/upstreams \
   -d '{
     "ecosystem": "npm",
     "base_url": "https://registry.npmjs.org",
-    "name": "npmjs-public"
+    "name": "npmjs-public",
+    "capabilities": ["publish_time", "licenses", "vulnerability_lookup"]
   }' | jq .
 
 # Register an OCI upstream for that tenant
@@ -176,9 +192,12 @@ curl -s -X POST http://localhost:8080/api/v1/upstreams \
   -d '{
     "ecosystem": "oci",
     "base_url": "https://registry-1.docker.io",
-    "name": "docker-hub"
+    "name": "docker-hub",
+    "capabilities": ["manifest_digest_lookup"]
   }' | jq .
 ```
+
+If `capabilities` is omitted, the firewall uses the recommended default profile for that ecosystem.
 
 ## Policies
 
@@ -205,11 +224,18 @@ Each policy item must declare an explicit `schema_version`. This version belongs
 
 ### Example policy file
 
+Policies can optionally declare `upstream_id` to scope the rule to one configured upstream. New client and UI flows should set it explicitly so policy intent matches the npm route or OCI hostname developers use.
+
+The control plane validates policy compatibility against the selected upstream capability profile. For example, `license` requires an npm upstream with `licenses`, `cvss_threshold` requires `vulnerability_lookup`, and `block_mutable_tag` requires an OCI upstream with `manifest_digest_lookup`.
+
+See `docs/adding-policy-type.md` for the developer workflow to add a new policy type in core.
+
 ```yaml
 # policies/my-team.yaml
 tenant_id: "<tenant-id>"
 policies:
   - name: block-critical-vulnerabilities
+    upstream_id: "<npm-upstream-id>"
     type: cvss_threshold
     schema_version: 1
     action: deny
@@ -218,6 +244,7 @@ policies:
     enabled: true
 
   - name: block-latest-tag
+    upstream_id: "<oci-upstream-id>"
     type: block_mutable_tag
     schema_version: 1
     action: deny
@@ -227,6 +254,7 @@ policies:
     enabled: true
 
   - name: block-new-packages
+    upstream_id: "<npm-upstream-id>"
     type: minimum_age
     schema_version: 1
     action: deny
@@ -235,6 +263,7 @@ policies:
     enabled: true
 
   - name: audit-outdated-packages
+    upstream_id: "<npm-upstream-id>"
     type: maximum_age
     schema_version: 1
     action: deny
@@ -244,6 +273,7 @@ policies:
     enabled: true
 
   - name: allow-approved-licenses
+    upstream_id: "<npm-upstream-id>"
     type: license_allowlist
     schema_version: 1
     action: deny
@@ -311,27 +341,26 @@ This endpoint does not require a tenant header because it returns global policy-
 
 ## npm proxy example
 
-Point your npm client at the firewall using the `X-Tenant-ID` header or by configuring a custom registry:
+Point your npm client at the firewall using the upstream-specific route:
 
 ```bash
 # Fetch package metadata through the firewall
-curl -H "X-Tenant-ID: <tenant-id>" \
-  http://localhost:8080/npm/express
+curl http://localhost:8080/npm/t/<tenant-id>/u/<upstream-id>/express
 
 # Fetch a specific version
-curl -H "X-Tenant-ID: <tenant-id>" \
-  http://localhost:8080/npm/express/4.18.2
+curl http://localhost:8080/npm/t/<tenant-id>/u/<upstream-id>/express/4.18.2
 
 # Scoped package
-curl -H "X-Tenant-ID: <tenant-id>" \
-  "http://localhost:8080/npm/%40types%2Fnode"
+curl "http://localhost:8080/npm/t/<tenant-id>/u/<upstream-id>/%40types%2Fnode"
 ```
 
 **Configure npm to use the firewall** (`.npmrc`):
 
 ```ini
-registry=http://localhost:8080/npm/
+registry=http://localhost:8080/npm/t/<tenant-id>/u/<upstream-id>/
 ```
+
+Legacy tenant-only npm routes remain available for older clients, but they fall back to the most recently updated upstream for that ecosystem. New setups should prefer the explicit upstream route above.
 
 When a package is **denied**, npm returns an error like:
 
@@ -343,19 +372,19 @@ npm error 403 Forbidden: policy "block-critical-vulnerabilities" denied: CVSS sc
 
 ## OCI proxy example
 
-For Docker-compatible OCI traffic, the firewall derives the tenant from a **tenant-specific hostname**.
+For Docker-compatible OCI traffic, the firewall derives tenant and upstream from an **upstream-specific hostname**.
 
 The primary hosted-registry flow is to pull through that hostname directly:
 
 ```bash
 # Pull an image manifest through the firewall
-curl http://<tenant-id>.localhost:8080/v2/library/nginx/manifests/1.25.3
+curl http://u-<upstream-id>.<tenant-id>.localhost:8080/v2/library/nginx/manifests/1.25.3
 
 # Pull by digest (bypasses mutable-tag policy)
-curl "http://<tenant-id>.localhost:8080/v2/library/nginx/manifests/sha256:abc123..."
+curl "http://u-<upstream-id>.<tenant-id>.localhost:8080/v2/library/nginx/manifests/sha256:abc123..."
 
 # Hosted-registry Docker UX
-docker pull <tenant-id>.localhost:8080/library/nginx:1.25.3
+docker pull u-<upstream-id>.<tenant-id>.localhost:8080/library/nginx:1.25.3
 ```
 
 `docker login` is not required for this example. The firewall currently supports host-based tenant routing for anonymous pulls, but it does not implement OCI registry authentication.
@@ -366,12 +395,14 @@ Use Docker mirror configuration only when you want **transparent local pulls** l
 
 ```json
 {
-  "registry-mirrors": ["http://<tenant-id>.localhost:8080"],
-  "insecure-registries": ["<tenant-id>.localhost:8080"]
+  "registry-mirrors": ["http://u-<upstream-id>.<tenant-id>.localhost:8080"],
+  "insecure-registries": ["u-<upstream-id>.<tenant-id>.localhost:8080"]
 }
 ```
 
-For local development, make sure `<tenant-id>.localhost` resolves to the firewall host if your environment does not already resolve `*.localhost`.
+Legacy tenant-only OCI hosts remain available for older clients and resolve to the most recently updated OCI upstream. New setups should use the explicit upstream hostname above.
+
+For local development, make sure `u-<upstream-id>.<tenant-id>.localhost` resolves to the firewall host if your environment does not already resolve `*.localhost`.
 
 When a pull is **denied**, Docker returns:
 

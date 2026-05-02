@@ -13,9 +13,10 @@ The system has two surfaces:
    - npm and OCI protocol adapters
 
 2. Control plane
-    - management API for policies, policy rollback/history, upstreams, evaluations, and cache maintenance
-    - intended for UI and automation
-    - Huma is used only on control-plane endpoints where code explicitly uses it
+     - management API for policies, policy rollback/history, upstreams, evaluations, and cache maintenance
+     - intended for UI and automation
+     - the React UI consumes generated TypeScript types from the Huma/OpenAPI document
+     - Huma is used only on control-plane endpoints where code explicitly uses it
 
 ## System context
 
@@ -48,6 +49,8 @@ flowchart LR
 - npm and OCI protocol parsing
 - npm and OCI proxy routes stay on plain `net/http` handlers
 - OCI proxy delivery may resolve tenant identity from the request hostname for Docker-compatible traffic
+- npm delivery may resolve upstream identity from `/npm/t/{tenant_id}/u/{upstream_id}/...`
+- OCI delivery may resolve upstream identity from `u-{upstream_id}.{tenant_id}.{firewall-host}`
 - OCI delivery should support both direct registry-hostname usage in hosted deployments and optional Docker mirror usage for transparent local development
 - protocol-specific response rendering
 - control-plane request DTO parsing and response DTO rendering
@@ -62,6 +65,8 @@ flowchart LR
 - policy evaluation
 - enrichment orchestration
 - tenant-aware decision making
+- upstream-aware policy selection
+- upstream capability compatibility validation for policy authoring and upstream updates
 - control-plane business workflows
 - typed domain and policy config models
 - shared ports named in protocol-neutral terms where used across ecosystems
@@ -188,7 +193,7 @@ sequenceDiagram
     participant upstream as upstream client
 
     client->>delivery: proxy request
-    delivery->>delivery: parse protocol request + resolve tenant_id
+    delivery->>delivery: parse protocol request + resolve tenant_id + upstream_id
     delivery->>access: Evaluate(access request)
     access->>access: normalize artifact identity
     access->>dcache: lookup decision
@@ -200,6 +205,7 @@ sequenceDiagram
         enrich-->>access: metadata
         access->>policyrepo: list tenant policies
         policyrepo-->>access: policies
+        access->>access: filter policies by upstream scope
         access->>access: compute policy-set SHA-256
         access->>access: evaluate policies
         access->>dcache: store decision

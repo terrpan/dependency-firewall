@@ -20,6 +20,7 @@ type DecisionCache interface {
 type MetadataCache interface {
 	Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error)
 	Set(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, metadata *domain.ArtifactMetadata, ttl time.Duration) error
+	InvalidateTenant(ctx context.Context, tenantID string) error
 }
 
 // OCIArtifactKind identifies the OCI artifact type stored in the cache.

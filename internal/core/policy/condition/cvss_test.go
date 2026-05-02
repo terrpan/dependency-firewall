@@ -29,12 +29,12 @@ func TestCVSSThreshold(t *testing.T) {
 			wantMatch: false,
 		},
 		{
-			name: "at threshold, no match",
+			name: "at threshold, match",
 			req: domain.AccessRequest{
 				Metadata: &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(7.0)},
 			},
 			config:    &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
-			wantMatch: false,
+			wantMatch: true,
 		},
 		{
 			name: "above threshold, match",

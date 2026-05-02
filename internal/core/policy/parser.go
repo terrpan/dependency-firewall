@@ -126,6 +126,7 @@ func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, e
 
 	return domain.Policy{
 		TenantID:      tenantID,
+		UpstreamID:    stringValue(def.UpstreamID),
 		Name:          def.Name,
 		Type:          policyType,
 		Action:        action,
@@ -139,4 +140,11 @@ func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, e
 
 func looksLikeJSON(data []byte) bool {
 	return len(data) > 0 && (data[0] == '{' || data[0] == '[')
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,6 +55,15 @@ func (m *mockMetadataCache) Set(_ context.Context, tenantID string, artifact dom
 	m.lastTTL = ttl
 	key := m.cacheKey(tenantID, artifact)
 	m.store[key] = metadata
+	return nil
+}
+
+func (m *mockMetadataCache) InvalidateTenant(_ context.Context, tenantID string) error {
+	for key := range m.store {
+		if strings.HasPrefix(key, tenantID+":") {
+			delete(m.store, key)
+		}
+	}
 	return nil
 }
 

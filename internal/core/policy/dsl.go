@@ -9,6 +9,7 @@ type PolicyFile struct {
 
 // PolicyDef is a single policy definition from a YAML or JSON document.
 type PolicyDef struct {
+	UpstreamID    *string        `yaml:"upstream_id" json:"upstream_id"`
 	Name          string         `yaml:"name" json:"name"`
 	Type          string         `yaml:"type" json:"type"`
 	SchemaVersion *int           `yaml:"schema_version" json:"schema_version"`

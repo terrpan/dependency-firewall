@@ -114,3 +114,57 @@ func TestOCITenantFromHost(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
 }
+
+func TestNPMTenantFromPath(t *testing.T) {
+	t.Parallel()
+
+	handler := NPMTenantFromPath()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamID, _ := UpstreamIDFromContext(r.Context())
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"tenant_id":   r.Header.Get("X-Tenant-ID"),
+			"upstream_id": upstreamID,
+			"path":        r.URL.Path,
+		})
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/npm/t/tenant-123/u/up-456/%40scope%2Fpkg", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := decodeBody(t, rec)
+	assert.Equal(t, "tenant-123", body["tenant_id"])
+	assert.Equal(t, "up-456", body["upstream_id"])
+	assert.Equal(t, "/npm/@scope/pkg", body["path"])
+}
+
+func TestOCITenantFromHost_StoresUpstreamID(t *testing.T) {
+	t.Parallel()
+
+	handler := OCITenantFromHost()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamID, _ := UpstreamIDFromContext(r.Context())
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"tenant_id":   r.Header.Get("X-Tenant-ID"),
+			"upstream_id": upstreamID,
+		})
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://u-up-456.tenant-123.localhost:8080/v2/", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := decodeBody(t, rec)
+	assert.Equal(t, "tenant-123", body["tenant_id"])
+	assert.Equal(t, "up-456", body["upstream_id"])
+}
+
+func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]string {
+	t.Helper()
+
+	var body map[string]string
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+	return body
+}

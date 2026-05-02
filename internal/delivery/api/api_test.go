@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -85,12 +86,15 @@ func (m *mockTenantRepo) Delete(_ context.Context, id string) error {
 }
 
 type mockPolicyRepo struct {
-	mu       sync.RWMutex
-	policies map[string]*domain.Policy // key: tenantID:id
-	versions map[string][]domain.PolicyVersion
-	nextID   int
-	getErr   error
-	listErr  error
+	mu                    sync.RWMutex
+	policies              map[string]*domain.Policy // key: tenantID:id
+	versions              map[string][]domain.PolicyVersion
+	nextID                int
+	getErr                error
+	listErr               error
+	deleteErr             error
+	deleteErrWithoutForce error
+	lastDeleteForce       bool
 }
 
 func newMockPolicyRepo() *mockPolicyRepo {
@@ -218,9 +222,16 @@ func (m *mockPolicyRepo) RollbackToVersion(_ context.Context, tenantID, policyID
 	return &copyPolicy, nil
 }
 
-func (m *mockPolicyRepo) Delete(_ context.Context, tenantID, id string) error {
+func (m *mockPolicyRepo) Delete(_ context.Context, tenantID, id string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.lastDeleteForce = force
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	if !force && m.deleteErrWithoutForce != nil {
+		return m.deleteErrWithoutForce
+	}
 	k := m.key(tenantID, id)
 	if _, ok := m.policies[k]; !ok {
 		return domain.ErrPolicyNotFound
@@ -254,9 +265,16 @@ type mockUpstreamRepo struct {
 	mu        sync.RWMutex
 	upstreams map[string]*domain.Upstream // key: tenantID:id
 	nextID    int
+	deleteErr error
 }
 
 type mockDecisionCache struct {
+	mu                  sync.Mutex
+	invalidatedTenants  []string
+	invalidateTenantErr error
+}
+
+type mockMetadataCache struct {
 	mu                  sync.Mutex
 	invalidatedTenants  []string
 	invalidateTenantErr error
@@ -284,6 +302,24 @@ func (m *mockDecisionCache) InvalidateTenant(_ context.Context, tenantID string)
 	return nil
 }
 
+func (m *mockMetadataCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+	return nil, domain.ErrCacheMiss
+}
+
+func (m *mockMetadataCache) Set(_ context.Context, _ string, _ domain.ArtifactIdentity, _ *domain.ArtifactMetadata, _ time.Duration) error {
+	return nil
+}
+
+func (m *mockMetadataCache) InvalidateTenant(_ context.Context, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.invalidateTenantErr != nil {
+		return m.invalidateTenantErr
+	}
+	m.invalidatedTenants = append(m.invalidatedTenants, tenantID)
+	return nil
+}
+
 type mockPolicyRevisionRepo struct{}
 
 func (m *mockPolicyRevisionRepo) Create(_ context.Context, _ *domain.PolicySetRevision) error {
@@ -298,9 +334,27 @@ func (m *mockUpstreamRepo) key(tenantID, id string) string {
 	return tenantID + ":" + id
 }
 
+func (m *mockUpstreamRepo) validateUpstreamLocked(candidate *domain.Upstream) error {
+	for _, upstream := range m.upstreams {
+		if upstream.TenantID != candidate.TenantID || upstream.ID == candidate.ID {
+			continue
+		}
+		if upstream.Name == candidate.Name {
+			return domain.ErrUpstreamNameConflict
+		}
+		if upstream.Ecosystem == candidate.Ecosystem && upstream.BaseURL == candidate.BaseURL {
+			return domain.ErrUpstreamRegistryConflict
+		}
+	}
+	return nil
+}
+
 func (m *mockUpstreamRepo) Create(_ context.Context, u *domain.Upstream) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.validateUpstreamLocked(u); err != nil {
+		return err
+	}
 	m.nextID++
 	u.ID = fmt.Sprintf("u-%d", m.nextID)
 	m.upstreams[m.key(u.TenantID, u.ID)] = u
@@ -347,6 +401,9 @@ func (m *mockUpstreamRepo) Update(_ context.Context, u *domain.Upstream) error {
 	if _, ok := m.upstreams[k]; !ok {
 		return domain.ErrUpstreamNotFound
 	}
+	if err := m.validateUpstreamLocked(u); err != nil {
+		return err
+	}
 	m.upstreams[k] = u
 	return nil
 }
@@ -354,6 +411,9 @@ func (m *mockUpstreamRepo) Update(_ context.Context, u *domain.Upstream) error {
 func (m *mockUpstreamRepo) Delete(_ context.Context, tenantID, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
 	k := m.key(tenantID, id)
 	if _, ok := m.upstreams[k]; !ok {
 		return domain.ErrUpstreamNotFound
@@ -390,12 +450,12 @@ func (m *mockDecisionRepo) GetByArtifact(_ context.Context, tenantID string, art
 	return nil, domain.ErrArtifactNotFound
 }
 
-func (m *mockDecisionRepo) ListByTenant(_ context.Context, tenantID string, limit, offset int) ([]domain.Decision, error) {
+func (m *mockDecisionRepo) ListByTenant(_ context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var result []domain.Decision
 	for _, d := range m.decisions {
-		if d.TenantID == tenantID {
+		if d.TenantID == tenantID && matchesDecisionArtifactSearch(d, search) {
 			result = append(result, d)
 		}
 	}
@@ -406,6 +466,31 @@ func (m *mockDecisionRepo) ListByTenant(_ context.Context, tenantID string, limi
 	return result[offset:end], nil
 }
 
+func matchesDecisionArtifactSearch(decision domain.Decision, search string) bool {
+	search = strings.TrimSpace(strings.ToLower(search))
+	if search == "" {
+		return true
+	}
+
+	fields := []string{
+		decision.Artifact.Namespace,
+		decision.Artifact.Name,
+		decision.Artifact.Version,
+		decision.Artifact.Digest,
+	}
+	if decision.Artifact.Namespace != "" && decision.Artifact.Name != "" {
+		fields = append(fields, decision.Artifact.Namespace+"/"+decision.Artifact.Name)
+	}
+
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), search) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (m *mockDecisionRepo) HasRecentAllow(_ context.Context, _ string, _ domain.EcosystemType, _, _ string) (bool, error) {
 	return false, nil
 }
@@ -413,6 +498,11 @@ func (m *mockDecisionRepo) HasRecentAllow(_ context.Context, _ string, _ domain.
 // --- Test helpers ---
 
 func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache) {
+	srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache, _ := setupTestServerWithCaches(t)
+	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache
+}
+
+func setupTestServerWithCaches(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache, *mockMetadataCache) {
 	t.Helper()
 	logger := slog.Default()
 	tenantRepo := newMockTenantRepo()
@@ -420,6 +510,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPoli
 	upstreamRepo := newMockUpstreamRepo()
 	decisionRepo := newMockDecisionRepo()
 	decisionCache := &mockDecisionCache{}
+	metadataCache := &mockMetadataCache{}
 
 	mux := http.NewServeMux()
 	controlPlaneAPI := NewControlPlaneAPI(mux, "test")
@@ -431,14 +522,14 @@ func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPoli
 	)
 	NewHealthHandler(healthSvc, logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewTenantHandler(service.NewTenantService(tenantRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
-	NewPolicyHandler(service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache), logger).RegisterHumaRoutes(controlPlaneAPI)
-	NewCacheHandler(service.NewCacheService(decisionCache), logger).RegisterHumaRoutes(controlPlaneAPI)
-	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewPolicyHandler(service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache, upstreamRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewCacheHandler(service.NewCacheService(decisionCache, metadataCache), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo, policyRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewEvaluationHandler(service.NewEvaluationService(decisionRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache
+	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache, metadataCache
 }
 
 func doJSON(t *testing.T, method, url string, body any, headers map[string]string) *http.Response {
@@ -586,6 +677,7 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assert.Contains(t, paths, "/api/v1/policies/import")
 	assert.Contains(t, paths, "/api/v1/evaluations")
 	assert.Contains(t, paths, "/api/v1/cache/decisions")
+	assert.Contains(t, paths, "/api/v1/cache/metadata")
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/{id}"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/{id}/versions"]), `"422"`)
@@ -598,6 +690,7 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/import"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/evaluations"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/cache/decisions"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/cache/metadata"]), `"422"`)
 	assertOpenAPIDescription(t, paths, "/healthz", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/tenants", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/tenants", "post")
@@ -620,6 +713,7 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assertOpenAPIDescription(t, paths, "/api/v1/policies/import", "post")
 	assertOpenAPIDescription(t, paths, "/api/v1/evaluations", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/cache/decisions", "delete")
+	assertOpenAPIDescription(t, paths, "/api/v1/cache/metadata", "delete")
 	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies", "post", "application/json")
 	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies/{id}", "put", "application/json")
 	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies/{id}/rollback", "post", "application/json")
@@ -747,6 +841,162 @@ func Test_PolicyCRUD(t *testing.T) {
 	resp.Body.Close()
 }
 
+func Test_PolicyCreateWithUpstreamScope(t *testing.T) {
+	srv, _, _, upstreamRepo, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	upstream := &domain.Upstream{
+		TenantID:     "tenant-1",
+		Name:         "npmjs",
+		Ecosystem:    domain.EcosystemNPM,
+		BaseURL:      "https://registry.npmjs.org",
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
+	}
+	require.NoError(t, upstreamRepo.Create(context.Background(), upstream))
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "block-critical",
+		"upstream_id":    upstream.ID,
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 9.0},
+	}, headers)
+
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeJSON[PolicyResponse](t, resp)
+	assert.Equal(t, upstream.ID, created.UpstreamID)
+}
+
+func Test_PolicyCreateRejectsUnknownUpstream(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "block-critical",
+		"upstream_id":    "missing-upstream",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 9.0},
+	}, headers)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "policy upstream not found", body["error"])
+}
+
+func Test_PolicyCreateRejectsIncompatibleUpstream(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	upstreamResp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]any{
+		"name":         "docker-hub",
+		"ecosystem":    "oci",
+		"base_url":     "https://registry-1.docker.io",
+		"capabilities": []string{"manifest_digest_lookup"},
+	}, headers)
+	require.Equal(t, http.StatusCreated, upstreamResp.StatusCode)
+	upstream := decodeJSON[UpstreamResponse](t, upstreamResp)
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "license-check",
+		"upstream_id":    upstream.ID,
+		"type":           "license",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"licenses": []string{"MIT"}},
+	}, headers)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `policy type "license" only supports npm upstreams`)
+}
+
+func Test_PolicyDeleteRejectsEnabledPolicy(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"enabled":        true,
+		"config":         map[string]any{"max_cvss": 9.0},
+	}, headers)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeJSON[PolicyResponse](t, resp)
+
+	resp = doJSON(t, http.MethodDelete, srv.URL+"/api/v1/policies/"+created.ID, nil, headers)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "disable policy before deleting it", body["error"])
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies/"+created.ID, nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+}
+
+func Test_PolicyDeleteConflictWhenReferenced(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	policyRepo.deleteErrWithoutForce = domain.ErrPolicyInUse
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 9.0},
+	}, headers)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeJSON[PolicyResponse](t, resp)
+
+	resp = doJSON(t, http.MethodDelete, srv.URL+"/api/v1/policies/"+created.ID, nil, headers)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "policy has recorded evaluations or decisions", body["error"])
+	assert.False(t, policyRepo.lastDeleteForce)
+}
+
+func Test_PolicyForceDeleteWhenReferenced(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	policyRepo.deleteErrWithoutForce = domain.ErrPolicyInUse
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "block-critical",
+		"type":           "cvss_threshold",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"max_cvss": 9.0},
+	}, headers)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	created := decodeJSON[PolicyResponse](t, resp)
+
+	resp = doJSON(t, http.MethodDelete, srv.URL+"/api/v1/policies/"+created.ID+"?force=true", nil, headers)
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+	assert.True(t, policyRepo.lastDeleteForce)
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies/"+created.ID, nil, headers)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}
+
+func Test_UpstreamDeleteConflict(t *testing.T) {
+	srv, _, _, upstreamRepo, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	upstreamRepo.deleteErr = domain.ErrUpstreamInUse
+
+	resp := doJSON(t, http.MethodDelete, srv.URL+"/api/v1/upstreams/up-1", nil, headers)
+
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "upstream is still referenced by policies", body["error"])
+}
+
 func Test_PolicyListReturnsUpgradeErrorForDeprecatedStoredConfig(t *testing.T) {
 	srv, _, policyRepo, _, _, _ := setupTestServer(t)
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
@@ -865,6 +1115,8 @@ func Test_PolicyTypesEndpoint(t *testing.T) {
 			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
 			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
 			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
+			assert.Equal(t, []string{"npm"}, descriptor.SupportedEcosystems)
+			assert.Equal(t, []string{"licenses"}, descriptor.RequiredCapabilities)
 		}
 	}
 	assert.True(t, found)
@@ -880,6 +1132,8 @@ func Test_PolicyTypesEndpoint(t *testing.T) {
 			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
 			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
 			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
+			assert.Equal(t, []string{"npm", "oci"}, descriptor.SupportedEcosystems)
+			assert.Empty(t, descriptor.RequiredCapabilities)
 		}
 	}
 	assert.True(t, found)
@@ -1166,22 +1420,27 @@ func Test_UpstreamCRUD(t *testing.T) {
 	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
 
 	// Create
-	body := map[string]string{
-		"name":      "docker-hub",
-		"ecosystem": "oci",
-		"base_url":  "https://registry-1.docker.io",
+	body := map[string]any{
+		"name":         "docker-hub",
+		"ecosystem":    "oci",
+		"base_url":     "https://registry-1.docker.io",
+		"capabilities": []string{"manifest_digest_lookup"},
 	}
 	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", body, headers)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	created := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, "docker-hub", created.Name)
 	assert.NotEmpty(t, created.ID)
+	assert.Equal(t, []string{"manifest_digest_lookup"}, created.Capabilities)
+	assert.Contains(t, created.SupportedPolicyTypes, "block_mutable_tag")
+	assert.NotContains(t, created.SupportedPolicyTypes, "license")
 
 	// Get
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams/"+created.ID, nil, headers)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	got := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, created.ID, got.ID)
+	assert.Equal(t, created.Capabilities, got.Capabilities)
 
 	// List
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams", nil, headers)
@@ -1195,6 +1454,7 @@ func Test_UpstreamCRUD(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	updated := decodeJSON[UpstreamResponse](t, resp)
 	assert.Equal(t, "docker-hub-updated", updated.Name)
+	assert.Equal(t, []string{"manifest_digest_lookup"}, updated.Capabilities)
 
 	// Delete
 	resp = doJSON(t, http.MethodDelete, srv.URL+"/api/v1/upstreams/"+created.ID, nil, headers)
@@ -1205,6 +1465,57 @@ func Test_UpstreamCRUD(t *testing.T) {
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams/"+created.ID, nil, headers)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
+}
+
+func Test_UpstreamAllowsMultipleRegistriesPerEcosystem(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	first := map[string]string{
+		"name":      "npmjs",
+		"ecosystem": "npm",
+		"base_url":  "https://registry.npmjs.org",
+	}
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", first, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	second := map[string]string{
+		"name":      "company-npm",
+		"ecosystem": "npm",
+		"base_url":  "https://registry.company.example",
+	}
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", second, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	list := decodeJSON[[]UpstreamResponse](t, resp)
+	assert.Len(t, list, 2)
+}
+
+func Test_UpstreamDuplicateRegistryConflictIsSanitized(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	body := map[string]string{
+		"name":      "npmjs",
+		"ecosystem": "npm",
+		"base_url":  "https://registry.npmjs.org",
+	}
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", body, headers)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]string{
+		"name":      "npmjs-backup",
+		"ecosystem": "npm",
+		"base_url":  "https://registry.npmjs.org",
+	}, headers)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	errBody := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "upstream registry already exists", errBody["error"])
 }
 
 func Test_UpstreamValidation(t *testing.T) {
@@ -1238,6 +1549,51 @@ func Test_UpstreamValidation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body = decodeJSON[map[string]string](t, resp)
 	assert.Contains(t, body["error"], `unknown field "url"`)
+
+	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]any{
+		"name":         "docker-hub",
+		"ecosystem":    "oci",
+		"base_url":     "https://registry-1.docker.io",
+		"capabilities": []string{"licenses"},
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body = decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `capability "licenses" is not supported for oci upstreams`)
+}
+
+func Test_UpstreamUpdateRejectsScopedPolicyConflict(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	upstreamResp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]any{
+		"name":         "npmjs",
+		"ecosystem":    "npm",
+		"base_url":     "https://registry.npmjs.org",
+		"capabilities": []string{"publish_time", "licenses", "vulnerability_lookup"},
+	}, headers)
+	require.Equal(t, http.StatusCreated, upstreamResp.StatusCode)
+	upstream := decodeJSON[UpstreamResponse](t, upstreamResp)
+
+	policyResp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "license-check",
+		"upstream_id":    upstream.ID,
+		"type":           "license",
+		"schema_version": 1,
+		"action":         "deny",
+		"config":         map[string]any{"licenses": []string{"MIT"}},
+	}, headers)
+	require.Equal(t, http.StatusCreated, policyResp.StatusCode)
+	policyResp.Body.Close()
+
+	resp := doJSON(t, http.MethodPut, srv.URL+"/api/v1/upstreams/"+upstream.ID, map[string]any{
+		"name":         "npmjs",
+		"ecosystem":    "npm",
+		"base_url":     "https://registry.npmjs.org",
+		"capabilities": []string{"publish_time", "vulnerability_lookup"},
+	}, headers)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `would no longer satisfy policy "license-check"`)
 }
 
 func Test_EvaluationList(t *testing.T) {
@@ -1271,6 +1627,25 @@ func Test_EvaluationList(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	list = decodeJSON[[]DecisionResponse](t, resp)
 	assert.Len(t, list, 2)
+
+	_ = decisionRepo.Record(context.Background(), &domain.Decision{
+		ID:       "d-lodash",
+		TenantID: "tenant-1",
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "lodash",
+			Version:   "4.17.20",
+		},
+		Outcome:  domain.DecisionAllow,
+		Warnings: []string{"[block_cvss] artifact has CVSS score 8.1 at or above threshold 7.0"},
+	})
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/evaluations?search=lodash", nil, headers)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	list = decodeJSON[[]DecisionResponse](t, resp)
+	require.Len(t, list, 1)
+	assert.Equal(t, "lodash", list[0].Artifact.Name)
+	assert.Equal(t, []string{"[block_cvss] artifact has CVSS score 8.1 at or above threshold 7.0"}, list[0].Warnings)
 }
 
 func Test_EvaluationList_InvalidPaginationFallsBackToDefaults(t *testing.T) {
@@ -1316,6 +1691,31 @@ func Test_ClearDecisionCache_InternalError(t *testing.T) {
 	assert.Equal(t, "failed to clear decision cache", body["error"])
 }
 
+func Test_ClearMetadataCache(t *testing.T) {
+	srv, _, _, _, _, _, metadataCache := setupTestServerWithCaches(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodDelete, srv.URL+"/api/v1/cache/metadata", nil, headers)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body := decodeJSON[cacheClearResponse](t, resp)
+	assert.Equal(t, "cleared", body.Status)
+	assert.Equal(t, "metadata", body.Cache)
+	assert.Equal(t, []string{"tenant-1"}, metadataCache.invalidatedTenants)
+}
+
+func Test_ClearMetadataCache_InternalError(t *testing.T) {
+	srv, _, _, _, _, _, metadataCache := setupTestServerWithCaches(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	metadataCache.invalidateTenantErr = fmt.Errorf("cache down")
+
+	resp := doJSON(t, http.MethodDelete, srv.URL+"/api/v1/cache/metadata", nil, headers)
+
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "failed to clear metadata cache", body["error"])
+}
+
 func Test_MissingTenantIDHeader(t *testing.T) {
 	srv, _, _, _, _, _ := setupTestServer(t)
 
@@ -1341,6 +1741,7 @@ func Test_MissingTenantIDHeader(t *testing.T) {
 		}},
 		{"list evaluations", http.MethodGet, "/api/v1/evaluations", nil},
 		{"clear decision cache", http.MethodDelete, "/api/v1/cache/decisions", nil},
+		{"clear metadata cache", http.MethodDelete, "/api/v1/cache/metadata", nil},
 	}
 
 	for _, tc := range tests {
@@ -1402,6 +1803,8 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 	assert.Contains(t, data, "name", "response should have 'name' field (lowercase)")
 	assert.Contains(t, data, "ecosystem", "response should have 'ecosystem' field (lowercase)")
 	assert.Contains(t, data, "base_url", "response should have 'base_url' field (lowercase snake_case)")
+	assert.Contains(t, data, "capabilities", "response should have 'capabilities' field (lowercase)")
+	assert.Contains(t, data, "supported_policy_types", "response should have 'supported_policy_types' field (lowercase snake_case)")
 	assert.Contains(t, data, "created_at", "response should have 'created_at' field (lowercase snake_case)")
 	assert.Contains(t, data, "updated_at", "response should have 'updated_at' field (lowercase snake_case)")
 
@@ -1409,6 +1812,8 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 	assert.NotContains(t, data, "ID", "response should not have 'ID' field (capital)")
 	assert.NotContains(t, data, "BaseURL", "response should not have 'BaseURL' field (capital)")
 	assert.NotContains(t, data, "Ecosystem", "response should not have 'Ecosystem' field (capital)")
+	assert.NotContains(t, data, "Capabilities", "response should not have 'Capabilities' field (capital)")
+	assert.NotContains(t, data, "SupportedPolicyTypes", "response should not have 'SupportedPolicyTypes' field (capital)")
 	assert.NotContains(t, data, "CreatedAt", "response should not have 'CreatedAt' field (capital)")
 	assert.NotContains(t, data, "UpdatedAt", "response should not have 'UpdatedAt' field (capital)")
 }
@@ -1471,10 +1876,11 @@ func Test_ListResponsesUseLowercaseJSONTags(t *testing.T) {
 		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
 	})
 	_ = upstreamRepo.Create(context.Background(), &domain.Upstream{
-		TenantID:  "tenant-1",
-		Name:      "test-upstream",
-		Ecosystem: domain.EcosystemNPM,
-		BaseURL:   "https://example.com",
+		TenantID:     "tenant-1",
+		Name:         "test-upstream",
+		Ecosystem:    domain.EcosystemNPM,
+		BaseURL:      "https://example.com",
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
 	})
 	_ = decisionRepo.Record(context.Background(), &domain.Decision{
 		TenantID: "tenant-1",
@@ -1500,6 +1906,7 @@ func Test_ListResponsesUseLowercaseJSONTags(t *testing.T) {
 	resp.Body.Close()
 	assert.NotEmpty(t, upstreamList)
 	assert.Contains(t, upstreamList[0], "base_url")
+	assert.Contains(t, upstreamList[0], "capabilities")
 	assert.NotContains(t, upstreamList[0], "TenantID")
 
 	// Test evaluations list response

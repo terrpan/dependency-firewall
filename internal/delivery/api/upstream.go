@@ -77,9 +77,10 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 }
 
 type createUpstreamRequest struct {
-	Name      string               `json:"name,omitempty" validate:"notblank" doc:"Upstream display name"`
-	Ecosystem domain.EcosystemType `json:"ecosystem,omitempty" validate:"required,oneof=npm oci" doc:"Upstream ecosystem"`
-	BaseURL   string               `json:"base_url,omitempty" validate:"notblank,url" doc:"Upstream base URL"`
+	Name         string                      `json:"name,omitempty" validate:"notblank" doc:"Upstream display name"`
+	Ecosystem    domain.EcosystemType        `json:"ecosystem,omitempty" validate:"required,oneof=npm oci" doc:"Upstream ecosystem"`
+	BaseURL      string                      `json:"base_url,omitempty" validate:"notblank,url" doc:"Upstream base URL"`
+	Capabilities []domain.UpstreamCapability `json:"capabilities,omitempty" doc:"Capability profile used for policy compatibility checks"`
 }
 
 type upstreamHeaderInput struct {
@@ -167,6 +168,9 @@ func (h *UpstreamHandler) delete(ctx context.Context, input *upstreamIDInput) (*
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			return nil, huma.Error404NotFound("upstream not found")
 		}
+		if errors.Is(err, domain.ErrUpstreamInUse) {
+			return nil, huma.Error409Conflict("upstream is still referenced by policies")
+		}
 		h.logger.Error("deleting upstream", "error", err)
 		return nil, huma.Error500InternalServerError("failed to delete upstream")
 	}
@@ -184,17 +188,21 @@ func (h *UpstreamHandler) createUpstream(ctx context.Context, rawTenantID string
 	}
 
 	upstream := &domain.Upstream{
-		TenantID:  tenantID,
-		Name:      req.Name,
-		Ecosystem: req.Ecosystem,
-		BaseURL:   req.BaseURL,
+		TenantID:     tenantID,
+		Name:         req.Name,
+		Ecosystem:    req.Ecosystem,
+		BaseURL:      req.BaseURL,
+		Capabilities: req.Capabilities,
 	}
 	if err := h.upstreams.Create(ctx, upstream); err != nil {
 		if errors.Is(err, domain.ErrUpstreamNameConflict) {
 			return nil, huma.Error409Conflict("upstream name already exists")
 		}
-		if errors.Is(err, domain.ErrUpstreamScopeConflict) {
-			return nil, huma.Error409Conflict("upstream for ecosystem already exists")
+		if errors.Is(err, domain.ErrUpstreamRegistryConflict) {
+			return nil, huma.Error409Conflict("upstream registry already exists")
+		}
+		if errors.Is(err, domain.ErrUnsupportedUpstreamCapability) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		h.logger.Error("creating upstream", "error", err)
 		return nil, huma.Error500InternalServerError("failed to create upstream")
@@ -213,21 +221,25 @@ func (h *UpstreamHandler) updateUpstream(ctx context.Context, rawTenantID, id st
 	}
 
 	upstream := &domain.Upstream{
-		ID:        id,
-		TenantID:  tenantID,
-		Name:      req.Name,
-		Ecosystem: req.Ecosystem,
-		BaseURL:   req.BaseURL,
+		ID:           id,
+		TenantID:     tenantID,
+		Name:         req.Name,
+		Ecosystem:    req.Ecosystem,
+		BaseURL:      req.BaseURL,
+		Capabilities: req.Capabilities,
 	}
 	if err := h.upstreams.Update(ctx, upstream); err != nil {
 		if errors.Is(err, domain.ErrUpstreamNameConflict) {
 			return nil, huma.Error409Conflict("upstream name already exists")
 		}
-		if errors.Is(err, domain.ErrUpstreamScopeConflict) {
-			return nil, huma.Error409Conflict("upstream for ecosystem already exists")
+		if errors.Is(err, domain.ErrUpstreamRegistryConflict) {
+			return nil, huma.Error409Conflict("upstream registry already exists")
 		}
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			return nil, huma.Error404NotFound("upstream not found")
+		}
+		if errors.Is(err, domain.ErrUnsupportedUpstreamCapability) || errors.Is(err, domain.ErrUpstreamPolicyConflict) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		h.logger.Error("updating upstream", "error", err)
 		return nil, huma.Error500InternalServerError("failed to update upstream")

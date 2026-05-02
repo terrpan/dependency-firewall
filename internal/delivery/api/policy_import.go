@@ -31,6 +31,7 @@ type policyImportDocument struct {
 }
 
 type policyImportDefinition struct {
+	UpstreamID    *string        `json:"upstream_id" yaml:"upstream_id"`
 	Name          string         `json:"name" yaml:"name"`
 	Type          string         `json:"type" yaml:"type"`
 	SchemaVersion *int           `json:"schema_version" yaml:"schema_version"`
@@ -117,6 +118,7 @@ func (d *policyImportDocument) toCorePolicyFile() *corepolicy.PolicyFile {
 	for i := range d.Policies {
 		file.Policies[i] = corepolicy.PolicyDef{
 			Name:          d.Policies[i].Name,
+			UpstreamID:    d.Policies[i].UpstreamID,
 			Type:          d.Policies[i].Type,
 			SchemaVersion: d.Policies[i].SchemaVersion,
 			Action:        d.Policies[i].Action,
@@ -133,7 +135,10 @@ func looksLikeJSONDocument(data []byte) bool {
 }
 
 func errorsIsImportBadRequest(err error) bool {
-	return errors.Is(err, domain.ErrInvalidPolicy) || errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion)
+	return errors.Is(err, domain.ErrInvalidPolicy) ||
+		errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) ||
+		errors.Is(err, domain.ErrUpstreamNotFound) ||
+		errors.Is(err, domain.ErrPolicyUpstreamIncompatible)
 }
 
 func isPolicyNameConflict(err error) bool {

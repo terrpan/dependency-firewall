@@ -225,15 +225,25 @@ func TestPolicyRepository_CreateAndGet(t *testing.T) {
 	ctx := context.Background()
 	tenant := createTestTenant(t, ctx, pool, "policy-tenant")
 	repo := postgres.NewPolicyRepository(pool)
+	upstreamRepo := postgres.NewUpstreamRepository(pool)
+
+	upstream := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npmjs",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
+	require.NoError(t, upstreamRepo.Create(ctx, upstream))
 
 	policy := &domain.Policy{
-		TenantID: tenant.ID,
-		Name:     "block-critical",
-		Type:     domain.PolicyTypeCVSSThreshold,
-		Action:   domain.PolicyActionDeny,
-		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)},
-		Priority: 10,
-		Enabled:  true,
+		TenantID:   tenant.ID,
+		UpstreamID: upstream.ID,
+		Name:       "block-critical",
+		Type:       domain.PolicyTypeCVSSThreshold,
+		Action:     domain.PolicyActionDeny,
+		Config:     &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)},
+		Priority:   10,
+		Enabled:    true,
 	}
 	require.NoError(t, repo.Create(ctx, policy))
 	require.NotEmpty(t, policy.ID)
@@ -249,6 +259,7 @@ func TestPolicyRepository_CreateAndGet(t *testing.T) {
 	assert.Equal(t, 1, got.SchemaVersion)
 	assert.Equal(t, 10, got.Priority)
 	assert.True(t, got.Enabled)
+	assert.Equal(t, upstream.ID, got.UpstreamID)
 	cfg, ok := got.Config.(*domain.CVSSThresholdPolicyConfig)
 	require.True(t, ok)
 	require.NotNil(t, cfg.MaxCVSS)
@@ -350,15 +361,25 @@ func TestPolicyRepository_RollbackToVersion(t *testing.T) {
 	ctx := context.Background()
 	tenant := createTestTenant(t, ctx, pool, "policy-rollback-tenant")
 	repo := postgres.NewPolicyRepository(pool)
+	upstreamRepo := postgres.NewUpstreamRepository(pool)
+
+	upstream := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npmjs",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
+	require.NoError(t, upstreamRepo.Create(ctx, upstream))
 
 	policy := &domain.Policy{
-		TenantID: tenant.ID,
-		Name:     "block-critical",
-		Type:     domain.PolicyTypeCVSSThreshold,
-		Action:   domain.PolicyActionDeny,
-		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
-		Priority: 1,
-		Enabled:  true,
+		TenantID:   tenant.ID,
+		UpstreamID: upstream.ID,
+		Name:       "block-critical",
+		Type:       domain.PolicyTypeCVSSThreshold,
+		Action:     domain.PolicyActionDeny,
+		Config:     &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)},
+		Priority:   1,
+		Enabled:    true,
 	}
 	require.NoError(t, repo.Create(ctx, policy))
 
@@ -372,6 +393,7 @@ func TestPolicyRepository_RollbackToVersion(t *testing.T) {
 	assert.Equal(t, 3, rolledBack.Version)
 	assert.Equal(t, "block-critical", rolledBack.Name)
 	assert.Equal(t, 1, rolledBack.Priority)
+	assert.Equal(t, upstream.ID, rolledBack.UpstreamID)
 	cfg, ok := rolledBack.Config.(*domain.CVSSThresholdPolicyConfig)
 	require.True(t, ok)
 	require.NotNil(t, cfg.MaxCVSS)
@@ -556,7 +578,7 @@ func TestPolicyRepository_Delete(t *testing.T) {
 		Enabled:  true,
 	}
 	require.NoError(t, repo.Create(ctx, policy))
-	require.NoError(t, repo.Delete(ctx, tenant.ID, policy.ID))
+	require.NoError(t, repo.Delete(ctx, tenant.ID, policy.ID, false))
 
 	_, err := repo.GetByID(ctx, tenant.ID, policy.ID)
 	require.ErrorIs(t, err, domain.ErrPolicyNotFound)
@@ -596,10 +618,11 @@ func TestUpstreamRepository_CreateAndGet(t *testing.T) {
 	repo := postgres.NewUpstreamRepository(pool)
 
 	upstream := &domain.Upstream{
-		TenantID:  tenant.ID,
-		Name:      "npm-registry",
-		Ecosystem: domain.EcosystemNPM,
-		BaseURL:   "https://registry.npmjs.org",
+		TenantID:     tenant.ID,
+		Name:         "npm-registry",
+		Ecosystem:    domain.EcosystemNPM,
+		BaseURL:      "https://registry.npmjs.org",
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
 	}
 	require.NoError(t, repo.Create(ctx, upstream))
 	require.NotEmpty(t, upstream.ID)
@@ -611,6 +634,7 @@ func TestUpstreamRepository_CreateAndGet(t *testing.T) {
 	assert.Equal(t, "npm-registry", got.Name)
 	assert.Equal(t, domain.EcosystemNPM, got.Ecosystem)
 	assert.Equal(t, "https://registry.npmjs.org", got.BaseURL)
+	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemNPM), got.Capabilities)
 }
 
 func TestUpstreamRepository_GetByEcosystem(t *testing.T) {
@@ -619,18 +643,25 @@ func TestUpstreamRepository_GetByEcosystem(t *testing.T) {
 	tenant := createTestTenant(t, ctx, pool, "eco-tenant")
 	repo := postgres.NewUpstreamRepository(pool)
 
-	npm := &domain.Upstream{TenantID: tenant.ID, Name: "npm", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
-	oci := &domain.Upstream{TenantID: tenant.ID, Name: "oci", Ecosystem: domain.EcosystemOCI, BaseURL: "https://ghcr.io"}
+	npm := &domain.Upstream{TenantID: tenant.ID, Name: "npm", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org", Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM)}
+	npmSecondary := &domain.Upstream{TenantID: tenant.ID, Name: "npm-secondary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.company.example", Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM)}
+	oci := &domain.Upstream{TenantID: tenant.ID, Name: "oci", Ecosystem: domain.EcosystemOCI, BaseURL: "https://ghcr.io", Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemOCI)}
 	require.NoError(t, repo.Create(ctx, npm))
+	require.NoError(t, repo.Create(ctx, npmSecondary))
 	require.NoError(t, repo.Create(ctx, oci))
+
+	npm.Name = "npm-refreshed"
+	require.NoError(t, repo.Update(ctx, npm))
 
 	gotNPM, err := repo.GetByEcosystem(ctx, tenant.ID, domain.EcosystemNPM)
 	require.NoError(t, err)
 	assert.Equal(t, npm.ID, gotNPM.ID)
+	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemNPM), gotNPM.Capabilities)
 
 	gotOCI, err := repo.GetByEcosystem(ctx, tenant.ID, domain.EcosystemOCI)
 	require.NoError(t, err)
 	assert.Equal(t, oci.ID, gotOCI.ID)
+	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemOCI), gotOCI.Capabilities)
 }
 
 func TestUpstreamRepository_TenantIsolation(t *testing.T) {
@@ -651,18 +682,35 @@ func TestUpstreamRepository_TenantIsolation(t *testing.T) {
 	assert.Empty(t, list)
 }
 
-func TestUpstreamRepository_UniqueEcosystem(t *testing.T) {
+func TestUpstreamRepository_AllowsMultipleSameEcosystem(t *testing.T) {
 	pool := setupTestDB(t)
 	ctx := context.Background()
-	tenant := createTestTenant(t, ctx, pool, "unique-eco-tenant")
+	tenant := createTestTenant(t, ctx, pool, "multi-eco-tenant")
 	repo := postgres.NewUpstreamRepository(pool)
 
 	u1 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-primary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
 	require.NoError(t, repo.Create(ctx, u1))
 
 	u2 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-secondary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://other.npmjs.org"}
+	require.NoError(t, repo.Create(ctx, u2))
+
+	list, err := repo.ListByTenant(ctx, tenant.ID)
+	require.NoError(t, err)
+	assert.Len(t, list, 2)
+}
+
+func TestUpstreamRepository_UniqueRegistry(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "unique-registry-tenant")
+	repo := postgres.NewUpstreamRepository(pool)
+
+	u1 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-primary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
+	require.NoError(t, repo.Create(ctx, u1))
+
+	u2 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-mirror", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
 	err := repo.Create(ctx, u2)
-	require.Error(t, err, "should fail due to unique tenant+ecosystem constraint")
+	require.ErrorIs(t, err, domain.ErrUpstreamRegistryConflict)
 }
 
 func TestUpstreamRepository_ListByTenant(t *testing.T) {
@@ -679,6 +727,124 @@ func TestUpstreamRepository_ListByTenant(t *testing.T) {
 	list, err := repo.ListByTenant(ctx, tenant.ID)
 	require.NoError(t, err)
 	assert.Len(t, list, 2)
+}
+
+func TestUpstreamRepository_DeleteRejectsReferencedPolicy(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "upstream-policy-ref-tenant")
+	upstreamRepo := postgres.NewUpstreamRepository(pool)
+	policyRepo := postgres.NewPolicyRepository(pool)
+
+	upstream := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npmjs",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
+	require.NoError(t, upstreamRepo.Create(ctx, upstream))
+
+	policy := &domain.Policy{
+		TenantID:      tenant.ID,
+		UpstreamID:    upstream.ID,
+		Name:          "block-critical",
+		Type:          domain.PolicyTypeCVSSThreshold,
+		Action:        domain.PolicyActionDeny,
+		SchemaVersion: 1,
+		Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)},
+		Priority:      10,
+		Enabled:       true,
+	}
+	require.NoError(t, policyRepo.Create(ctx, policy))
+
+	err := upstreamRepo.Delete(ctx, tenant.ID, upstream.ID)
+	require.ErrorIs(t, err, domain.ErrUpstreamInUse)
+}
+
+func TestPolicyRepository_DeleteRejectsReferencedEvaluation(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "policy-evaluation-ref-tenant")
+	policyRepo := postgres.NewPolicyRepository(pool)
+
+	policy := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "block-critical",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)},
+		Priority: 10,
+		Enabled:  false,
+	}
+	require.NoError(t, policyRepo.Create(ctx, policy))
+
+	_, err := pool.Exec(ctx,
+		`INSERT INTO evaluations (tenant_id, outcome, policy_id, reason) VALUES ($1, $2, $3, $4)`,
+		tenant.ID, "deny", policy.ID, "policy matched",
+	)
+	require.NoError(t, err)
+
+	err = policyRepo.Delete(ctx, tenant.ID, policy.ID, false)
+	require.ErrorIs(t, err, domain.ErrPolicyInUse)
+}
+
+func TestPolicyRepository_ForceDeleteClearsHistoricalReferences(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "policy-force-delete-tenant")
+	policyRepo := postgres.NewPolicyRepository(pool)
+
+	policy := &domain.Policy{
+		TenantID: tenant.ID,
+		Name:     "block-critical",
+		Type:     domain.PolicyTypeCVSSThreshold,
+		Action:   domain.PolicyActionDeny,
+		Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(9.0)},
+		Priority: 10,
+		Enabled:  false,
+	}
+	require.NoError(t, policyRepo.Create(ctx, policy))
+
+	var evaluationID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO evaluations (tenant_id, outcome, policy_id, reason) VALUES ($1, $2, $3, $4) RETURNING id`,
+		tenant.ID, "deny", policy.ID, "policy matched",
+	).Scan(&evaluationID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO evaluation_reasons (evaluation_id, policy_id, policy_name, category, action, message)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		evaluationID, policy.ID, policy.Name, "policy", "deny", "blocked by policy",
+	)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO decisions (tenant_id, outcome, policy_id, reason) VALUES ($1, $2, $3, $4)`,
+		tenant.ID, "deny", policy.ID, "policy matched",
+	)
+	require.NoError(t, err)
+
+	err = policyRepo.Delete(ctx, tenant.ID, policy.ID, true)
+	require.NoError(t, err)
+
+	_, err = policyRepo.GetByID(ctx, tenant.ID, policy.ID)
+	require.ErrorIs(t, err, domain.ErrPolicyNotFound)
+
+	var evaluationPolicyID *string
+	err = pool.QueryRow(ctx, `SELECT policy_id FROM evaluations WHERE id = $1`, evaluationID).Scan(&evaluationPolicyID)
+	require.NoError(t, err)
+	assert.Nil(t, evaluationPolicyID)
+
+	var decisionPolicyID *string
+	err = pool.QueryRow(ctx, `SELECT policy_id FROM decisions WHERE tenant_id = $1 LIMIT 1`, tenant.ID).Scan(&decisionPolicyID)
+	require.NoError(t, err)
+	assert.Nil(t, decisionPolicyID)
+
+	var reasonPolicyID *string
+	err = pool.QueryRow(ctx, `SELECT policy_id FROM evaluation_reasons WHERE evaluation_id = $1`, evaluationID).Scan(&reasonPolicyID)
+	require.NoError(t, err)
+	assert.Nil(t, reasonPolicyID)
 }
 
 // ---------------------------------------------------------------------------
@@ -718,14 +884,15 @@ func TestDecisionRepository_RecordAndGet(t *testing.T) {
 		Outcome:    domain.DecisionDeny,
 		PolicyID:   policy.ID,
 		PolicyHash: "policy-hash-1",
-		Reason:     "CVSS score 9.8 exceeds threshold 7.0",
+		Reason:     "CVSS score 9.8 at or above threshold 7.0",
+		Warnings:   []string{"[cvss-block] would block in dry run"},
 		Reasons: []domain.EvaluationReason{
 			{
 				PolicyID:   policy.ID,
 				PolicyName: "cvss-block",
 				Category:   domain.ReasonPolicyMatch,
 				Action:     domain.PolicyActionDeny,
-				Message:    "CVSS 9.8 > 7.0",
+				Message:    "CVSS 9.8 >= 7.0",
 			},
 		},
 	}
@@ -740,6 +907,7 @@ func TestDecisionRepository_RecordAndGet(t *testing.T) {
 	assert.Equal(t, policy.ID, got.PolicyID)
 	assert.Equal(t, "policy-hash-1", got.PolicyHash)
 	assert.Equal(t, artifact.Name, got.Artifact.Name)
+	assert.Equal(t, []string{"[cvss-block] would block in dry run"}, got.Warnings)
 }
 
 func TestDecisionRepository_ListByTenant(t *testing.T) {
@@ -763,18 +931,65 @@ func TestDecisionRepository_ListByTenant(t *testing.T) {
 		require.NoError(t, repo.Record(ctx, d))
 	}
 
-	all, err := repo.ListByTenant(ctx, tenant.ID, 10, 0)
+	all, err := repo.ListByTenant(ctx, tenant.ID, 10, 0, "")
 	require.NoError(t, err)
 	assert.Len(t, all, 3)
 	assert.NotEmpty(t, all[0].PolicyHash)
 
-	page, err := repo.ListByTenant(ctx, tenant.ID, 2, 0)
+	page, err := repo.ListByTenant(ctx, tenant.ID, 2, 0, "")
 	require.NoError(t, err)
 	assert.Len(t, page, 2)
 
-	page2, err := repo.ListByTenant(ctx, tenant.ID, 2, 2)
+	page2, err := repo.ListByTenant(ctx, tenant.ID, 2, 2, "")
 	require.NoError(t, err)
 	assert.Len(t, page2, 1)
+}
+
+func TestDecisionRepository_ListByTenant_WithSearch(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "search-decision-tenant")
+	repo := postgres.NewDecisionRepository(pool)
+
+	require.NoError(t, repo.Record(ctx, &domain.Decision{
+		TenantID: tenant.ID,
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "lodash",
+			Version:   "4.17.20",
+		},
+		Outcome:  domain.DecisionAllow,
+		Reason:   "allowed",
+		Warnings: []string{"[block-cvss] artifact would be denied in dry run"},
+	}))
+	require.NoError(t, repo.Record(ctx, &domain.Decision{
+		TenantID: tenant.ID,
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Namespace: "@acme",
+			Name:      "widget",
+			Version:   "1.2.3",
+		},
+		Outcome: domain.DecisionAllow,
+		Reason:  "allowed",
+	}))
+
+	byName, err := repo.ListByTenant(ctx, tenant.ID, 10, 0, "lodash")
+	require.NoError(t, err)
+	require.Len(t, byName, 1)
+	assert.Equal(t, "lodash", byName[0].Artifact.Name)
+	assert.Equal(t, []string{"[block-cvss] artifact would be denied in dry run"}, byName[0].Warnings)
+
+	byQualifiedName, err := repo.ListByTenant(ctx, tenant.ID, 10, 0, "@acme/widget")
+	require.NoError(t, err)
+	require.Len(t, byQualifiedName, 1)
+	assert.Equal(t, "@acme", byQualifiedName[0].Artifact.Namespace)
+	assert.Equal(t, "widget", byQualifiedName[0].Artifact.Name)
+
+	byVersion, err := repo.ListByTenant(ctx, tenant.ID, 10, 0, "4.17.20")
+	require.NoError(t, err)
+	require.Len(t, byVersion, 1)
+	assert.Equal(t, "lodash", byVersion[0].Artifact.Name)
 }
 
 func TestDecisionRepository_HasRecentAllow(t *testing.T) {
@@ -842,7 +1057,7 @@ func TestDecisionRepository_TenantIsolation(t *testing.T) {
 	_, err := repo.GetByArtifact(ctx, tenantB.ID, artifact)
 	require.ErrorIs(t, err, domain.ErrArtifactNotFound)
 
-	list, err := repo.ListByTenant(ctx, tenantB.ID, 10, 0)
+	list, err := repo.ListByTenant(ctx, tenantB.ID, 10, 0, "")
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }

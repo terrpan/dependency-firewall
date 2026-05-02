@@ -29,7 +29,7 @@ func TestClient_Enrich(t *testing.T) {
 		wantNilResult bool
 	}{
 		{
-			name: "successful query returns vulnerabilities with CVSS scores",
+			name: "successful query returns vulnerabilities with vector CVSS scores",
 			artifact: domain.ArtifactIdentity{
 				Ecosystem: domain.EcosystemNPM,
 				Namespace: "@babel",
@@ -53,14 +53,14 @@ func TestClient_Enrich(t *testing.T) {
 							ID:      "GHSA-1234",
 							Summary: "Critical vulnerability",
 							Severity: []osvSeverity{
-								{Type: "CVSS_V3", Score: "9.8"},
+								{Type: "CVSS_V3", Score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},
 							},
 						},
 						{
 							ID:      "GHSA-5678",
 							Summary: "Medium vulnerability",
 							Severity: []osvSeverity{
-								{Type: "CVSS_V3", Score: "5.5"},
+								{Type: "CVSS_V4", Score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P"},
 							},
 						},
 					},
@@ -159,6 +159,27 @@ func TestClient_Enrich(t *testing.T) {
 			} else {
 				assert.Nil(t, result.MaxCVSS)
 			}
+		})
+	}
+}
+
+func TestParseCVSSScore(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  float64
+	}{
+		{name: "plain numeric score", input: "9.8", want: 9.8},
+		{name: "cvss 3.0 vector", input: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", want: 9.8},
+		{name: "cvss 3.1 vector", input: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", want: 9.8},
+		{name: "cvss 4.0 vector", input: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P", want: 6.9},
+		{name: "invalid vector", input: "CVSS:3.1/not-a-vector", want: 0},
+		{name: "empty", input: "", want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.InDelta(t, tt.want, parseCVSSScore(tt.input), 0.01)
 		})
 	}
 }

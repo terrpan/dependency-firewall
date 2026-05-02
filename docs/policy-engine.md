@@ -5,12 +5,42 @@ Policies control which artifacts tenants can install through the proxy. Every po
 ## Evaluation rules
 
 1. Only **enabled** policies are evaluated.
-2. Policies run in **priority order** (ascending). Ties break alphabetically by name.
-3. **Deny overrides allow** — if any deny policy matches, the outcome is deny regardless of allow matches.
-4. The **first** matching deny reason becomes the user-facing error message.
-5. All matched reasons (allow and deny) are logged for audit.
-6. If **no policies match**, the default outcome is **allow**.
-7. Condition lookup or evaluation errors are treated as deny (`evaluation_error`).
+2. Policies with `upstream_id` only evaluate for requests that resolve to that same upstream. Legacy rules without `upstream_id` still apply tenant-wide.
+3. Policies run in **priority order** (ascending). Ties break alphabetically by name.
+4. **Deny overrides allow** — if any deny policy matches, the outcome is deny regardless of allow matches.
+5. The **first** matching deny reason becomes the user-facing error message.
+6. All matched reasons (allow and deny) are logged for audit.
+7. If **no policies match**, the default outcome is **allow**.
+8. Condition lookup or evaluation errors are treated as deny (`evaluation_error`).
+
+## Upstream capability profiles
+
+Policies can be scoped to one upstream with `upstream_id`. When they are, the control plane validates that the upstream ecosystem and capability profile can satisfy the selected policy type.
+
+### Current capability vocabulary
+
+- `publish_time` - supports age-based npm policies
+- `licenses` - supports npm license policies
+- `vulnerability_lookup` - supports npm CVSS policies
+- `manifest_digest_lookup` - supports OCI mutable-tag policies
+
+### Current policy requirements
+
+| Policy type | Supported upstream ecosystems | Required capabilities |
+| --- | --- | --- |
+| `cvss_threshold` | `npm` | `vulnerability_lookup` |
+| `minimum_age` | `npm` | `publish_time` |
+| `maximum_age` | `npm` | `publish_time` |
+| `license` | `npm` | `licenses` |
+| `license_allowlist` | `npm` | `licenses` |
+| `block_mutable_tag` | `oci` | `manifest_digest_lookup` |
+| `allowlist` | `npm`, `oci` | none |
+| `namespace_allowlist` | `npm`, `oci` | none |
+| `blocklist` | `npm`, `oci` | none |
+
+- `GET /api/v1/policy-types` exposes `supported_ecosystems` and `required_capabilities` for UI and automation clients.
+- Upstream create and update requests persist a capability profile that the UI reuses when filtering compatible policy types.
+- Updating an upstream cannot remove capabilities that are still required by scoped policies on that upstream.
 
 ## Typed config model
 
@@ -49,11 +79,12 @@ policies:
 - `policy_versions` stores retained policy snapshots for rollback
 - the service retains the latest **3** versions per policy
 - rollback creates a new current policy version from the chosen retained snapshot
-- retained snapshots include the full policy shape needed for rollback: `name`, `type`, `action`, `schema_version`, `config`, `priority`, and `enabled`
+- retained snapshots include the full policy shape needed for rollback: `name`, `type`, `action`, `schema_version`, `config`, `priority`, `enabled`, and `upstream_id`
 - rollback is exposed through the control plane:
   - `GET /api/v1/policies/{id}/versions`
   - `POST /api/v1/policies/{id}/rollback`
 - `GET /api/v1/policy-types` exposes the current and supported schema versions for each policy type so users can adapt policy files before an upgrade
+- the same endpoint also exposes per-type ecosystem and capability requirements for generated clients and the control-plane UI
 
 ## Priority
 
@@ -73,7 +104,7 @@ When importing from YAML, set `priority` explicitly. If omitted, policies receiv
 
 ### `cvss_threshold`
 
-Denies artifacts with a maximum CVSS vulnerability score above the configured threshold. Requires OSV enrichment.
+Denies artifacts with a maximum CVSS vulnerability score at or above the configured threshold. Requires an npm upstream with `vulnerability_lookup`.
 
 ```yaml
 - name: block-critical-vulnerabilities
@@ -84,12 +115,13 @@ Denies artifacts with a maximum CVSS vulnerability score above the configured th
     max_cvss: 7.0
 ```
 
+- Applies to all packages resolved through the matched upstream; it does not take a package list.
 - Skips evaluation (no match) if metadata or CVSS score is unavailable.
 - CVSS score comes from the OSV enrichment source.
 
 ### `minimum_age`
 
-Denies artifacts published fewer than `min_age_days` days ago. Protects against supply-chain attacks that publish malicious packages and exploit them before the community can audit.
+Denies artifacts published fewer than `min_age_days` days ago. Protects against supply-chain attacks that publish malicious packages and exploit them before the community can audit. Requires an npm upstream with `publish_time`.
 
 ```yaml
 - name: block-brand-new-packages
@@ -106,7 +138,7 @@ Denies artifacts published fewer than `min_age_days` days ago. Protects against 
 
 ### `maximum_age`
 
-Denies artifacts published more than `max_age_days` days ago. Prevents use of unmaintained or obsolete dependencies.
+Denies artifacts published more than `max_age_days` days ago. Prevents use of unmaintained or obsolete dependencies. Requires an npm upstream with `publish_time`.
 
 ```yaml
 - name: block-outdated-packages
@@ -127,7 +159,7 @@ Denies artifacts published more than `max_age_days` days ago. Prevents use of un
 
 ### `block_mutable_tag`
 
-Denies OCI artifacts that reference a mutable tag (e.g. `latest`). Forces pinning to immutable digests or specific versions.
+Denies OCI artifacts that reference a mutable tag (e.g. `latest`). Forces pinning to immutable digests or specific versions. Requires an OCI upstream with `manifest_digest_lookup`.
 
 ```yaml
 - name: block-latest-tag
@@ -145,7 +177,7 @@ Denies OCI artifacts that reference a mutable tag (e.g. `latest`). Forces pinnin
 
 ### `license`
 
-Matches artifacts whose declared licenses contain any configured identifier. Use it for targeted match rules such as “deny GPL” or “warn on AGPL”.
+Matches artifacts whose declared licenses contain any configured identifier. Use it for targeted match rules such as “deny GPL” or “warn on AGPL”. Requires an npm upstream with `licenses`.
 
 ```yaml
 - name: block-copyleft-licenses
@@ -165,7 +197,7 @@ Matches artifacts whose declared licenses contain any configured identifier. Use
 
 ### `license_allowlist`
 
-Denies artifacts whose declared licenses are not all contained in the configured approved SPDX list. This is the strict “allow only approved licenses” policy type.
+Denies artifacts whose declared licenses are not all contained in the configured approved SPDX list. This is the strict “allow only approved licenses” policy type. Requires an npm upstream with `licenses`.
 
 ```yaml
 - name: allow-approved-licenses

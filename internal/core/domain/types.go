@@ -208,13 +208,14 @@ type Tenant struct {
 
 // Upstream represents a configured upstream registry.
 type Upstream struct {
-	ID        string
-	TenantID  string
-	Name      string
-	Ecosystem EcosystemType
-	BaseURL   string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           string
+	TenantID     string
+	Name         string
+	Ecosystem    EcosystemType
+	BaseURL      string
+	Capabilities []UpstreamCapability
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // ArtifactIdentity is the canonical, normalized identifier for a package or image.
@@ -256,6 +257,7 @@ type Vulnerability struct {
 type Policy struct {
 	ID            string
 	TenantID      string
+	UpstreamID    string
 	Name          string
 	Type          PolicyType
 	Action        PolicyAction
@@ -274,6 +276,7 @@ const MaxRetainedPolicyVersions = 3
 type PolicyVersion struct {
 	PolicyID      string
 	Version       int
+	UpstreamID    string
 	Name          string
 	Type          PolicyType
 	Action        PolicyAction

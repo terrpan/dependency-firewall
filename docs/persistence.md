@@ -22,6 +22,11 @@ PostgreSQL is the system of record.
 ### Rules
 - every tenant-owned table includes tenant_id
 - operational tables are indexed by tenant_id and timestamp
+- upstreams are unique by `tenant_id + ecosystem + base_url`
+- upstreams persist a `capabilities` profile so policy compatibility checks are stable across API, UI, and evaluation workflows
+- policies may reference one upstream through `upstream_id`
+- `policies.upstream_id` and `policy_versions.upstream_id` are nullable only for legacy tenant-wide rules
+- upstream references use foreign keys so upstream deletion is blocked while policies still point at it
 - use JSONB only for flexible fields
 - `policies.schema_version` and `policy_versions.schema_version` record the policy-item schema used for that row
 - `policy_versions` stores retained policy snapshots for rollback and keeps the latest 3 versions per policy

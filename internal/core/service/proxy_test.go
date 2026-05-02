@@ -52,7 +52,7 @@ func (s *spyPolicyRepository) Update(context.Context, *domain.Policy) error {
 	return nil
 }
 
-func (s *spyPolicyRepository) Delete(context.Context, string, string) error {
+func (s *spyPolicyRepository) Delete(context.Context, string, string, bool) error {
 	return nil
 }
 
@@ -71,7 +71,7 @@ func (s *spyDecisionRepository) GetByArtifact(context.Context, string, domain.Ar
 	return nil, domain.ErrArtifactNotFound
 }
 
-func (s *spyDecisionRepository) ListByTenant(context.Context, string, int, int) ([]domain.Decision, error) {
+func (s *spyDecisionRepository) ListByTenant(context.Context, string, int, int, string) ([]domain.Decision, error) {
 	return nil, nil
 }
 
@@ -139,6 +139,10 @@ func (s *spyProxyMetadataCache) Set(_ context.Context, tenantID string, artifact
 	s.lastSetTenantID = tenantID
 	s.lastSetArtifact = artifact
 	s.lastTTL = ttl
+	return nil
+}
+
+func (s *spyProxyMetadataCache) InvalidateTenant(context.Context, string) error {
 	return nil
 }
 
@@ -289,6 +293,83 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		assert.Equal(t, decision.Warnings, decisionRepo.recorded[0].Warnings)
 	})
 
+	t.Run("upstream scoped policies only evaluate matching scope", func(t *testing.T) {
+		timestamp := time.Now()
+		publishedAt := timestamp.Add(-400 * 24 * time.Hour)
+
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:         "p-upstream-other",
+					TenantID:   "tenant-1",
+					UpstreamID: "up-2",
+					Name:       "deny-gpl-on-other-upstream",
+					Type:       domain.PolicyTypeLicense,
+					Action:     domain.PolicyActionDeny,
+					Config:     &domain.LicensePolicyConfig{Licenses: []string{"GPL-3.0-only"}},
+					Priority:   5,
+					Enabled:    true,
+				},
+				{
+					ID:       "p-legacy",
+					TenantID: "tenant-1",
+					Name:     "warn-old-packages",
+					Type:     domain.PolicyTypeMaximumAge,
+					Action:   domain.PolicyActionDeny,
+					Config:   &domain.MaximumAgePolicyConfig{MaxAgeDays: proxyIntPtr(365), DryRun: true},
+					Priority: 10,
+					Enabled:  true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := newSpyDecisionCache()
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{
+			result: &domain.ArtifactMetadata{
+				PublishedAt: &publishedAt,
+				Licenses:    []string{"GPL-3.0-only"},
+			},
+		}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			&spyUpstreamClient{},
+			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
+
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "old-gpl-package",
+				Version:   "1.0.0",
+			},
+			Upstream: domain.Upstream{
+				ID:        "up-1",
+				TenantID:  "tenant-1",
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "npmjs",
+				BaseURL:   "https://registry.npmjs.org",
+			},
+			Timestamp: timestamp,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+		assert.Len(t, decision.Warnings, 1)
+		assert.Contains(t, decision.Warnings[0], "warn-old-packages")
+		assert.NotContains(t, decision.Reason, "deny-gpl-on-other-upstream")
+		assert.NotEmpty(t, decision.PolicyHash)
+	})
+
 	t.Run("oci mutable tag deny uses the same core evaluator", func(t *testing.T) {
 		policyRepo := &spyPolicyRepository{
 			policies: []domain.Policy{
@@ -366,6 +447,77 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		require.Len(t, decisionRepo.recorded, 1)
 		assert.Equal(t, decision.PolicyHash, decisionRepo.recorded[0].PolicyHash)
 		assert.Equal(t, decision.Reason, decisionRepo.recorded[0].Reason)
+	})
+
+	t.Run("oci mutable tag resolution uses the request upstream when present", func(t *testing.T) {
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:         "p-upstream",
+					TenantID:   "tenant-1",
+					UpstreamID: "up-1",
+					Name:       "block-latest-tag",
+					Type:       domain.PolicyTypeBlockMutableTag,
+					Action:     domain.PolicyActionDeny,
+					Config:     &domain.BlockMutableTagPolicyConfig{Tags: []string{"latest"}},
+					Priority:   15,
+					Enabled:    true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := newSpyDecisionCache()
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{}
+		upstreamClient := &spyUpstreamClient{resolveDigest: "sha256:feedface"}
+		upstreamRepo := &spyUpstreamRepository{
+			upstream: &domain.Upstream{
+				ID:        "fallback-upstream",
+				TenantID:  "tenant-1",
+				Name:      "fallback",
+				Ecosystem: domain.EcosystemOCI,
+				BaseURL:   "https://fallback.example",
+			},
+		}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			upstreamClient,
+			upstreamRepo,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
+
+		requestUpstream := domain.Upstream{
+			ID:        "up-1",
+			TenantID:  "tenant-1",
+			Name:      "ghcr",
+			Ecosystem: domain.EcosystemOCI,
+			BaseURL:   "https://ghcr.io",
+		}
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemOCI,
+				Namespace: "GHCR.IO/Team",
+				Name:      "My-App",
+				Version:   "latest",
+			},
+			Upstream:  requestUpstream,
+			Timestamp: time.Now(),
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionDeny, decision.Outcome)
+		assert.Equal(t, "sha256:feedface", decision.Artifact.Digest)
+		assert.Zero(t, upstreamRepo.getByEcosystemHit)
+		assert.Equal(t, requestUpstream.ID, upstreamClient.lastUpstream.ID)
+		assert.Equal(t, requestUpstream.BaseURL, upstreamClient.lastUpstream.BaseURL)
 	})
 
 	t.Run("npm license deny uses shared enrichment metadata", func(t *testing.T) {

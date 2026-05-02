@@ -6,11 +6,13 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 	{
 		Type:                    domain.PolicyTypeCVSSThreshold,
 		Summary:                 "Block by vulnerability severity",
-		Description:             "Matches artifacts whose maximum CVSS score exceeds the configured threshold.",
-		Help:                    "Use this to deny or warn on vulnerable artifacts after OSV enrichment. If CVSS metadata is unavailable, the policy skips.",
+		Description:             "Matches all artifacts on the scoped upstream whose maximum CVSS score is at or above the configured threshold.",
+		Help:                    "Use this to deny vulnerable artifacts tenant-wide after OSV enrichment. It does not require a package list. If CVSS metadata is unavailable, the policy skips.",
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
+		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityVulnerabilityLookup},
 		Example: `- name: block-critical-vulnerabilities
   type: cvss_threshold
   schema_version: 1
@@ -27,6 +29,8 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
+		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityPublishTime},
 		Example: `- name: block-brand-new-packages
   type: minimum_age
   schema_version: 1
@@ -43,6 +47,8 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
+		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityPublishTime},
 		Example: `- name: block-outdated-packages
   type: maximum_age
   schema_version: 1
@@ -60,6 +66,8 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemOCI},
+		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityManifestDigestLookup},
 		Example: `- name: block-latest-tag
   type: block_mutable_tag
   schema_version: 1
@@ -77,6 +85,8 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionAllow, domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
+		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses},
 		Example: `- name: block-copyleft-licenses
   type: license
   schema_version: 1
@@ -95,6 +105,8 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
+		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses},
 		Example: `- name: allow-approved-licenses
   type: license_allowlist
   schema_version: 1
@@ -114,6 +126,7 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionAllow},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
 		Example: `- name: allow-internal-packages
   type: allowlist
   schema_version: 1
@@ -132,6 +145,7 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
 		Example: `- name: allow-only-approved-namespaces
   type: namespace_allowlist
   schema_version: 1
@@ -150,6 +164,7 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		CurrentSchemaVersion:    1,
 		SupportedSchemaVersions: []int{1},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
+		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
 		Example: `- name: block-untrusted-scopes
   type: blocklist
   schema_version: 1
@@ -169,6 +184,8 @@ func TypeCatalog() []domain.PolicyTypeDescriptor {
 		result[i] = policyTypeCatalog[i]
 		result[i].SupportedActions = append([]domain.PolicyAction(nil), policyTypeCatalog[i].SupportedActions...)
 		result[i].SupportedSchemaVersions = append([]int(nil), policyTypeCatalog[i].SupportedSchemaVersions...)
+		result[i].SupportedEcosystems = append([]domain.EcosystemType(nil), policyTypeCatalog[i].SupportedEcosystems...)
+		result[i].RequiredCapabilities = append([]domain.UpstreamCapability(nil), policyTypeCatalog[i].RequiredCapabilities...)
 	}
 	return result
 }

@@ -243,9 +243,9 @@ func run() error {
 
 	// Register control plane API routes (no tenant middleware wrapping).
 	tenantService := service.NewTenantService(tenantRepo)
-	policyService := service.NewPolicyService(policyRepo, policyRevisionRepo, decisionCache)
-	cacheService := service.NewCacheService(decisionCache)
-	upstreamService := service.NewUpstreamService(upstreamRepo)
+	policyService := service.NewPolicyService(policyRepo, policyRevisionRepo, decisionCache, upstreamRepo)
+	cacheService := service.NewCacheService(decisionCache, metadataCache)
+	upstreamService := service.NewUpstreamService(upstreamRepo, policyRepo)
 	evaluationService := service.NewEvaluationService(decisionRepo)
 
 	tenantHandler := api.NewTenantHandler(tenantService, logger)

@@ -1,5 +1,6 @@
 # npm example artifacts
 node_modules/
 package-lock.json
+!web/package-lock.json
 examples/npm/package.json
 examples/npm/.npmrc

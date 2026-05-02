@@ -1,0 +1,106 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --background: #07111f;
+  --background-accent: rgba(37, 99, 235, 0.16);
+  --background-muted: rgba(15, 23, 42, 0.7);
+  --surface: rgba(15, 23, 42, 0.9);
+  --surface-muted: rgba(15, 23, 42, 0.72);
+  --surface-highlight: rgba(30, 41, 59, 0.92);
+  --border-soft: rgba(148, 163, 184, 0.16);
+  --border-strong: rgba(148, 163, 184, 0.28);
+  --text-strong: #e5eefc;
+  --text-muted: #a7b7d6;
+  --accent: #7dd3fc;
+  --accent-bright: #bfdbfe;
+  --accent-border: rgba(125, 211, 252, 0.34);
+  --accent-surface: rgba(14, 165, 233, 0.14);
+  --shadow-card: 0 18px 40px rgba(2, 6, 23, 0.22);
+  --shadow-shell: 0 32px 80px rgba(2, 6, 23, 0.46);
+  --page-max-width: 1440px;
+
+  color: var(--text-strong);
+  background: var(--background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, var(--background-accent), transparent 30%),
+    radial-gradient(circle at top right, rgba(34, 211, 238, 0.1), transparent 24%),
+    radial-gradient(circle at bottom left, rgba(34, 197, 94, 0.08), transparent 22%),
+    linear-gradient(180deg, #091220 0%, #07111f 48%, #050c16 100%);
+  color: var(--text-strong);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 0.18em;
+}
+
+button,
+input,
+select,
+textarea,
+a {
+  transition:
+    outline-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.55);
+  outline-offset: 2px;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+::selection {
+  background: rgba(125, 211, 252, 0.28);
+  color: var(--text-strong);
+}
+
+#root {
+  min-height: 100vh;
+}

@@ -2,6 +2,7 @@
 package oci
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -87,7 +88,7 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	upstream, err := h.upstreams.GetByEcosystem(r.Context(), tenant.ID, domain.EcosystemOCI)
+	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
 	if err != nil {
 		h.logger.Error("failed to look up OCI upstream",
 			"error", err,
@@ -180,7 +181,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
-	upstream, err := h.upstreams.GetByEcosystem(r.Context(), tenant.ID, domain.EcosystemOCI)
+	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
 	if err != nil {
 		writeOCIError(w, r, "NAME_UNKNOWN", "no OCI upstream configured", http.StatusNotFound)
 		return
@@ -264,6 +265,21 @@ func splitRepo(repo string) (namespace, name string) {
 		return "", repo
 	}
 	return repo[:idx], repo[idx+1:]
+}
+
+func (h *RegistryHandler) resolveUpstream(ctx context.Context, tenantID string) (*domain.Upstream, error) {
+	if upstreamID, ok := middleware.UpstreamIDFromContext(ctx); ok && upstreamID != "" {
+		upstream, err := h.upstreams.GetByID(ctx, tenantID, upstreamID)
+		if err != nil {
+			return nil, err
+		}
+		if upstream.Ecosystem != domain.EcosystemOCI {
+			return nil, domain.ErrUpstreamNotFound
+		}
+		return upstream, nil
+	}
+
+	return h.upstreams.GetByEcosystem(ctx, tenantID, domain.EcosystemOCI)
 }
 
 // ociErrorResponse is the OCI-spec error envelope.

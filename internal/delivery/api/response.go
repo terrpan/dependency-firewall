@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 )
 
@@ -18,16 +19,19 @@ type TenantResponse struct {
 }
 
 type UpstreamResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Ecosystem string    `json:"ecosystem"`
-	BaseURL   string    `json:"base_url"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                   string    `json:"id"`
+	Name                 string    `json:"name"`
+	Ecosystem            string    `json:"ecosystem"`
+	BaseURL              string    `json:"base_url"`
+	Capabilities         []string  `json:"capabilities"`
+	SupportedPolicyTypes []string  `json:"supported_policy_types"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type PolicyResponse struct {
 	ID            string    `json:"id"`
+	UpstreamID    string    `json:"upstream_id,omitempty"`
 	Name          string    `json:"name"`
 	Type          string    `json:"type"`
 	Action        string    `json:"action"`
@@ -42,6 +46,7 @@ type PolicyResponse struct {
 
 type PolicyVersionResponse struct {
 	Version       int       `json:"version"`
+	UpstreamID    string    `json:"upstream_id,omitempty"`
 	Name          string    `json:"name"`
 	Type          string    `json:"type"`
 	Action        string    `json:"action"`
@@ -60,6 +65,8 @@ type PolicyTypeResponse struct {
 	CurrentSchemaVersion    int      `json:"current_schema_version"`
 	SupportedSchemaVersions []int    `json:"supported_schema_versions"`
 	SupportedActions        []string `json:"supported_actions"`
+	SupportedEcosystems     []string `json:"supported_ecosystems"`
+	RequiredCapabilities    []string `json:"required_capabilities"`
 	Example                 string   `json:"example"`
 }
 
@@ -121,13 +128,21 @@ func toTenantsResponse(tenants []domain.Tenant) []*TenantResponse {
 }
 
 func toUpstreamResponse(u *domain.Upstream) *UpstreamResponse {
+	supportedPolicyTypes := corepolicy.SupportedPolicyTypesForUpstream(*u)
+	policyTypes := make([]string, len(supportedPolicyTypes))
+	for i := range supportedPolicyTypes {
+		policyTypes[i] = string(supportedPolicyTypes[i])
+	}
+
 	return &UpstreamResponse{
-		ID:        u.ID,
-		Name:      u.Name,
-		Ecosystem: string(u.Ecosystem),
-		BaseURL:   u.BaseURL,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		ID:                   u.ID,
+		Name:                 u.Name,
+		Ecosystem:            string(u.Ecosystem),
+		BaseURL:              u.BaseURL,
+		Capabilities:         domain.UpstreamCapabilityStrings(u.Capabilities),
+		SupportedPolicyTypes: policyTypes,
+		CreatedAt:            u.CreatedAt,
+		UpdatedAt:            u.UpdatedAt,
 	}
 }
 
@@ -142,6 +157,7 @@ func toUpstreamsResponse(upstreams []domain.Upstream) []*UpstreamResponse {
 func toPolicyResponse(p *domain.Policy) *PolicyResponse {
 	return &PolicyResponse{
 		ID:            p.ID,
+		UpstreamID:    p.UpstreamID,
 		Name:          p.Name,
 		Type:          string(p.Type),
 		Action:        string(p.Action),
@@ -166,6 +182,7 @@ func toPoliciesResponse(policies []domain.Policy) []*PolicyResponse {
 func toPolicyVersionResponse(version *domain.PolicyVersion) *PolicyVersionResponse {
 	return &PolicyVersionResponse{
 		Version:       version.Version,
+		UpstreamID:    version.UpstreamID,
 		Name:          version.Name,
 		Type:          string(version.Type),
 		Action:        string(version.Action),
@@ -190,6 +207,10 @@ func toPolicyTypeResponse(d domain.PolicyTypeDescriptor) *PolicyTypeResponse {
 	for i := range d.SupportedActions {
 		actions[i] = string(d.SupportedActions[i])
 	}
+	ecosystems := make([]string, len(d.SupportedEcosystems))
+	for i := range d.SupportedEcosystems {
+		ecosystems[i] = string(d.SupportedEcosystems[i])
+	}
 
 	return &PolicyTypeResponse{
 		Type:                    string(d.Type),
@@ -199,6 +220,8 @@ func toPolicyTypeResponse(d domain.PolicyTypeDescriptor) *PolicyTypeResponse {
 		CurrentSchemaVersion:    d.CurrentSchemaVersion,
 		SupportedSchemaVersions: append([]int(nil), d.SupportedSchemaVersions...),
 		SupportedActions:        actions,
+		SupportedEcosystems:     ecosystems,
+		RequiredCapabilities:    domain.UpstreamCapabilityStrings(d.RequiredCapabilities),
 		Example:                 d.Example,
 	}
 }

@@ -15,14 +15,21 @@ type PolicyService struct {
 	repo          port.PolicyRepository
 	revisions     port.PolicyRevisionRepository
 	decisionCache port.DecisionCache
+	upstreams     port.UpstreamRepository
 }
 
 // NewPolicyService creates a new PolicyService.
-func NewPolicyService(repo port.PolicyRepository, revisions port.PolicyRevisionRepository, decisionCache port.DecisionCache) *PolicyService {
+func NewPolicyService(
+	repo port.PolicyRepository,
+	revisions port.PolicyRevisionRepository,
+	decisionCache port.DecisionCache,
+	upstreams port.UpstreamRepository,
+) *PolicyService {
 	return &PolicyService{
 		repo:          repo,
 		revisions:     revisions,
 		decisionCache: decisionCache,
+		upstreams:     upstreams,
 	}
 }
 
@@ -41,6 +48,9 @@ func (s *PolicyService) Create(ctx context.Context, policyDef *domain.Policy) er
 		policyDef.SchemaVersion = normalizedSchemaVersion
 	}
 	if err := policy.ValidatePolicy(*policyDef); err != nil {
+		return err
+	}
+	if err := s.validateUpstreamScope(ctx, policyDef.TenantID, policyDef.UpstreamID, policyDef.Type); err != nil {
 		return err
 	}
 	if err := s.repo.Create(ctx, policyDef); err != nil {
@@ -87,6 +97,7 @@ func (s *PolicyService) ListVersions(ctx context.Context, tenantID, policyID str
 		if err := policy.ValidatePolicy(domain.Policy{
 			ID:            versions[i].PolicyID,
 			TenantID:      tenantID,
+			UpstreamID:    versions[i].UpstreamID,
 			Name:          versions[i].Name,
 			Type:          versions[i].Type,
 			Action:        versions[i].Action,
@@ -115,6 +126,9 @@ func (s *PolicyService) Update(ctx context.Context, policyDef *domain.Policy) er
 	if err := policy.ValidatePolicy(*policyDef); err != nil {
 		return err
 	}
+	if err := s.validateUpstreamScope(ctx, policyDef.TenantID, policyDef.UpstreamID, policyDef.Type); err != nil {
+		return err
+	}
 	if err := s.repo.Update(ctx, policyDef); err != nil {
 		return fmt.Errorf("updating policy: %w", err)
 	}
@@ -126,6 +140,20 @@ func (s *PolicyService) Update(ctx context.Context, policyDef *domain.Policy) er
 
 // RollbackToVersion restores a policy from a retained version snapshot.
 func (s *PolicyService) RollbackToVersion(ctx context.Context, tenantID, policyID string, version int) (*domain.Policy, error) {
+	versions, err := s.repo.ListVersions(ctx, tenantID, policyID, domain.MaxRetainedPolicyVersions)
+	if err != nil {
+		return nil, fmt.Errorf("listing policy versions for rollback: %w", err)
+	}
+	for i := range versions {
+		if versions[i].Version != version {
+			continue
+		}
+		if err := s.validateUpstreamScope(ctx, tenantID, versions[i].UpstreamID, versions[i].Type); err != nil {
+			return nil, fmt.Errorf("validating rolled back policy upstream: %w", err)
+		}
+		break
+	}
+
 	policyDef, err := s.repo.RollbackToVersion(ctx, tenantID, policyID, version)
 	if err != nil {
 		return nil, fmt.Errorf("rolling back policy: %w", err)
@@ -140,8 +168,16 @@ func (s *PolicyService) RollbackToVersion(ctx context.Context, tenantID, policyI
 }
 
 // Delete removes a policy for a tenant.
-func (s *PolicyService) Delete(ctx context.Context, tenantID, id string) error {
-	if err := s.repo.Delete(ctx, tenantID, id); err != nil {
+func (s *PolicyService) Delete(ctx context.Context, tenantID, id string, force bool) error {
+	policyDef, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("getting policy for delete: %w", err)
+	}
+	if policyDef.Enabled {
+		return domain.ErrPolicyDeleteEnabled
+	}
+
+	if err := s.repo.Delete(ctx, tenantID, id, force); err != nil {
 		return fmt.Errorf("deleting policy: %w", err)
 	}
 	if err := s.finalizeTenantMutation(ctx, tenantID); err != nil {
@@ -159,6 +195,9 @@ func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, imp
 		policies[i].TenantID = tenantID
 		if policies[i].Version == 0 {
 			policies[i].Version = 1
+		}
+		if err := s.validateUpstreamScope(ctx, tenantID, policies[i].UpstreamID, policies[i].Type); err != nil {
+			return 0, fmt.Errorf("validating imported policy %q upstream: %w", policies[i].Name, err)
 		}
 	}
 
@@ -214,6 +253,24 @@ func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, imp
 	}
 
 	return len(policies), nil
+}
+
+func (s *PolicyService) validateUpstreamScope(
+	ctx context.Context,
+	tenantID, upstreamID string,
+	policyType domain.PolicyType,
+) error {
+	if upstreamID == "" || s.upstreams == nil {
+		return nil
+	}
+	upstream, err := s.upstreams.GetByID(ctx, tenantID, upstreamID)
+	if err != nil {
+		return err
+	}
+	if err := policy.ValidateUpstreamCompatibility(policyType, *upstream); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *PolicyService) finalizeTenantMutation(ctx context.Context, tenantID string) error {

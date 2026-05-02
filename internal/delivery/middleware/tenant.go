@@ -15,6 +15,7 @@ import (
 type contextKey string
 
 const tenantContextKey contextKey = "tenant"
+const upstreamContextKey contextKey = "upstream"
 
 // TenantResolver extracts tenant ID from requests and adds it to context.
 type TenantResolver struct {
@@ -59,54 +60,96 @@ func ContextWithTenant(ctx context.Context, tenant domain.Tenant) context.Contex
 	return context.WithValue(ctx, tenantContextKey, tenant)
 }
 
-// NPMTenantFromPath is a middleware that extracts tenant ID from npm registry URLs.
-// It supports the pattern /npm/t/{tenant-id}/{package...} and injects the tenant ID
-// as X-Tenant-ID header so the standard TenantResolver middleware can handle it.
+// UpstreamIDFromContext retrieves the upstream ID from the request context.
+func UpstreamIDFromContext(ctx context.Context) (string, bool) {
+	upstreamID, ok := ctx.Value(upstreamContextKey).(string)
+	return upstreamID, ok
+}
+
+// ContextWithUpstreamID returns a context with the given upstream ID set.
+func ContextWithUpstreamID(ctx context.Context, upstreamID string) context.Context {
+	return context.WithValue(ctx, upstreamContextKey, upstreamID)
+}
+
+// NPMTenantFromPath extracts tenant and optional upstream IDs from npm registry URLs.
+// It supports:
+//   - /npm/t/{tenant-id}/{package...}
+//   - /npm/t/{tenant-id}/u/{upstream-id}/{package...}
+//
+// It injects the tenant ID as X-Tenant-ID and stores the optional upstream ID in
+// the request context before rewriting the path to /npm/{package...}.
 func NPMTenantFromPath() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check if path matches /npm/t/{tenant}/...
-			if strings.HasPrefix(r.URL.Path, "/npm/t/") {
-				parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/npm/t/"), "/", 2)
-				if len(parts) >= 1 && parts[0] != "" {
-					tenantID := parts[0]
+			if !strings.HasPrefix(r.URL.Path, "/npm/t/") {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-					// Inject tenant ID as header for the TenantResolver middleware
-					r.Header.Set("X-Tenant-ID", tenantID)
+			ctx := r.Context()
+			tenantID, remainder, hasRemainder := strings.Cut(strings.TrimPrefix(r.URL.Path, "/npm/t/"), "/")
+			if tenantID == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-					// Rewrite path to /npm/{package...} for the handler
-					if len(parts) == 2 {
-						r.URL.Path = "/npm/" + parts[1]
-					} else {
-						r.URL.Path = "/npm/"
-					}
+			r.Header.Set("X-Tenant-ID", tenantID)
+
+			packagePath := remainder
+			if hasRemainder && strings.HasPrefix(remainder, "u/") {
+				upstreamRemainder := strings.TrimPrefix(remainder, "u/")
+				upstreamID, nextPath, _ := strings.Cut(upstreamRemainder, "/")
+				if upstreamID != "" {
+					ctx = ContextWithUpstreamID(ctx, upstreamID)
+					packagePath = nextPath
 				}
 			}
-			next.ServeHTTP(w, r)
+
+			if packagePath != "" {
+				r.URL.Path = "/npm/" + packagePath
+			} else {
+				r.URL.Path = "/npm/"
+			}
+
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// OCITenantFromHost extracts a tenant ID from the left-most hostname label for
-// OCI requests and injects it as X-Tenant-ID when the request does not already
-// provide the header directly.
+// OCITenantFromHost extracts tenant and optional upstream IDs from OCI hosts.
+// It supports:
+//   - {tenant-id}.{firewall-host}
+//   - u-{upstream-id}.{tenant-id}.{firewall-host}
+//
+// The tenant ID is injected as X-Tenant-ID when the header is absent. The
+// upstream ID is stored in request context when present.
 func OCITenantFromHost() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			tenantID, upstreamID := tenantAndUpstreamIDFromHost(r.Host)
+			if upstreamID != "" {
+				ctx = ContextWithUpstreamID(ctx, upstreamID)
+			}
 			if r.Header.Get("X-Tenant-ID") == "" {
-				if tenantID := tenantIDFromHost(r.Host); tenantID != "" {
+				if tenantID != "" {
 					r.Header.Set("X-Tenant-ID", tenantID)
 				}
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
 func tenantIDFromHost(host string) string {
+	tenantID, _ := tenantAndUpstreamIDFromHost(host)
+	return tenantID
+}
+
+func tenantAndUpstreamIDFromHost(host string) (string, string) {
 	host = strings.TrimSpace(host)
 	if host == "" {
-		return ""
+		return "", ""
 	}
 
 	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
@@ -117,15 +160,19 @@ func tenantIDFromHost(host string) string {
 
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" || host == "localhost" || net.ParseIP(host) != nil {
-		return ""
+		return "", ""
 	}
 
 	labels := strings.Split(host, ".")
 	if len(labels) < 2 || labels[0] == "" {
-		return ""
+		return "", ""
 	}
 
-	return labels[0]
+	if strings.HasPrefix(labels[0], "u-") && len(labels) >= 3 && labels[1] != "" {
+		return labels[1], strings.TrimPrefix(labels[0], "u-")
+	}
+
+	return labels[0], ""
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {

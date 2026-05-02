@@ -9,5 +9,7 @@ type PolicyTypeDescriptor struct {
 	CurrentSchemaVersion    int
 	SupportedSchemaVersions []int
 	SupportedActions        []PolicyAction
+	SupportedEcosystems     []EcosystemType
+	RequiredCapabilities    []UpstreamCapability
 	Example                 string
 }

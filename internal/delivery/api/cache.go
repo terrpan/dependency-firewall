@@ -37,6 +37,17 @@ func (h *CacheHandler) RegisterHumaRoutes(api huma.API) {
 		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
 	}, h.clearDecisionCacheHuma)
 	removeValidationResponse(api, "/api/v1/cache/decisions", http.MethodDelete)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "clear-metadata-cache",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/cache/metadata",
+		Summary:     "Clear tenant metadata cache",
+		Description: "Invalidates cached enrichment metadata for the tenant so subsequent proxy requests fetch fresh artifact metadata again.",
+		Tags:        []string{"cache"},
+		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+	}, h.clearMetadataCacheHuma)
+	removeValidationResponse(api, "/api/v1/cache/metadata", http.MethodDelete)
 }
 
 type cacheTenantInput struct {
@@ -45,25 +56,6 @@ type cacheTenantInput struct {
 
 type cacheClearOutput struct {
 	Body cacheClearResponse
-}
-
-func (h *CacheHandler) clearDecisionCache(w http.ResponseWriter, r *http.Request) {
-	tenantID, err := tenantIDFromHeader(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if err := h.caches.ClearTenantDecisions(r.Context(), tenantID); err != nil {
-		h.logger.Error("clearing tenant decision cache", "error", err, "tenant_id", tenantID)
-		writeError(w, http.StatusInternalServerError, "failed to clear decision cache")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, cacheClearResponse{
-		Status: "cleared",
-		Cache:  "decisions",
-	})
 }
 
 func (h *CacheHandler) clearDecisionCacheHuma(ctx context.Context, input *cacheTenantInput) (*cacheClearOutput, error) {
@@ -81,6 +73,25 @@ func (h *CacheHandler) clearDecisionCacheHuma(ctx context.Context, input *cacheT
 		Body: cacheClearResponse{
 			Status: "cleared",
 			Cache:  "decisions",
+		},
+	}, nil
+}
+
+func (h *CacheHandler) clearMetadataCacheHuma(ctx context.Context, input *cacheTenantInput) (*cacheClearOutput, error) {
+	tenantID, err := tenantIDFromValue(input.TenantID)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+
+	if err := h.caches.ClearTenantMetadata(ctx, tenantID); err != nil {
+		h.logger.Error("clearing tenant metadata cache", "error", err, "tenant_id", tenantID)
+		return nil, huma.Error500InternalServerError("failed to clear metadata cache")
+	}
+
+	return &cacheClearOutput{
+		Body: cacheClearResponse{
+			Status: "cleared",
+			Cache:  "metadata",
 		},
 	}, nil
 }

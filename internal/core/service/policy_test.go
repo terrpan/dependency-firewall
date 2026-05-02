@@ -18,6 +18,8 @@ type spyPolicyServiceRepo struct {
 	updateCalls  int
 	deleteCalls  int
 	createErrAt  int
+	deleteErr    error
+	lastDeleteForce bool
 	getPolicy    *domain.Policy
 	listPolicies []domain.Policy
 	versions     map[string][]domain.PolicyVersion
@@ -69,10 +71,16 @@ func (s *spyPolicyServiceRepo) Create(_ context.Context, policy *domain.Policy) 
 	return nil
 }
 
-func (s *spyPolicyServiceRepo) GetByID(context.Context, string, string) (*domain.Policy, error) {
+func (s *spyPolicyServiceRepo) GetByID(_ context.Context, tenantID, id string) (*domain.Policy, error) {
 	if s.getPolicy != nil {
 		copyPolicy := *s.getPolicy
 		return &copyPolicy, nil
+	}
+	for i := range s.listPolicies {
+		if s.listPolicies[i].TenantID == tenantID && s.listPolicies[i].ID == id {
+			copyPolicy := s.listPolicies[i]
+			return &copyPolicy, nil
+		}
 	}
 	return nil, domain.ErrPolicyNotFound
 }
@@ -138,8 +146,12 @@ func (s *spyPolicyServiceRepo) RollbackToVersion(_ context.Context, tenantID, po
 	return nil, domain.ErrPolicyNotFound
 }
 
-func (s *spyPolicyServiceRepo) Delete(_ context.Context, _ string, id string) error {
+func (s *spyPolicyServiceRepo) Delete(_ context.Context, _ string, id string, force bool) error {
 	s.deleteCalls++
+	s.lastDeleteForce = force
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
 	for i := range s.listPolicies {
 		if s.listPolicies[i].ID == id {
 			s.listPolicies = append(s.listPolicies[:i], s.listPolicies[i+1:]...)
@@ -180,6 +192,39 @@ type spyPolicyRevisionRepository struct {
 	revisions []domain.PolicySetRevision
 }
 
+type stubPolicyUpstreamRepository struct {
+	upstreams map[string]domain.Upstream
+}
+
+func (s *stubPolicyUpstreamRepository) GetByID(_ context.Context, tenantID, id string) (*domain.Upstream, error) {
+	upstream, ok := s.upstreams[tenantID+":"+id]
+	if !ok {
+		return nil, domain.ErrUpstreamNotFound
+	}
+	copyUpstream := upstream
+	return &copyUpstream, nil
+}
+
+func (s *stubPolicyUpstreamRepository) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
+	return nil, domain.ErrUpstreamNotFound
+}
+
+func (s *stubPolicyUpstreamRepository) ListByTenant(context.Context, string) ([]domain.Upstream, error) {
+	return nil, nil
+}
+
+func (s *stubPolicyUpstreamRepository) Create(context.Context, *domain.Upstream) error {
+	return nil
+}
+
+func (s *stubPolicyUpstreamRepository) Update(context.Context, *domain.Upstream) error {
+	return nil
+}
+
+func (s *stubPolicyUpstreamRepository) Delete(context.Context, string, string) error {
+	return nil
+}
+
 func (s *spyPolicyDecisionCache) Get(context.Context, string, domain.ArtifactIdentity) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
@@ -210,7 +255,7 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 		repo := &spyPolicyServiceRepo{}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		err := service.Create(context.Background(), &domain.Policy{
 			Name:     "warn-policy",
@@ -235,7 +280,7 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 		repo := &spyPolicyServiceRepo{}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		err := service.Update(context.Background(), &domain.Policy{
 			ID:       "policy-1",
@@ -267,14 +312,14 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 				Type:     domain.PolicyTypeAllowlist,
 				Action:   domain.PolicyActionAllow,
 				Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}},
-				Enabled:  true,
+				Enabled:  false,
 			},
 		}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
-		err := service.Delete(context.Background(), "tenant-1", "policy-1")
+		err := service.Delete(context.Background(), "tenant-1", "policy-1", false)
 
 		require.NoError(t, err)
 		assert.Equal(t, 1, repo.deleteCalls)
@@ -283,11 +328,88 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 		assert.NotEmpty(t, revisions.revisions[0].PolicyHash)
 	})
 
+	t.Run("delete rejects enabled policy", func(t *testing.T) {
+		repo := &spyPolicyServiceRepo{}
+		repo.listPolicies = []domain.Policy{
+			{
+				ID:       "policy-1",
+				TenantID: "tenant-1",
+				Name:     "existing",
+				Type:     domain.PolicyTypeAllowlist,
+				Action:   domain.PolicyActionAllow,
+				Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}},
+				Enabled:  true,
+			},
+		}
+		revisions := &spyPolicyRevisionRepository{}
+		cache := &spyPolicyDecisionCache{}
+		service := NewPolicyService(repo, revisions, cache, nil)
+
+		err := service.Delete(context.Background(), "tenant-1", "policy-1", false)
+
+		require.ErrorIs(t, err, domain.ErrPolicyDeleteEnabled)
+		assert.Equal(t, 0, repo.deleteCalls)
+		assert.Empty(t, cache.invalidatedTenants)
+		assert.Empty(t, revisions.revisions)
+	})
+
+	t.Run("delete rejects referenced policy", func(t *testing.T) {
+		repo := &spyPolicyServiceRepo{
+			deleteErr: domain.ErrPolicyInUse,
+			listPolicies: []domain.Policy{
+				{
+					ID:       "policy-1",
+					TenantID: "tenant-1",
+					Name:     "existing",
+					Type:     domain.PolicyTypeAllowlist,
+					Action:   domain.PolicyActionAllow,
+					Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}},
+					Enabled:  false,
+				},
+			},
+		}
+		revisions := &spyPolicyRevisionRepository{}
+		cache := &spyPolicyDecisionCache{}
+		service := NewPolicyService(repo, revisions, cache, nil)
+
+		err := service.Delete(context.Background(), "tenant-1", "policy-1", false)
+
+		require.ErrorIs(t, err, domain.ErrPolicyInUse)
+		assert.Equal(t, 1, repo.deleteCalls)
+		assert.False(t, repo.lastDeleteForce)
+		assert.Empty(t, cache.invalidatedTenants)
+		assert.Empty(t, revisions.revisions)
+	})
+
+	t.Run("force delete passes flag to repo", func(t *testing.T) {
+		repo := &spyPolicyServiceRepo{
+			listPolicies: []domain.Policy{
+				{
+					ID:       "policy-1",
+					TenantID: "tenant-1",
+					Name:     "existing",
+					Type:     domain.PolicyTypeAllowlist,
+					Action:   domain.PolicyActionAllow,
+					Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}},
+					Enabled:  false,
+				},
+			},
+		}
+		revisions := &spyPolicyRevisionRepository{}
+		cache := &spyPolicyDecisionCache{}
+		service := NewPolicyService(repo, revisions, cache, nil)
+
+		err := service.Delete(context.Background(), "tenant-1", "policy-1", true)
+
+		require.NoError(t, err)
+		assert.True(t, repo.lastDeleteForce)
+	})
+
 	t.Run("import", func(t *testing.T) {
 		repo := &spyPolicyServiceRepo{}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		count, err := service.ImportPolicies(context.Background(), "tenant-1", importedPolicies("tenant-1"))
 
@@ -316,7 +438,7 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 		}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		count, err := service.ImportPolicies(context.Background(), "tenant-1", []domain.Policy{
 			{
@@ -348,7 +470,7 @@ func TestPolicyService_MutationsInvalidateTenantDecisionCache(t *testing.T) {
 }
 
 func TestPolicyService_ListTypes(t *testing.T) {
-	service := NewPolicyService(&spyPolicyServiceRepo{}, &spyPolicyRevisionRepository{}, &spyPolicyDecisionCache{})
+	service := NewPolicyService(&spyPolicyServiceRepo{}, &spyPolicyRevisionRepository{}, &spyPolicyDecisionCache{}, nil)
 
 	types := service.ListTypes()
 
@@ -364,6 +486,8 @@ func TestPolicyService_ListTypes(t *testing.T) {
 			assert.NotEmpty(t, descriptor.Description)
 			assert.Contains(t, descriptor.Example, "license_allowlist")
 			assert.Equal(t, []domain.PolicyAction{domain.PolicyActionDeny}, descriptor.SupportedActions)
+			assert.Equal(t, []domain.EcosystemType{domain.EcosystemNPM}, descriptor.SupportedEcosystems)
+			assert.Equal(t, []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses}, descriptor.RequiredCapabilities)
 		}
 		if descriptor.Type == domain.PolicyTypeNamespaceAllowlist {
 			foundNamespaceAllowlist = true
@@ -371,17 +495,55 @@ func TestPolicyService_ListTypes(t *testing.T) {
 			assert.NotEmpty(t, descriptor.Description)
 			assert.Contains(t, descriptor.Example, "namespace_allowlist")
 			assert.Equal(t, []domain.PolicyAction{domain.PolicyActionDeny}, descriptor.SupportedActions)
+			assert.Equal(t, []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI}, descriptor.SupportedEcosystems)
+			assert.Empty(t, descriptor.RequiredCapabilities)
 		}
 	}
 	assert.True(t, foundAllowlist)
 	assert.True(t, foundNamespaceAllowlist)
 }
 
+func TestPolicyService_RejectsIncompatibleUpstreamCapabilities(t *testing.T) {
+	repo := &spyPolicyServiceRepo{}
+	revisions := &spyPolicyRevisionRepository{}
+	cache := &spyPolicyDecisionCache{}
+	upstreams := &stubPolicyUpstreamRepository{
+		upstreams: map[string]domain.Upstream{
+			"tenant-1:upstream-1": {
+				ID:           "upstream-1",
+				TenantID:     "tenant-1",
+				Name:         "docker-hub",
+				Ecosystem:    domain.EcosystemOCI,
+				BaseURL:      "https://registry-1.docker.io",
+				Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemOCI),
+			},
+		},
+	}
+	service := NewPolicyService(repo, revisions, cache, upstreams)
+
+	err := service.Create(context.Background(), &domain.Policy{
+		Name:          "license-check",
+		TenantID:      "tenant-1",
+		UpstreamID:    "upstream-1",
+		Type:          domain.PolicyTypeLicense,
+		Action:        domain.PolicyActionDeny,
+		SchemaVersion: 1,
+		Config:        &domain.LicensePolicyConfig{Licenses: []string{"MIT"}},
+		Enabled:       true,
+	})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrPolicyUpstreamIncompatible)
+	assert.Zero(t, repo.createCalls)
+	assert.Empty(t, cache.invalidatedTenants)
+	assert.Empty(t, revisions.revisions)
+}
+
 func TestPolicyService_ImportPolicies_InvalidatesAfterPartialMutationFailure(t *testing.T) {
 	repo := &spyPolicyServiceRepo{createErrAt: 2}
 	revisions := &spyPolicyRevisionRepository{}
 	cache := &spyPolicyDecisionCache{}
-	service := NewPolicyService(repo, revisions, cache)
+	service := NewPolicyService(repo, revisions, cache, nil)
 
 	count, err := service.ImportPolicies(context.Background(), "tenant-1", importedPolicies("tenant-1"))
 
@@ -398,7 +560,7 @@ func TestPolicyService_ImportPolicies_RejectsDuplicateNamesInDocument(t *testing
 	repo := &spyPolicyServiceRepo{}
 	revisions := &spyPolicyRevisionRepository{}
 	cache := &spyPolicyDecisionCache{}
-	service := NewPolicyService(repo, revisions, cache)
+	service := NewPolicyService(repo, revisions, cache, nil)
 
 	count, err := service.ImportPolicies(context.Background(), "tenant-1", []domain.Policy{
 		{
@@ -437,7 +599,7 @@ func TestPolicyService_RejectsDeprecatedEnforceConfig(t *testing.T) {
 		repo := &spyPolicyServiceRepo{}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		err := service.Create(context.Background(), &domain.Policy{
 			Name:     "warn-policy",
@@ -459,7 +621,7 @@ func TestPolicyService_RejectsDeprecatedEnforceConfig(t *testing.T) {
 		repo := &spyPolicyServiceRepo{}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		err := service.Update(context.Background(), &domain.Policy{
 			ID:       "policy-1",
@@ -482,7 +644,7 @@ func TestPolicyService_RejectsDeprecatedEnforceConfig(t *testing.T) {
 		repo := &spyPolicyServiceRepo{}
 		revisions := &spyPolicyRevisionRepository{}
 		cache := &spyPolicyDecisionCache{}
-		service := NewPolicyService(repo, revisions, cache)
+		service := NewPolicyService(repo, revisions, cache, nil)
 
 		count, err := service.ImportPolicies(context.Background(), "tenant-1", []domain.Policy{
 			{
@@ -518,7 +680,7 @@ func TestPolicyService_ValidatesLoadedPolicies(t *testing.T) {
 				Enabled:  true,
 			},
 		}
-		service := NewPolicyService(repo, &spyPolicyRevisionRepository{}, &spyPolicyDecisionCache{})
+		service := NewPolicyService(repo, &spyPolicyRevisionRepository{}, &spyPolicyDecisionCache{}, nil)
 
 		_, err := service.GetByID(context.Background(), "tenant-1", "policy-1")
 
@@ -540,7 +702,7 @@ func TestPolicyService_ValidatesLoadedPolicies(t *testing.T) {
 				},
 			},
 		}
-		service := NewPolicyService(repo, &spyPolicyRevisionRepository{}, &spyPolicyDecisionCache{})
+		service := NewPolicyService(repo, &spyPolicyRevisionRepository{}, &spyPolicyDecisionCache{}, nil)
 
 		_, err := service.ListByTenant(context.Background(), "tenant-1")
 

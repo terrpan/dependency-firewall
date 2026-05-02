@@ -19,8 +19,8 @@ func NewEvaluationService(repo port.DecisionRepository) *EvaluationService {
 }
 
 // ListByTenant returns evaluations for a tenant.
-func (s *EvaluationService) ListByTenant(ctx context.Context, tenantID string, limit, offset int) ([]domain.Decision, error) {
-	decisions, err := s.repo.ListByTenant(ctx, tenantID, limit, offset)
+func (s *EvaluationService) ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+	decisions, err := s.repo.ListByTenant(ctx, tenantID, limit, offset, search)
 	if err != nil {
 		return nil, fmt.Errorf("listing evaluations: %w", err)
 	}

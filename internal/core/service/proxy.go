@@ -67,14 +67,24 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	wasMutableTag := false
 	if req.Artifact.Ecosystem == domain.EcosystemOCI && req.Artifact.IsMutableReference() {
 		wasMutableTag = true
-		up, upErr := s.upstreamRepo.GetByEcosystem(ctx, req.TenantID, domain.EcosystemOCI)
-		if upErr != nil {
+		upstream := req.Upstream
+		if upstream.ID == "" {
+			up, upErr := s.upstreamRepo.GetByEcosystem(ctx, req.TenantID, domain.EcosystemOCI)
+			if upErr != nil {
+				s.logger.Debug("no OCI upstream for tag resolution, continuing with tag",
+					"error", upErr,
+					"tenant_id", req.TenantID,
+				)
+			} else {
+				upstream = *up
+			}
+		}
+		if upstream.ID == "" {
 			s.logger.Debug("no OCI upstream for tag resolution, continuing with tag",
-				"error", upErr,
 				"tenant_id", req.TenantID,
 			)
 		} else {
-			digest, resolveErr := s.upstreamClient.ResolveReference(ctx, *up, req.Artifact)
+			digest, resolveErr := s.upstreamClient.ResolveReference(ctx, upstream, req.Artifact)
 			if resolveErr != nil {
 				s.logger.Warn("tag resolution failed, continuing with tag",
 					"error", resolveErr,
@@ -133,13 +143,14 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	if err := policy.ValidatePolicies(policies); err != nil {
 		return s.denyForInvalidPolicySet(ctx, req, err), nil
 	}
-	policyHash, err := policy.HashPolicies(policies)
+	effectivePolicies := filterPoliciesForUpstream(policies, req.Upstream.ID)
+	policyHash, err := policy.HashPolicies(effectivePolicies)
 	if err != nil {
 		return s.denyForInvalidPolicySet(ctx, req, err), nil
 	}
 
 	// 6. Run policy evaluator.
-	decision := s.evaluator.Evaluate(req, policies)
+	decision := s.evaluator.Evaluate(req, effectivePolicies)
 	decision.PolicyHash = policyHash
 
 	// 7. Cache the decision (shorter TTL for mutable references).
@@ -213,4 +224,19 @@ func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.
 	}
 
 	return &decision
+}
+
+func filterPoliciesForUpstream(policies []domain.Policy, upstreamID string) []domain.Policy {
+	if upstreamID == "" {
+		return policies
+	}
+
+	filtered := make([]domain.Policy, 0, len(policies))
+	for _, policyDef := range policies {
+		if policyDef.UpstreamID != "" && policyDef.UpstreamID != upstreamID {
+			continue
+		}
+		filtered = append(filtered, policyDef)
+	}
+	return filtered
 }

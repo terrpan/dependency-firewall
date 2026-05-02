@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -27,6 +28,7 @@ func NewPolicyHandler(policies *service.PolicyService, logger *slog.Logger) *Pol
 }
 
 type policyRequest struct {
+	UpstreamID    *string             `json:"upstream_id,omitempty"`
 	Name          string              `json:"name,omitempty" validate:"notblank"`
 	Type          domain.PolicyType   `json:"type,omitempty" validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag license license_allowlist allowlist namespace_allowlist blocklist"`
 	Action        domain.PolicyAction `json:"action,omitempty" validate:"required,oneof=allow deny"`
@@ -88,10 +90,10 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Method:        http.MethodDelete,
 		Path:          "/api/v1/policies/{id}",
 		Summary:       "Delete a policy",
-		Description:   "Deletes a tenant-scoped policy definition by ID.",
+		Description:   "Deletes a tenant-scoped policy definition by ID. Use force=true to detach historical evaluation and decision references first.",
 		DefaultStatus: http.StatusNoContent,
 		Tags:          []string{"policies"},
-		Errors:        []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
 	}, h.delete)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-policy-versions",
@@ -173,6 +175,12 @@ type rollbackPolicyInput struct {
 	Body     policyRollbackRequest
 }
 
+type deletePolicyInput struct {
+	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
+	ID       string `path:"id" doc:"Policy identifier"`
+	Force    bool   `query:"force" doc:"Detach historical evaluation and decision references before deleting"`
+}
+
 type policyOutput struct {
 	Body *PolicyResponse
 }
@@ -237,8 +245,8 @@ func (h *PolicyHandler) rollback(ctx context.Context, input *rollbackPolicyInput
 	return &policyOutput{Body: resp}, nil
 }
 
-func (h *PolicyHandler) delete(ctx context.Context, input *policyIDInput) (*struct{}, error) {
-	if err := h.deletePolicy(ctx, input.TenantID, input.ID); err != nil {
+func (h *PolicyHandler) delete(ctx context.Context, input *deletePolicyInput) (*struct{}, error) {
+	if err := h.deletePolicy(ctx, input.TenantID, input.ID, input.Force); err != nil {
 		return nil, err
 	}
 	return nil, nil
@@ -258,6 +266,7 @@ func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, re
 	}
 	p := &domain.Policy{
 		TenantID:      tenantID,
+		UpstreamID:    trimOptionalString(req.UpstreamID),
 		Name:          req.Name,
 		Type:          req.Type,
 		Action:        req.Action,
@@ -278,8 +287,14 @@ func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, re
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
+		if errors.Is(err, domain.ErrPolicyUpstreamIncompatible) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		if errors.Is(err, domain.ErrPolicyNameConflict) {
 			return nil, huma.Error409Conflict("policy name already exists")
+		}
+		if errors.Is(err, domain.ErrUpstreamNotFound) {
+			return nil, huma.Error400BadRequest("policy upstream not found")
 		}
 		h.logger.Error("creating policy", "error", err, "tenant_id", tenantID)
 		return nil, huma.Error500InternalServerError("failed to create policy")
@@ -370,6 +385,7 @@ func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string
 	p := &domain.Policy{
 		ID:            id,
 		TenantID:      tenantID,
+		UpstreamID:    trimOptionalString(req.UpstreamID),
 		Name:          req.Name,
 		Type:          req.Type,
 		Action:        req.Action,
@@ -386,8 +402,14 @@ func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
+		if errors.Is(err, domain.ErrPolicyUpstreamIncompatible) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		if errors.Is(err, domain.ErrPolicyNameConflict) {
 			return nil, huma.Error409Conflict("policy name already exists")
+		}
+		if errors.Is(err, domain.ErrUpstreamNotFound) {
+			return nil, huma.Error400BadRequest("policy upstream not found")
 		}
 		if errors.Is(err, domain.ErrPolicyNotFound) {
 			return nil, huma.Error404NotFound("policy not found")
@@ -424,6 +446,9 @@ func (h *PolicyHandler) rollbackPolicy(ctx context.Context, rawTenantID, id stri
 		if errors.Is(err, domain.ErrInvalidPolicy) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
+		if errors.Is(err, domain.ErrPolicyUpstreamIncompatible) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		h.logger.Error("rolling back policy", "error", err, "tenant_id", tenantID, "policy_id", id)
 		return nil, huma.Error500InternalServerError("failed to rollback policy")
 	}
@@ -431,13 +456,19 @@ func (h *PolicyHandler) rollbackPolicy(ctx context.Context, rawTenantID, id stri
 	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) deletePolicy(ctx context.Context, rawTenantID, id string) error {
+func (h *PolicyHandler) deletePolicy(ctx context.Context, rawTenantID, id string, force bool) error {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return huma.Error400BadRequest(err.Error())
 	}
 
-	if err := h.policies.Delete(ctx, tenantID, id); err != nil {
+	if err := h.policies.Delete(ctx, tenantID, id, force); err != nil {
+		if errors.Is(err, domain.ErrPolicyDeleteEnabled) {
+			return huma.Error409Conflict("disable policy before deleting it")
+		}
+		if errors.Is(err, domain.ErrPolicyInUse) {
+			return huma.Error409Conflict("policy has recorded evaluations or decisions")
+		}
 		if errors.Is(err, domain.ErrPolicyNotFound) {
 			return huma.Error404NotFound("policy not found")
 		}
@@ -465,4 +496,11 @@ func isSupportedPolicyImportContentType(mediaType string) bool {
 	default:
 		return false
 	}
+}
+
+func trimOptionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }

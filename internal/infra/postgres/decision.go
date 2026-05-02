@@ -52,12 +52,16 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 	if decision.PolicyID != "" {
 		policyID = &decision.PolicyID
 	}
+	warnings := decision.Warnings
+	if warnings == nil {
+		warnings = []string{}
+	}
 	err = tx.QueryRow(ctx,
-		`INSERT INTO decisions (tenant_id, artifact_id, outcome, policy_id, policy_hash, reason, cached_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO decisions (tenant_id, artifact_id, outcome, policy_id, policy_hash, reason, warnings, cached_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING id, evaluated_at`,
 		decision.TenantID, artifactID, decision.Outcome, policyID,
-		decision.PolicyHash, decision.Reason, decision.CachedAt,
+		decision.PolicyHash, decision.Reason, warnings, decision.CachedAt,
 	).Scan(&decision.ID, &decision.EvaluatedAt)
 	if err != nil {
 		return fmt.Errorf("inserting decision: %w", err)
@@ -105,7 +109,7 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 	var policyID *string
 	var policyHash *string
 	err := r.pool.QueryRow(ctx,
-		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.cached_at, d.evaluated_at,
+		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.cached_at, d.evaluated_at,
 		        a.ecosystem, a.namespace, a.name, a.version, a.digest
 		 FROM decisions d
 		 JOIN artifacts a ON d.artifact_id = a.id
@@ -116,7 +120,7 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 		 LIMIT 1`,
 		tenantID, artifact.Ecosystem, artifact.Namespace,
 		artifact.Name, artifact.Version, artifact.Digest,
-	).Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason,
+	).Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason, &d.Warnings,
 		&d.CachedAt, &d.EvaluatedAt,
 		&d.Artifact.Ecosystem, &d.Artifact.Namespace, &d.Artifact.Name,
 		&d.Artifact.Version, &d.Artifact.Digest)
@@ -136,16 +140,24 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 }
 
 // ListByTenant returns decisions for a tenant ordered by evaluated_at descending.
-func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, limit, offset int) ([]domain.Decision, error) {
+func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.cached_at, d.evaluated_at,
+		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.cached_at, d.evaluated_at,
 		        a.ecosystem, a.namespace, a.name, a.version, a.digest
 		 FROM decisions d
 		 LEFT JOIN artifacts a ON d.artifact_id = a.id
 		 WHERE d.tenant_id = $1
+		   AND (
+		     $2 = ''
+		     OR COALESCE(a.namespace, '') ILIKE '%' || $2 || '%'
+		     OR COALESCE(a.name, '') ILIKE '%' || $2 || '%'
+		     OR COALESCE(a.version, '') ILIKE '%' || $2 || '%'
+		     OR COALESCE(a.digest, '') ILIKE '%' || $2 || '%'
+		     OR CONCAT_WS('/', NULLIF(a.namespace, ''), COALESCE(a.name, '')) ILIKE '%' || $2 || '%'
+		   )
 		 ORDER BY d.evaluated_at DESC
-		 LIMIT $2 OFFSET $3`,
-		tenantID, limit, offset)
+		 LIMIT $3 OFFSET $4`,
+		tenantID, search, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing decisions: %w", err)
 	}
@@ -158,7 +170,7 @@ func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, 
 		var policyHash *string
 		var eco, ns, name, ver, dig *string
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason,
-			&d.CachedAt, &d.EvaluatedAt, &eco, &ns, &name, &ver, &dig); err != nil {
+			&d.Warnings, &d.CachedAt, &d.EvaluatedAt, &eco, &ns, &name, &ver, &dig); err != nil {
 			return nil, fmt.Errorf("scanning decision row: %w", err)
 		}
 		if policyID != nil {
