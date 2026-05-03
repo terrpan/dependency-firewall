@@ -1,16 +1,46 @@
 services:
-  firewall:
+  control-plane:
     image: dependency-firewall:latest
+    command: ["-mode=control-plane"]
     ports:
       - "8080:8080"
+      - "9090:9090"
     environment:
       FIREWALL_DATABASE_DSN: "postgres://firewall:firewall@postgres:5432/firewall?sslmode=disable"
       FIREWALL_VALKEY_ADDR: "valkey:6379"
       FIREWALL_LOG_LEVEL: "debug"
-      FIREWALL_OCI_CACHE_ENABLED: true
+      FIREWALL_RUNTIME_MODE: "control-plane"
+      FIREWALL_SERVER_PORT: "8080"
+      FIREWALL_HEALTH_PROXY_URL: "http://proxy:8080/healthz"
+      FIREWALL_BUNDLE_LISTEN_ADDR: ":9090"
     depends_on:
       postgres:
         condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  proxy:
+    image: dependency-firewall:latest
+    command: ["-mode=proxy"]
+    ports:
+      - "8081:8080"
+    environment:
+      FIREWALL_VALKEY_ADDR: "valkey:6379"
+      FIREWALL_LOG_LEVEL: "debug"
+      FIREWALL_RUNTIME_MODE: "proxy"
+      FIREWALL_SERVER_PORT: "8080"
+      FIREWALL_BUNDLE_CONTROL_PLANE_ADDR: "control-plane:9090"
+      FIREWALL_OCI_CACHE_ENABLED: "true"
+    depends_on:
+      control-plane:
+        condition: service_started
       valkey:
         condition: service_healthy
     healthcheck:

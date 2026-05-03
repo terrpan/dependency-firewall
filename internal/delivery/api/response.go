@@ -335,12 +335,20 @@ type healthResponse struct {
 	Arch         string                        `json:"arch"`
 	Timestamp    time.Time                     `json:"timestamp"`
 	Dependencies map[string]dependencyResponse `json:"dependencies"`
+	Bundle       *componentResponse            `json:"bundle,omitempty"`
+	Proxy        *componentResponse            `json:"proxy,omitempty"`
 }
 
 type dependencyResponse struct {
 	Status    string    `json:"status"`
 	Message   string    `json:"message,omitempty"`
 	Duration  int64     `json:"duration_ms"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type componentResponse struct {
+	Status    string    `json:"status"`
+	Message   string    `json:"message,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
@@ -355,7 +363,7 @@ func toHealthResponse(status service.HealthStatus) healthResponse {
 		}
 	}
 
-	return healthResponse{
+	response := healthResponse{
 		Status:       status.Status,
 		ServiceName:  status.ServiceName,
 		Version:      status.Version,
@@ -367,4 +375,21 @@ func toHealthResponse(status service.HealthStatus) healthResponse {
 		Timestamp:    status.Timestamp,
 		Dependencies: dependencies,
 	}
+
+	if status.Proxy != nil {
+		response.Proxy = &componentResponse{
+			Status:    status.Proxy.Status,
+			Message:   status.Proxy.Message,
+			Timestamp: status.Proxy.Timestamp,
+		}
+	}
+	if status.Bundle != nil {
+		response.Bundle = &componentResponse{
+			Status:    status.Bundle.Status,
+			Message:   status.Bundle.Message,
+			Timestamp: status.Bundle.Timestamp,
+		}
+	}
+
+	return response
 }

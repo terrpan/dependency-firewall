@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	bundleinfra "github.com/danielterry/dependency-firewall/internal/infra/bundle"
 )
 
 type stubTenantRepo struct {
@@ -161,10 +162,45 @@ func TestOCITenantFromHost_StoresUpstreamID(t *testing.T) {
 	assert.Equal(t, "up-456", body["upstream_id"])
 }
 
+func TestTenantResolverSupportsBundleBackedLookup(t *testing.T) {
+	t.Parallel()
+
+	lookup := bundleinfra.NewTenantLookup(bundleTenantProvider{
+		bundle: &domain.TenantBundle{
+			Tenant:   domain.Tenant{ID: "tenant-123", Name: "Tenant 123"},
+			TenantID: "tenant-123",
+		},
+	})
+
+	handler := NewTenantResolver(lookup).Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tenant, ok := TenantFromContext(r.Context())
+		require.True(t, ok)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"tenant_name": tenant.Name}))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/npm/pkg", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-123")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := decodeBody(t, rec)
+	assert.Equal(t, "Tenant 123", body["tenant_name"])
+}
+
 func decodeBody(t *testing.T, rec *httptest.ResponseRecorder) map[string]string {
 	t.Helper()
 
 	var body map[string]string
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
 	return body
+}
+
+type bundleTenantProvider struct {
+	bundle *domain.TenantBundle
+}
+
+func (p bundleTenantProvider) GetTenantBundle(context.Context, string) (*domain.TenantBundle, error) {
+	return p.bundle, nil
 }

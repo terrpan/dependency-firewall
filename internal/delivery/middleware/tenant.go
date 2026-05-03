@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/core/port"
 )
 
 type contextKey string
@@ -19,12 +18,16 @@ const upstreamContextKey contextKey = "upstream"
 
 // TenantResolver extracts tenant ID from requests and adds it to context.
 type TenantResolver struct {
-	tenantRepo port.TenantRepository
+	tenantLookup tenantLookup
+}
+
+type tenantLookup interface {
+	GetByID(ctx context.Context, id string) (*domain.Tenant, error)
 }
 
 // NewTenantResolver creates a new TenantResolver.
-func NewTenantResolver(repo port.TenantRepository) *TenantResolver {
-	return &TenantResolver{tenantRepo: repo}
+func NewTenantResolver(lookup tenantLookup) *TenantResolver {
+	return &TenantResolver{tenantLookup: lookup}
 }
 
 // Middleware returns an HTTP middleware that resolves the tenant from the request.
@@ -36,7 +39,7 @@ func (tr *TenantResolver) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		tenant, err := tr.tenantRepo.GetByID(r.Context(), tenantID)
+		tenant, err := tr.tenantLookup.GetByID(r.Context(), tenantID)
 		if err != nil {
 			writeJSONError(w, "invalid tenant", http.StatusUnauthorized)
 			return

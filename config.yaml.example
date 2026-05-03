@@ -1,16 +1,19 @@
+runtime:
+  mode: all-in-one
+
 server:
   port: 8080
-  readTimeout: 30s
-  writeTimeout: 0s
-  idleTimeout: 120s
+  read_timeout: 30s
+  write_timeout: 0s
+  idle_timeout: 120s
 
-ociCache:
+oci_cache:
   enabled: false
   backend: disk
-  rootDir: "/tmp/dependency-firewall/oci"
-  maxBytes: 0
-  maxAge: 0s
-  maxEntries: 0
+  root_dir: "/tmp/dependency-firewall/oci"
+  max_bytes: 0
+  max_age: 0s
+  max_entries: 0
   s3:
     bucket: ""
     prefix: ""
@@ -21,10 +24,13 @@ ociCache:
     prefix: ""
 
 database:
+  # Used by all-in-one and control-plane modes.
+  # Proxy mode reads tenant runtime from bundles and writes decisions/audit
+  # through the control plane instead of opening PostgreSQL directly.
   dsn: "postgres://firewall:firewall@localhost:5432/firewall?sslmode=disable"
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
 
 valkey:
   addr: "localhost:6379"
@@ -34,3 +40,18 @@ valkey:
 log:
   level: info
   format: json
+
+audit:
+  enabled: true
+  slog: true
+  postgres: true
+  failure_mode: fail_closed
+  detail_level: summary
+
+health:
+  proxy_url: ""
+
+bundle:
+  listen_addr: ":9090"
+  control_plane_addr: "127.0.0.1:9090"
+  refresh_interval: 30s

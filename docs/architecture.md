@@ -6,17 +6,22 @@ Build a multi-tenant dependency firewall that acts as a policy-aware proxy for n
 
 ## Top-level shape
 
-The system has two surfaces:
+The system supports three runtime modes in one codebase:
 
-1. Data plane
+1. Proxy mode
    - registry-compatible proxy endpoints for package managers
    - npm and OCI protocol adapters
+   - local request-path evaluation backed by cached tenant bundles
 
-2. Control plane
-     - management API for policies, policy rollback/history, upstreams, evaluations, audit events, and cache maintenance
-     - intended for UI and automation
-     - the React UI consumes generated TypeScript types from the Huma/OpenAPI document
-     - Huma is used only on control-plane endpoints where code explicitly uses it
+2. Control-plane mode
+   - management API for policies, policy rollback/history, upstreams, evaluations, audit events, and cache maintenance
+   - intended for UI and automation
+   - the React UI consumes generated TypeScript types from the Huma/OpenAPI document
+   - Huma is used only on control-plane endpoints where code explicitly uses it
+   - serves gRPC bundles for proxies
+
+3. All-in-one mode
+   - local-development composition of the same control-plane and proxy boundaries
 
 ## System context
 
@@ -25,19 +30,24 @@ flowchart LR
     developer[Developer / CI]
     operator[Operator / UI / Automation]
 
-    developer -->|npm / docker / oci pull| dataplane[Data plane]
+    developer -->|npm / docker / oci pull| dataplane[Proxy mode]
     operator -->|HTTP API| controlplane[Control plane]
 
     subgraph firewall[dependency-firewall]
+        controlplane --> bundle[delivery/bundlegrpc]
+        controlplane --> ingest[delivery/ingestgrpc]
         dataplane --> deliveryProxy[delivery/npm + delivery/oci]
         controlplane --> deliveryAPI[delivery/api]
+        bundle --> core
+        ingest --> core
         deliveryProxy --> core[core services + policy engine]
         deliveryProxy --> ociProxy[cache-backed OCI proxy path]
         deliveryAPI --> core
-        core --> postgres[(PostgreSQL)]
+        controlplane --> postgres[(PostgreSQL)]
         core --> valkey[(Valkey)]
         ociProxy --> ociCache[(tenant-aware OCI artifact cache)]
         core --> osv[OSV API]
+        deliveryProxy --> ingest
         ociProxy --> upstreams[upstream registries]
     end
 ```
@@ -52,6 +62,8 @@ flowchart LR
 - npm delivery may resolve upstream identity from `/npm/t/{tenant_id}/u/{upstream_id}/...`
 - OCI delivery may resolve upstream identity from `u-{upstream_id}.{tenant_id}.{firewall-host}`
 - OCI delivery should support both direct registry-hostname usage in hosted deployments and optional Docker mirror usage for transparent local development
+- bundle gRPC delivery is control-plane only and serves proxy-ready tenant bundles
+- ingest gRPC delivery is control-plane only and persists proxy-emitted decisions and audit events
 - protocol-specific response rendering
 - control-plane request DTO parsing and response DTO rendering
 - Huma may be used on control-plane routes for OpenAPI/docs generation and typed request/response modeling
@@ -78,6 +90,7 @@ flowchart LR
 - tenant-aware OCI artifact cache implementations
 - OSV enricher
 - upstream registry clients
+- gRPC bundle and ingest client adapters for proxy pulls and write-back
 
 ## Layered component view
 
@@ -103,6 +116,7 @@ flowchart TB
 
     subgraph infrastructure[infrastructure]
         pgRepos[PostgreSQL repositories]
+        bundleRuntime[bundle-backed runtime repos]
         auditSinks[audit sinks]
         valkeyCache[Valkey caches]
         upstreamClients[upstream clients]
@@ -110,6 +124,7 @@ flowchart TB
         ociCache[tenant-aware OCI artifact cache]
         ociStorage[disk backend today / future S3 or GCS]
         enrichers[OSV + npm enrichers]
+        grpcClients[gRPC bundle + ingest clients]
     end
 
     middleware --> npmDelivery
@@ -126,7 +141,7 @@ flowchart TB
 
     accessService --> enrichmentService
     accessService --> evaluator
-    accessService --> pgRepos
+    accessService --> bundleRuntime
     accessService --> auditSinks
     accessService --> valkeyCache
     accessService --> upstreamClients
@@ -141,6 +156,8 @@ flowchart TB
     cachedOCI --> ociCache
     cachedOCI --> upstreamClients
     ociCache --> ociStorage
+    bundleRuntime --> grpcClients
+    auditSinks --> grpcClients
 ```
 
 ## Dependency direction
@@ -193,8 +210,8 @@ sequenceDiagram
     participant access as core.AccessService
     participant dcache as Valkey decision cache
     participant enrich as core.EnrichmentService
-    participant policyrepo as PostgreSQL policy repository
-    participant decisionrepo as PostgreSQL decision repository
+    participant bundle as tenant bundle provider
+    participant ingest as control-plane proxy ingest service
     participant audit as audit sinks
     participant ocicache as OCI artifact cache
     participant upstream as upstream client
@@ -213,13 +230,13 @@ sequenceDiagram
         access->>enrich: load metadata
         enrich-->>access: metadata
         access->>audit: record enrichment result
-        access->>policyrepo: list tenant policies
-        policyrepo-->>access: policies
+        access->>bundle: load tenant bundle
+        bundle-->>access: policies + upstreams
         access->>access: filter policies by upstream scope
         access->>access: compute policy-set SHA-256
         access->>access: evaluate policies
         access->>dcache: store decision
-        access->>decisionrepo: record decision with policy_hash
+        access->>ingest: record decision with policy_hash
         access->>audit: record matched policies + final decision
     end
 
@@ -274,10 +291,12 @@ sequenceDiagram
 
 1. Request enters delivery layer.
 2. Delivery resolves tenant and normalizes the request.
-3. Core evaluates access using cache, enrichment, and policy.
-4. If denied, delivery renders a protocol-specific error.
-5. If allowed, OCI delivery checks the tenant-aware artifact cache by digest before going upstream.
-6. On OCI cache miss, delivery streams content from upstream while opportunistically filling the cache.
+3. Proxy refreshes the tenant bundle on demand when its cached copy is stale.
+4. Core evaluates access using cache, enrichment, and policy.
+5. Proxy persists durable decision and audit records through the control-plane ingestion boundary.
+6. If denied, delivery renders a protocol-specific error.
+7. If allowed, OCI delivery checks the tenant-aware artifact cache by digest before going upstream.
+8. On OCI cache miss, delivery streams content from upstream while opportunistically filling the cache.
 
 ## Audit logging rules
 
@@ -286,7 +305,7 @@ sequenceDiagram
 - infrastructure decides **where** audit events are written
 - phase 1 writes audit events to both:
   - structured `slog`
-  - PostgreSQL `audit_events`
+  - control-plane durable persistence backed by PostgreSQL `audit_events`
 - request correlation uses a human-readable `X-Request-ID`
 - audit sink failure is configurable and defaults to fail-closed
 - future external shipping must remain compatible with tenant-scoped routing without changing core service signatures

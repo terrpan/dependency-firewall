@@ -4,6 +4,10 @@
 
 PostgreSQL is the system of record.
 
+- only control-plane and all-in-one runtimes open PostgreSQL connections directly
+- proxy mode loads tenant runtime from bundles and sends durable decision or audit writes back through the control-plane ingestion service
+- bundle construction is a control-plane workflow backed by PostgreSQL tenant, upstream, and policy state
+
 ### Core tables
 - tenants
 - users
@@ -36,6 +40,7 @@ PostgreSQL is the system of record.
 - audit event payloads use JSONB for flexible structured details, but top-level filtering still relies on tenant_id, event_type, and created_at indexes
 - audit queries must stay tenant-scoped and should support correlation lookups by request ID and artifact identity fields
 - durable audit persistence is expected to support incident response; sink-failure behavior is configurable and defaults to fail-closed
+- proxy-side durable writes arrive through the control-plane ingestion service before they reach `decisions` and `audit_events`
 
 ### audit_events
 
@@ -64,6 +69,7 @@ PostgreSQL is the system of record.
 Valkey is used for:
 - decision cache
 - metadata cache
+- proxy-local caching in split mode
 
 ### Cache rules
 - keys must include tenant and normalized artifact identity

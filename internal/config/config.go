@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,12 +22,29 @@ func defaultOCICacheRootDir() string {
 
 // Config holds all application configuration sections.
 type Config struct {
+	Runtime  RuntimeConfig  `mapstructure:"runtime" validate:"required"`
 	Server   ServerConfig   `mapstructure:"server" validate:"required"`
 	OCICache OCICacheConfig `mapstructure:"oci_cache"`
-	Database DatabaseConfig `mapstructure:"database" validate:"required"`
+	Database DatabaseConfig `mapstructure:"database"`
 	Valkey   ValkeyConfig   `mapstructure:"valkey" validate:"required"`
 	Log      LogConfig      `mapstructure:"log" validate:"required"`
 	Audit    AuditConfig    `mapstructure:"audit" validate:"required"`
+	Health   HealthConfig   `mapstructure:"health"`
+	Bundle   BundleConfig   `mapstructure:"bundle" validate:"required"`
+}
+
+// RuntimeMode identifies which service shape the single binary should run.
+type RuntimeMode string
+
+const (
+	RuntimeModeAllInOne     RuntimeMode = "all-in-one"
+	RuntimeModeControlPlane RuntimeMode = "control-plane"
+	RuntimeModeProxy        RuntimeMode = "proxy"
+)
+
+// RuntimeConfig holds process mode selection.
+type RuntimeConfig struct {
+	Mode RuntimeMode `mapstructure:"mode" validate:"required,oneof=all-in-one control-plane proxy"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -65,10 +83,10 @@ type OCICacheGCSConfig struct {
 
 // DatabaseConfig holds PostgreSQL connection settings.
 type DatabaseConfig struct {
-	DSN             string        `mapstructure:"dsn" validate:"notblank"`
-	MaxOpenConns    int           `mapstructure:"max_open_conns" validate:"gt=0"`
-	MaxIdleConns    int           `mapstructure:"max_idle_conns" validate:"gte=0"`
-	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime" validate:"gt=0"`
+	DSN             string        `mapstructure:"dsn"`
+	MaxOpenConns    int           `mapstructure:"max_open_conns"`
+	MaxIdleConns    int           `mapstructure:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 }
 
 // ValkeyConfig holds Valkey connection settings.
@@ -93,11 +111,34 @@ type AuditConfig struct {
 	DetailLevel string `mapstructure:"detail_level" validate:"oneof=minimal summary full"`
 }
 
+// HealthConfig holds optional runtime health integration settings.
+type HealthConfig struct {
+	ProxyURL string `mapstructure:"proxy_url"`
+}
+
+// BundleConfig holds control-plane bundle gRPC and proxy refresh settings.
+type BundleConfig struct {
+	ListenAddr       string        `mapstructure:"listen_addr"`
+	ControlPlaneAddr string        `mapstructure:"control_plane_addr"`
+	RefreshInterval  time.Duration `mapstructure:"refresh_interval" validate:"gte=0"`
+}
+
+// LoadOptions customizes config loading behavior.
+type LoadOptions struct {
+	ConfigPath string
+}
+
 // Load reads configuration from environment variables and an optional
 // config.yaml file, applies sensible defaults, and returns a validated Config.
 func Load() (*Config, error) {
+	return LoadWithOptions(LoadOptions{})
+}
+
+// LoadWithOptions reads configuration with optional loader overrides.
+func LoadWithOptions(options LoadOptions) (*Config, error) {
 	v := viper.New()
 
+	v.SetDefault("runtime.mode", string(RuntimeModeAllInOne))
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.read_timeout", 5*time.Second)
 	v.SetDefault("server.write_timeout", 0)
@@ -132,10 +173,18 @@ func Load() (*Config, error) {
 	v.SetDefault("audit.postgres", true)
 	v.SetDefault("audit.failure_mode", "fail_closed")
 	v.SetDefault("audit.detail_level", "summary")
+	v.SetDefault("health.proxy_url", "")
+	v.SetDefault("bundle.listen_addr", ":9090")
+	v.SetDefault("bundle.control_plane_addr", "127.0.0.1:9090")
+	v.SetDefault("bundle.refresh_interval", 30*time.Second)
 
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-	v.AddConfigPath(".")
+	if strings.TrimSpace(options.ConfigPath) != "" {
+		v.SetConfigFile(options.ConfigPath)
+	} else {
+		v.SetConfigName("config")
+		v.SetConfigType("yaml")
+		v.AddConfigPath(".")
+	}
 
 	if err := v.ReadInConfig(); err != nil {
 		// A missing config file is acceptable; other read errors are not.
@@ -170,11 +219,43 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid config: %s", validation.ErrorMessage(err))
 	}
 
-	if c.Database.MaxIdleConns > c.Database.MaxOpenConns {
+	if c.Runtime.Mode != RuntimeModeProxy {
+		if strings.TrimSpace(c.Database.DSN) == "" {
+			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "database.dsn", c.Runtime.Mode)
+		}
+		if c.Database.MaxOpenConns <= 0 {
+			return fmt.Errorf("invalid config: field %q must be greater than 0", "database.max_open_conns")
+		}
+		if c.Database.MaxIdleConns < 0 {
+			return fmt.Errorf("invalid config: field %q must be greater than or equal to 0", "database.max_idle_conns")
+		}
+		if c.Database.ConnMaxLifetime <= 0 {
+			return fmt.Errorf("invalid config: field %q must be greater than 0", "database.conn_max_lifetime")
+		}
+	}
+	if c.Database.MaxIdleConns > c.Database.MaxOpenConns && c.Database.MaxOpenConns > 0 {
 		return fmt.Errorf("invalid config: field %q must be less than or equal to %q", "database.max_idle_conns", "database.max_open_conns")
 	}
 	if c.OCICache.Enabled && strings.EqualFold(c.OCICache.Backend, "disk") && strings.TrimSpace(c.OCICache.RootDir) == "" {
 		return fmt.Errorf("invalid config: field %q is required when OCI cache backend is %q", "oci_cache.root_dir", "disk")
+	}
+	if proxyURL := strings.TrimSpace(c.Health.ProxyURL); proxyURL != "" {
+		parsed, err := url.Parse(proxyURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("invalid config: field %q must be a valid absolute URL", "health.proxy_url")
+		}
+	}
+	switch c.Runtime.Mode {
+	case RuntimeModeControlPlane:
+		if strings.TrimSpace(c.Bundle.ListenAddr) == "" {
+			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.listen_addr", c.Runtime.Mode)
+		}
+	}
+	switch c.Runtime.Mode {
+	case RuntimeModeAllInOne, RuntimeModeProxy:
+		if strings.TrimSpace(c.Bundle.ControlPlaneAddr) == "" {
+			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.control_plane_addr", c.Runtime.Mode)
+		}
 	}
 
 	return nil

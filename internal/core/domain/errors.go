@@ -24,6 +24,7 @@ var (
 	ErrUpstreamUnavailable            = errors.New("upstream unavailable")
 	ErrEnrichmentFailed               = errors.New("enrichment failed")
 	ErrAuditUnavailable               = errors.New("audit logging unavailable")
+	ErrBundleUnavailable              = errors.New("bundle unavailable")
 	ErrArtifactNotFound               = errors.New("artifact not found")
 	ErrInvalidArtifactRef             = errors.New("invalid artifact reference")
 	ErrCacheMiss                      = errors.New("cache miss")
