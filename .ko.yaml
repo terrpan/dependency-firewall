@@ -12,4 +12,3 @@ builds:
       - -X main.ldVersion={{.Git.Tag}}
       - -X main.ldCommit={{.Git.ShortCommit}}
       - -X main.ldBuildTime={{.Git.CommitDate}}
-

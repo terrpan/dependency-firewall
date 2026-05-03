@@ -18,12 +18,21 @@ func (m *mockHealthChecker) Ping(_ context.Context) error {
 	return m.err
 }
 
-func newTestHealthService(dbErr, cacheErr error) *HealthService {
+type staticComponentChecker struct {
+	status ComponentStatus
+}
+
+func (s staticComponentChecker) CheckStatus(context.Context) ComponentStatus {
+	return s.status
+}
+
+func newTestHealthService(dbErr, cacheErr error, opts ...HealthOption) *HealthService {
 	return NewHealthService(
 		"test-service", "1.0.0", "abc123", "2024-01-01T00:00:00Z",
 		&mockHealthChecker{err: dbErr},
 		&mockHealthChecker{err: cacheErr},
 		slog.Default(),
+		opts...,
 	)
 }
 
@@ -75,4 +84,62 @@ func TestCheckHealth_AllFailed(t *testing.T) {
 	assert.Equal(t, "error", resp.Status)
 	assert.Equal(t, "error", resp.Dependencies["postgresql"].Status)
 	assert.Equal(t, "error", resp.Dependencies["valkey"].Status)
+}
+
+func TestCheckHealth_ProxyStatusIncludedWhenConfigured(t *testing.T) {
+	svc := newTestHealthService(nil, nil, WithProxyStatus("running", "proxy routes are served by this process"))
+
+	resp := svc.CheckHealth(context.Background())
+
+	require.NotNil(t, resp.Proxy)
+	assert.Equal(t, "running", resp.Proxy.Status)
+	assert.Equal(t, "proxy routes are served by this process", resp.Proxy.Message)
+	assert.False(t, resp.Proxy.Timestamp.IsZero())
+}
+
+func TestCheckHealth_ProxyStatusCheckerIncludedWhenConfigured(t *testing.T) {
+	svc := newTestHealthService(nil, nil, WithProxyStatusChecker(staticComponentChecker{
+		status: ComponentStatus{
+			Status:  "running",
+			Message: "proxy health endpoint reachable",
+		},
+	}))
+
+	resp := svc.CheckHealth(context.Background())
+
+	require.NotNil(t, resp.Proxy)
+	assert.Equal(t, "running", resp.Proxy.Status)
+	assert.Equal(t, "proxy health endpoint reachable", resp.Proxy.Message)
+	assert.False(t, resp.Proxy.Timestamp.IsZero())
+}
+
+func TestCheckHealth_BundleStatusIncludedWhenConfigured(t *testing.T) {
+	svc := newTestHealthService(nil, nil, WithBundleStatusChecker(staticComponentChecker{
+		status: ComponentStatus{
+			Status:  "ready",
+			Message: "1 cached bundle",
+		},
+	}))
+
+	resp := svc.CheckHealth(context.Background())
+
+	require.NotNil(t, resp.Bundle)
+	assert.Equal(t, "ready", resp.Bundle.Status)
+	assert.Equal(t, "1 cached bundle", resp.Bundle.Message)
+	assert.False(t, resp.Bundle.Timestamp.IsZero())
+}
+
+func TestCheckHealth_OmitsUnconfiguredDependencies(t *testing.T) {
+	svc := NewHealthService(
+		"test-service", "1.0.0", "abc123", "2024-01-01T00:00:00Z",
+		nil,
+		&mockHealthChecker{},
+		slog.Default(),
+	)
+
+	resp := svc.CheckHealth(context.Background())
+
+	assert.Equal(t, "healthy", resp.Status)
+	assert.NotContains(t, resp.Dependencies, "postgresql")
+	assert.Equal(t, "healthy", resp.Dependencies["valkey"].Status)
 }

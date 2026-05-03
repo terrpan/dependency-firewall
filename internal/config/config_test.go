@@ -41,6 +41,15 @@ func TestConfigValidate(t *testing.T) {
 		assert.Contains(t, err.Error(), "valkey.addr")
 	})
 
+	t.Run("invalid proxy health url fails", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Health.ProxyURL = "not-a-url"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "health.proxy_url")
+	})
+
 	t.Run("max idle conns cannot exceed max open conns", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Database.MaxOpenConns = 10
@@ -69,10 +78,60 @@ func TestConfigValidate(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "oci_cache.root_dir")
 	})
+
+	t.Run("control-plane mode requires bundle listen address", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeControlPlane
+		cfg.Bundle.ListenAddr = " "
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.listen_addr")
+	})
+
+	t.Run("all-in-one mode does not require bundle listen address", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeAllInOne
+		cfg.Bundle.ListenAddr = " "
+
+		err := cfg.Validate()
+		require.NoError(t, err)
+	})
+
+	t.Run("proxy mode requires control-plane bundle address", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeProxy
+		cfg.Bundle.ControlPlaneAddr = " "
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.control_plane_addr")
+	})
+
+	t.Run("proxy mode does not require database settings", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeProxy
+		cfg.Database = DatabaseConfig{}
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("control-plane mode requires database settings", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeControlPlane
+		cfg.Database = DatabaseConfig{}
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "database.dsn")
+	})
 }
 
 func validConfig() *Config {
 	return &Config{
+		Runtime: RuntimeConfig{
+			Mode: RuntimeModeAllInOne,
+		},
 		Server: ServerConfig{
 			Port:         8080,
 			ReadTimeout:  5 * time.Second,
@@ -103,6 +162,12 @@ func validConfig() *Config {
 			Postgres:    true,
 			FailureMode: "fail_closed",
 			DetailLevel: "summary",
+		},
+		Health: HealthConfig{},
+		Bundle: BundleConfig{
+			ListenAddr:       ":9090",
+			ControlPlaneAddr: "127.0.0.1:9090",
+			RefreshInterval:  30 * time.Second,
 		},
 	}
 }

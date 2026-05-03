@@ -20,7 +20,42 @@ type HealthService struct {
 	buildTime    string
 	dbChecker    HealthChecker
 	cacheChecker HealthChecker
+	bundleStatus ComponentStatusChecker
+	proxyChecker ComponentStatusChecker
+	proxyStatus  *ComponentStatus
 	logger       *slog.Logger
+}
+
+// HealthOption customizes HealthService behavior.
+type HealthOption func(*HealthService)
+
+// ComponentStatusChecker reports the status of a first-class runtime component.
+type ComponentStatusChecker interface {
+	CheckStatus(ctx context.Context) ComponentStatus
+}
+
+// WithProxyStatus includes proxy runtime status in health responses.
+func WithProxyStatus(status, message string) HealthOption {
+	return func(s *HealthService) {
+		s.proxyStatus = &ComponentStatus{
+			Status:  status,
+			Message: message,
+		}
+	}
+}
+
+// WithProxyStatusChecker includes dynamically checked proxy status in health responses.
+func WithProxyStatusChecker(checker ComponentStatusChecker) HealthOption {
+	return func(s *HealthService) {
+		s.proxyChecker = checker
+	}
+}
+
+// WithBundleStatusChecker includes bundle runtime status in health responses.
+func WithBundleStatusChecker(checker ComponentStatusChecker) HealthOption {
+	return func(s *HealthService) {
+		s.bundleStatus = checker
+	}
 }
 
 // NewHealthService creates a new HealthService.
@@ -28,8 +63,9 @@ func NewHealthService(
 	serviceName, version, commit, buildTime string,
 	dbChecker, cacheChecker HealthChecker,
 	logger *slog.Logger,
+	opts ...HealthOption,
 ) *HealthService {
-	return &HealthService{
+	svc := &HealthService{
 		serviceName:  serviceName,
 		version:      version,
 		commit:       commit,
@@ -38,6 +74,12 @@ func NewHealthService(
 		cacheChecker: cacheChecker,
 		logger:       logger,
 	}
+
+	for _, opt := range opts {
+		opt(svc)
+	}
+
+	return svc
 }
 
 // HealthStatus reports the health of the service and its dependencies.
@@ -52,6 +94,8 @@ type HealthStatus struct {
 	Arch         string
 	Timestamp    time.Time
 	Dependencies map[string]DependencyStatus
+	Bundle       *ComponentStatus
+	Proxy        *ComponentStatus
 }
 
 // DependencyStatus holds the result of a single dependency health check.
@@ -59,6 +103,13 @@ type DependencyStatus struct {
 	Status    string
 	Message   string
 	Duration  int64
+	Timestamp time.Time
+}
+
+// ComponentStatus holds the status of a first-class runtime component.
+type ComponentStatus struct {
+	Status    string
+	Message   string
 	Timestamp time.Time
 }
 
@@ -73,9 +124,14 @@ const (
 // CheckHealth checks all dependencies and returns a structured health response.
 func (s *HealthService) CheckHealth(ctx context.Context) HealthStatus {
 	deps := make(map[string]DependencyStatus, 2)
+	now := time.Now().UTC()
 
-	deps["postgresql"] = s.checkDependency(ctx, "postgresql", s.dbChecker)
-	deps["valkey"] = s.checkDependency(ctx, "valkey", s.cacheChecker)
+	if s.dbChecker != nil {
+		deps["postgresql"] = s.checkDependency(ctx, "postgresql", s.dbChecker)
+	}
+	if s.cacheChecker != nil {
+		deps["valkey"] = s.checkDependency(ctx, "valkey", s.cacheChecker)
+	}
 
 	overall := statusHealthy
 	failCount := 0
@@ -91,7 +147,7 @@ func (s *HealthService) CheckHealth(ctx context.Context) HealthStatus {
 		overall = statusError
 	}
 
-	return HealthStatus{
+	status := HealthStatus{
 		Status:       overall,
 		ServiceName:  s.serviceName,
 		Version:      s.version,
@@ -100,9 +156,33 @@ func (s *HealthService) CheckHealth(ctx context.Context) HealthStatus {
 		GoVersion:    runtime.Version(),
 		OS:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
-		Timestamp:    time.Now().UTC(),
+		Timestamp:    now,
 		Dependencies: deps,
 	}
+
+	switch {
+	case s.proxyChecker != nil:
+		component := s.proxyChecker.CheckStatus(ctx)
+		if component.Timestamp.IsZero() {
+			component.Timestamp = now
+		}
+		status.Proxy = &component
+	case s.proxyStatus != nil:
+		status.Proxy = &ComponentStatus{
+			Status:    s.proxyStatus.Status,
+			Message:   s.proxyStatus.Message,
+			Timestamp: now,
+		}
+	}
+	if s.bundleStatus != nil {
+		component := s.bundleStatus.CheckStatus(ctx)
+		if component.Timestamp.IsZero() {
+			component.Timestamp = now
+		}
+		status.Bundle = &component
+	}
+
+	return status
 }
 
 func (s *HealthService) checkDependency(ctx context.Context, name string, checker HealthChecker) DependencyStatus {

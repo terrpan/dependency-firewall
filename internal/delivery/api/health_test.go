@@ -23,13 +23,14 @@ func (s *stubHealthChecker) Ping(_ context.Context) error {
 	return s.err
 }
 
-func setupHealthServer(t *testing.T, dbErr, cacheErr error) *httptest.Server {
+func setupHealthServer(t *testing.T, dbErr, cacheErr error, opts ...service.HealthOption) *httptest.Server {
 	t.Helper()
 	healthSvc := service.NewHealthService(
 		"test-firewall", "1.0.0", "abc123", "2024-01-01T00:00:00Z",
 		&stubHealthChecker{err: dbErr},
 		&stubHealthChecker{err: cacheErr},
 		slog.Default(),
+		opts...,
 	)
 	handler := NewHealthHandler(healthSvc, slog.Default())
 	mux := http.NewServeMux()
@@ -107,4 +108,19 @@ func TestHealthHandler_JSONStructure(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, deps, "postgresql")
 	assert.Contains(t, deps, "valkey")
+}
+
+func TestHealthHandler_IncludesProxyStatusWhenConfigured(t *testing.T) {
+	srv := setupHealthServer(t, nil, nil, service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"))
+
+	resp, err := http.Get(srv.URL + "/healthz")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var body healthResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.NotNil(t, body.Proxy)
+	assert.Equal(t, "separate", body.Proxy.Status)
+	assert.Equal(t, "proxy runs as a separate service in control-plane mode", body.Proxy.Message)
+	assert.False(t, body.Proxy.Timestamp.IsZero())
 }
