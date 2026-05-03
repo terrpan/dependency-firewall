@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/audit/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List audit events
+         * @description Lists tenant-scoped audit events for evaluation, proxy, and decision workflows with structured filtering options.
+         */
+        get: operations["list-audit-events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cache/decisions": {
         parameters: {
             query?: never;
@@ -331,6 +351,24 @@ export interface components {
             namespace?: string;
             version?: string;
         };
+        AuditEventResponse: {
+            artifact: components["schemas"]["ArtifactIdentityResponse"];
+            correlation_id?: string;
+            /** Format: date-time */
+            created_at: string;
+            entity_id?: string;
+            entity_type?: string;
+            event_type: string;
+            id: string;
+            message?: string;
+            outcome?: string;
+            payload?: {
+                [key: string]: unknown;
+            };
+            policy_id?: string;
+            source?: string;
+            upstream_id?: string;
+        };
         CacheClearResponse: {
             cache: string;
             status: string;
@@ -493,6 +531,68 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "list-audit-events": {
+        parameters: {
+            query?: {
+                /** @description Maximum audit events to return */
+                limit?: string;
+                /** @description Audit events to skip */
+                offset?: string;
+                /** @description Case-insensitive search across event type, message, correlation ID, policy, upstream, and artifact fields */
+                search?: string;
+                /** @description Exact audit event type filter */
+                event_type?: string;
+                /** @description Exact decision outcome filter */
+                outcome?: string;
+                /** @description Exact request correlation identifier */
+                correlation_id?: string;
+                /** @description Exact policy identifier */
+                policy_id?: string;
+                /** @description Exact source filter such as delivery/npm or core/access */
+                source?: string;
+                /** @description Inclusive RFC3339 lower bound for created_at */
+                since?: string;
+                /** @description Inclusive RFC3339 upper bound for created_at */
+                until?: string;
+            };
+            header?: {
+                /** @description Tenant identifier */
+                "X-Tenant-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventResponse"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+        };
+    };
     "clear-decision-cache": {
         parameters: {
             query?: never;

@@ -23,6 +23,7 @@ var (
 	ErrUpstreamPolicyConflict         = errors.New("upstream update conflicts with scoped policies")
 	ErrUpstreamUnavailable            = errors.New("upstream unavailable")
 	ErrEnrichmentFailed               = errors.New("enrichment failed")
+	ErrAuditUnavailable               = errors.New("audit logging unavailable")
 	ErrArtifactNotFound               = errors.New("artifact not found")
 	ErrInvalidArtifactRef             = errors.New("invalid artifact reference")
 	ErrCacheMiss                      = errors.New("cache miss")

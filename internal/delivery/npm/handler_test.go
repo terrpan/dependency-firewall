@@ -488,12 +488,12 @@ func Test_handleMetadata_unversionedRequestSkipsLicenseAllowlistButTarballStillD
 	tarballReq = withTenant(tarballReq)
 	tarballRR := httptest.NewRecorder()
 	mux.ServeHTTP(tarballRR, tarballReq)
-	assert.Equal(t, http.StatusForbidden, tarballRR.Code, "versioned tarball request should still fail closed when license metadata is unavailable")
+	assert.Equal(t, http.StatusForbidden, tarballRR.Code, "versioned tarball request should still fail closed when no license is declared")
 
 	var resp npmErrorResponse
 	err := json.NewDecoder(tarballRR.Body).Decode(&resp)
 	require.NoError(t, err)
-	assert.Contains(t, resp.Error, "license metadata is unavailable")
+	assert.Contains(t, resp.Error, "does not declare a license")
 }
 
 func Test_handleMetadata_rewritesTarballURLsToFirewall(t *testing.T) {

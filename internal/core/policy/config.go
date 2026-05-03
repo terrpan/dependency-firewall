@@ -98,6 +98,13 @@ func newConfigForType(policyType domain.PolicyType, schemaVersion int) (domain.P
 		default:
 			return nil, invalidPolicyf("unknown policy type %q", policyType)
 		}
+	case 2:
+		switch policyType {
+		case domain.PolicyTypeLicenseAllowlist:
+			return &domain.LicenseAllowlistPolicyConfigV2{}, nil
+		default:
+			return nil, fmt.Errorf("%w: schema_version %d is not supported for policy type %q", domain.ErrUnsupportedPolicySchemaVersion, schemaVersion, policyType)
+		}
 	default:
 		return nil, fmt.Errorf("%w: schema_version %d is not supported for policy type %q", domain.ErrUnsupportedPolicySchemaVersion, schemaVersion, policyType)
 	}
@@ -137,8 +144,12 @@ func configTypeMatchesPolicy(policyType domain.PolicyType, config domain.PolicyC
 		_, ok := config.(*domain.LicensePolicyConfig)
 		return ok
 	case domain.PolicyTypeLicenseAllowlist:
-		_, ok := config.(*domain.LicenseAllowlistPolicyConfig)
-		return ok
+		switch config.(type) {
+		case *domain.LicenseAllowlistPolicyConfig, *domain.LicenseAllowlistPolicyConfigV2:
+			return true
+		default:
+			return false
+		}
 	case domain.PolicyTypeAllowlist, domain.PolicyTypeNamespaceAllowlist, domain.PolicyTypeBlocklist:
 		_, ok := config.(*domain.NamespaceListPolicyConfig)
 		return ok

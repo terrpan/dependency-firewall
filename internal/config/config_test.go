@@ -97,5 +97,12 @@ func validConfig() *Config {
 			Level:  "info",
 			Format: "json",
 		},
+		Audit: AuditConfig{
+			Enabled:     true,
+			Slog:        true,
+			Postgres:    true,
+			FailureMode: "fail_closed",
+			DetailLevel: "summary",
+		},
 	}
 }

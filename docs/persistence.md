@@ -32,6 +32,32 @@ PostgreSQL is the system of record.
 - `policy_versions` stores retained policy snapshots for rollback and keeps the latest 3 versions per policy
 - `tenant_policy_revisions` stores the canonical tenant policy-set hash and generation after every policy mutation
 - decisions store the `policy_hash` that was active when the decision was evaluated
+- `audit_events` stores append-only structured audit records for proxy request, evaluation, decision, and upstream-fetch activity
+- audit event payloads use JSONB for flexible structured details, but top-level filtering still relies on tenant_id, event_type, and created_at indexes
+- audit queries must stay tenant-scoped and should support correlation lookups by request ID and artifact identity fields
+- durable audit persistence is expected to support incident response; sink-failure behavior is configurable and defaults to fail-closed
+
+### audit_events
+
+- intended for forensic and incident-response workflows, not just UI history
+- one row per structured audit event
+- expected payload fields include:
+  - `correlation_id`
+  - `source`
+  - `message`
+  - `outcome`
+  - `upstream_id`
+  - `policy_id`
+  - `artifact`
+  - `details`
+- phase 1 uses both:
+  - `event_type` column for exact filtering
+  - JSONB payload fields for richer search and future expansion
+- indexes should cover:
+  - `tenant_id + created_at`
+  - `tenant_id + event_type + created_at`
+  - `tenant_id + correlation_id + created_at`
+  - JSONB payload search
 
 ## Valkey
 

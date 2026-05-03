@@ -26,6 +26,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database" validate:"required"`
 	Valkey   ValkeyConfig   `mapstructure:"valkey" validate:"required"`
 	Log      LogConfig      `mapstructure:"log" validate:"required"`
+	Audit    AuditConfig    `mapstructure:"audit" validate:"required"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -83,6 +84,15 @@ type LogConfig struct {
 	Format string `mapstructure:"format" validate:"oneof=json text"`
 }
 
+// AuditConfig holds audit-specific capture and durability settings.
+type AuditConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	Slog        bool   `mapstructure:"slog"`
+	Postgres    bool   `mapstructure:"postgres"`
+	FailureMode string `mapstructure:"failure_mode" validate:"oneof=fail_open fail_closed"`
+	DetailLevel string `mapstructure:"detail_level" validate:"oneof=minimal summary full"`
+}
+
 // Load reads configuration from environment variables and an optional
 // config.yaml file, applies sensible defaults, and returns a validated Config.
 func Load() (*Config, error) {
@@ -117,6 +127,11 @@ func Load() (*Config, error) {
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
+	v.SetDefault("audit.enabled", true)
+	v.SetDefault("audit.slog", true)
+	v.SetDefault("audit.postgres", true)
+	v.SetDefault("audit.failure_mode", "fail_closed")
+	v.SetDefault("audit.detail_level", "summary")
 
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")

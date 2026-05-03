@@ -41,23 +41,26 @@ func (l License) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) 
 
 // Evaluate checks whether the artifact license set violates the approved list.
 func (l LicenseAllowlist) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) (bool, string, error) {
-	typed, ok := config.(*domain.LicenseAllowlistPolicyConfig)
-	if !ok {
-		return false, "", fmt.Errorf("license_allowlist requires %T, got %T", &domain.LicenseAllowlistPolicyConfig{}, config)
-	}
-	if err := typed.Validate(); err != nil {
-		return false, "", err
-	}
-
 	if isUnversionedNPMMetadataRequest(req) {
 		return false, "", nil
 	}
 
-	if req.Metadata == nil || len(req.Metadata.Licenses) == 0 {
-		return true, licenseMetadataUnavailableReason(req.Artifact), nil
+	licenses, unlicensedBehavior, unavailableBehavior, err := licenseAllowlistSettings(config)
+	if err != nil {
+		return false, "", err
 	}
 
-	allowed := approvedLicenses(typed.Licenses)
+	if req.Metadata == nil {
+		matched, reason := applyMissingLicenseBehavior(unavailableBehavior, licenseMetadataUnavailableReason(req.Artifact))
+		return matched, reason, nil
+	}
+
+	if len(req.Metadata.Licenses) == 0 {
+		matched, reason := applyMissingLicenseBehavior(unlicensedBehavior, unlicensedArtifactReason(req.Artifact))
+		return matched, reason, nil
+	}
+
+	allowed := approvedLicenses(licenses)
 	for _, license := range req.Metadata.Licenses {
 		if _, ok := allowed[licenseKey(license)]; !ok {
 			return true, fmt.Sprintf("license %q is not in the approved license list", license), nil
@@ -65,6 +68,36 @@ func (l LicenseAllowlist) Evaluate(req domain.AccessRequest, config domain.Polic
 	}
 
 	return false, "", nil
+}
+
+func licenseAllowlistSettings(
+	config domain.PolicyConfig,
+) ([]string, domain.LicenseAllowlistMissingBehavior, domain.LicenseAllowlistMissingBehavior, error) {
+	switch typed := config.(type) {
+	case *domain.LicenseAllowlistPolicyConfig:
+		if err := typed.Validate(); err != nil {
+			return nil, "", "", err
+		}
+		return typed.Licenses,
+			domain.LicenseAllowlistMissingBehaviorDeny,
+			domain.LicenseAllowlistMissingBehaviorDeny,
+			nil
+	case *domain.LicenseAllowlistPolicyConfigV2:
+		if err := typed.Validate(); err != nil {
+			return nil, "", "", err
+		}
+		return typed.Licenses,
+			typed.EffectiveUnlicensedBehavior(),
+			typed.EffectiveUnavailableMetadataBehavior(),
+			nil
+	default:
+		return nil, "", "", fmt.Errorf(
+			"license_allowlist requires %T or %T, got %T",
+			&domain.LicenseAllowlistPolicyConfig{},
+			&domain.LicenseAllowlistPolicyConfigV2{},
+			config,
+		)
+	}
 }
 
 func approvedLicenses(licenses []string) map[string]struct{} {
@@ -83,7 +116,36 @@ func isUnversionedNPMMetadataRequest(req domain.AccessRequest) bool {
 	return req.Artifact.Ecosystem == domain.EcosystemNPM && strings.TrimSpace(req.Artifact.Version) == ""
 }
 
+func applyMissingLicenseBehavior(
+	behavior domain.LicenseAllowlistMissingBehavior,
+	reason string,
+) (bool, string) {
+	if behavior == domain.LicenseAllowlistMissingBehaviorSkip {
+		return false, ""
+	}
+
+	return true, reason
+}
+
 func licenseMetadataUnavailableReason(artifact domain.ArtifactIdentity) string {
+	ref := artifactLicenseReference(artifact)
+	if ref == "" {
+		return "license metadata is unavailable and approved-license policy denies the artifact"
+	}
+
+	return fmt.Sprintf("license metadata is unavailable for %s and approved-license policy denies the artifact", ref)
+}
+
+func unlicensedArtifactReason(artifact domain.ArtifactIdentity) string {
+	ref := artifactLicenseReference(artifact)
+	if ref == "" {
+		return "artifact does not declare a license and approved-license policy denies the artifact"
+	}
+
+	return fmt.Sprintf("artifact %s does not declare a license and approved-license policy denies the artifact", ref)
+}
+
+func artifactLicenseReference(artifact domain.ArtifactIdentity) string {
 	ref := artifact.FullName()
 	switch {
 	case strings.TrimSpace(artifact.Digest) != "":
@@ -91,10 +153,5 @@ func licenseMetadataUnavailableReason(artifact domain.ArtifactIdentity) string {
 	case strings.TrimSpace(artifact.Version) != "":
 		ref += "@" + strings.TrimSpace(artifact.Version)
 	}
-
-	if ref == "" {
-		return "license metadata is unavailable and approved-license policy denies the artifact"
-	}
-
-	return fmt.Sprintf("license metadata is unavailable for %s and approved-license policy denies the artifact", ref)
+	return ref
 }

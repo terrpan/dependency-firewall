@@ -202,6 +202,7 @@ Denies artifacts whose declared licenses are not all contained in the configured
 ```yaml
 - name: allow-approved-licenses
   type: license_allowlist
+  schema_version: 2
   action: deny
   priority: 30
   config:
@@ -209,14 +210,21 @@ Denies artifacts whose declared licenses are not all contained in the configured
       - MIT
       - Apache-2.0
       - BSD-3-Clause
+    unlicensed_behavior: deny
+    unavailable_metadata_behavior: skip
 ```
 
 - `license_allowlist` must use `action: deny`.
 - For npm requests without a concrete version (`GET /npm/{package}`), this rule skips so the client can resolve a version first.
-- If license metadata is unavailable, this rule **denies** the artifact.
-- Older npm versions may omit a declared `license` field in registry metadata even when the source repository is MIT-licensed. In v1, those requests are still denied because policy evaluation only uses structured registry metadata.
+- In schema v1, both missing-license cases fail closed and deny the artifact.
+- In schema v2, `unlicensed_behavior` and `unavailable_metadata_behavior` can each be set to:
+  - `deny` to fail closed
+  - `skip` to treat that case as no match for this policy
+- If an artifact declares no licenses, `unlicensed_behavior` decides whether this policy denies or skips.
+- If license metadata cannot be determined at all, `unavailable_metadata_behavior` decides whether this policy denies or skips.
+- Older npm versions may omit a declared `license` field in registry metadata even when the source repository is MIT-licensed. In v1, those requests are still denied because policy evaluation only uses structured registry metadata. In v2, those requests follow `unlicensed_behavior`.
 - If any declared artifact license is outside the configured approved list, this rule denies the artifact.
-- In v1, OCI license metadata is not enriched, so this rule currently has effect for npm packages but not OCI images.
+- In v1, OCI license metadata is not enriched, so this rule effectively fails closed for OCI when evaluated. In v2, OCI behavior for missing license metadata follows `unavailable_metadata_behavior`.
 
 ### `allowlist`
 

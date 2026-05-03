@@ -11,6 +11,7 @@ export {
   type CVSSThresholdPolicyConfig,
   type Evaluation,
   type Health,
+  type LicenseAllowlistMissingBehavior,
   type LicenseAllowlistPolicyConfig,
   type LicensePolicyConfig,
   type MaximumAgePolicyConfig,

@@ -79,8 +79,12 @@ export type LicensePolicyConfig = {
   dry_run?: boolean
 }
 
+export type LicenseAllowlistMissingBehavior = 'deny' | 'skip'
+
 export type LicenseAllowlistPolicyConfig = {
   licenses: string[]
+  unlicensed_behavior?: LicenseAllowlistMissingBehavior
+  unavailable_metadata_behavior?: LicenseAllowlistMissingBehavior
   dry_run?: boolean
 }
 

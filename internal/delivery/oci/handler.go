@@ -20,6 +20,7 @@ import (
 // RegistryHandler handles OCI registry protocol requests.
 type RegistryHandler struct {
 	access    *service.AccessService
+	audit     *service.AuditService
 	upstream  port.UpstreamClient
 	upstreams port.UpstreamRepository
 	logger    *slog.Logger
@@ -31,9 +32,15 @@ func NewRegistryHandler(
 	upstream port.UpstreamClient,
 	upstreams port.UpstreamRepository,
 	logger *slog.Logger,
+	audits ...*service.AuditService,
 ) *RegistryHandler {
+	var audit *service.AuditService
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
 	return &RegistryHandler{
 		access:    access,
+		audit:     audit,
 		upstream:  upstream,
 		upstreams: upstreams,
 		logger:    logger,
@@ -108,9 +115,30 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 
 	req := domain.AccessRequest{
 		TenantID:  tenant.ID,
+		RequestID: requestIDFromContext(r.Context()),
 		Artifact:  artifact,
 		Upstream:  *upstream,
 		Timestamp: time.Now(),
+	}
+	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+		TenantID:      tenant.ID,
+		CorrelationID: req.RequestID,
+		EventType:     domain.AuditEventProxyRequestReceived,
+		Source:        "delivery/oci",
+		UpstreamID:    upstream.ID,
+		Artifact:      artifact,
+		Message:       "oci manifest request received",
+		Payload: map[string]any{
+			"method":      r.Method,
+			"path":        r.URL.Path,
+			"remote_addr": r.RemoteAddr,
+			"operation":   "manifest",
+			"reference":   reference,
+			"repository":  repo,
+		},
+	}); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+		return
 	}
 
 	decision, err := h.access.Evaluate(r.Context(), req)
@@ -126,7 +154,62 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
+		if err := h.recordAudit(r.Context(), domain.AuditEvent{
+			TenantID:      tenant.ID,
+			CorrelationID: req.RequestID,
+			EventType:     domain.AuditEventRequestDenied,
+			Source:        "delivery/oci",
+			EntityType:    "decision",
+			EntityID:      decision.ID,
+			UpstreamID:    upstream.ID,
+			PolicyID:      decision.PolicyID,
+			Outcome:       decision.Outcome,
+			Artifact:      decision.Artifact,
+			Message:       "oci manifest request denied",
+			Payload: map[string]any{
+				"reason":    decision.Reason,
+				"operation": "manifest",
+			},
+		}); err != nil {
+			writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+			return
+		}
 		writeOCIError(w, r, "DENIED", "policy violation: "+decision.Reason, http.StatusForbidden)
+		return
+	}
+	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+		TenantID:      tenant.ID,
+		CorrelationID: req.RequestID,
+		EventType:     domain.AuditEventRequestAllowed,
+		Source:        "delivery/oci",
+		EntityType:    "decision",
+		EntityID:      decision.ID,
+		UpstreamID:    upstream.ID,
+		PolicyID:      decision.PolicyID,
+		Outcome:       decision.Outcome,
+		Artifact:      decision.Artifact,
+		Message:       "oci manifest request allowed",
+		Payload: map[string]any{
+			"operation": "manifest",
+			"warnings":  decision.Warnings,
+		},
+	}); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+		return
+	}
+	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+		TenantID:      tenant.ID,
+		CorrelationID: req.RequestID,
+		EventType:     domain.AuditEventUpstreamFetchStarted,
+		Source:        "delivery/oci",
+		UpstreamID:    upstream.ID,
+		Artifact:      artifact,
+		Message:       "oci manifest fetch started",
+		Payload: map[string]any{
+			"operation": "manifest",
+		},
+	}); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
 
@@ -137,6 +220,19 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 			writeOCIError(w, r, "MANIFEST_UNKNOWN", "manifest not found", http.StatusNotFound)
 			return
 		}
+		_ = h.recordAudit(r.Context(), domain.AuditEvent{
+			TenantID:      tenant.ID,
+			CorrelationID: req.RequestID,
+			EventType:     domain.AuditEventUpstreamFetchFailed,
+			Source:        "delivery/oci",
+			UpstreamID:    upstream.ID,
+			Artifact:      decision.Artifact,
+			Message:       "oci manifest fetch failed",
+			Payload: map[string]any{
+				"operation": "manifest",
+				"error":     err.Error(),
+			},
+		})
 		h.logger.Error("upstream manifest fetch failed",
 			"error", err,
 			"tenant_id", tenant.ID,
@@ -166,6 +262,32 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		Namespace: namespace,
 		Name:      name,
 	}
+	requestID := requestIDFromContext(r.Context())
+	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+		TenantID:      tenant.ID,
+		CorrelationID: requestID,
+		EventType:     domain.AuditEventProxyRequestReceived,
+		Source:        "delivery/oci",
+		UpstreamID:    "",
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemOCI,
+			Namespace: namespace,
+			Name:      name,
+			Digest:    digest,
+		},
+		Message: "oci blob request received",
+		Payload: map[string]any{
+			"method":      r.Method,
+			"path":        r.URL.Path,
+			"remote_addr": r.RemoteAddr,
+			"operation":   "blob",
+			"repository":  repo,
+			"digest":      digest,
+		},
+	}); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+		return
+	}
 	allowed, err := h.access.HasRecentAllow(r.Context(), tenant.ID, artifact)
 	if err != nil {
 		h.logger.Error("failed to check manifest allow decision",
@@ -177,6 +299,26 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 	if !allowed {
+		if err := h.recordAudit(r.Context(), domain.AuditEvent{
+			TenantID:      tenant.ID,
+			CorrelationID: requestID,
+			EventType:     domain.AuditEventRequestDenied,
+			Source:        "delivery/oci",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemOCI,
+				Namespace: namespace,
+				Name:      name,
+				Digest:    digest,
+			},
+			Message: "oci blob request denied",
+			Payload: map[string]any{
+				"reason":    "no manifest-level allow decision for this repository",
+				"operation": "blob",
+			},
+		}); err != nil {
+			writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+			return
+		}
 		writeOCIError(w, r, "DENIED", "no manifest-level allow decision for this repository", http.StatusForbidden)
 		return
 	}
@@ -191,6 +333,46 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 	// so the upstream client can construct the correct blob URL.
 	blobUpstream := *upstream
 	blobUpstream.BaseURL = strings.TrimRight(upstream.BaseURL, "/") + "/v2/" + repo
+	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+		TenantID:      tenant.ID,
+		CorrelationID: requestID,
+		EventType:     domain.AuditEventRequestAllowed,
+		Source:        "delivery/oci",
+		UpstreamID:    upstream.ID,
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemOCI,
+			Namespace: namespace,
+			Name:      name,
+			Digest:    digest,
+		},
+		Message: "oci blob request allowed",
+		Payload: map[string]any{
+			"operation": "blob",
+		},
+	}); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+		return
+	}
+	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+		TenantID:      tenant.ID,
+		CorrelationID: requestID,
+		EventType:     domain.AuditEventUpstreamFetchStarted,
+		Source:        "delivery/oci",
+		UpstreamID:    upstream.ID,
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemOCI,
+			Namespace: namespace,
+			Name:      name,
+			Digest:    digest,
+		},
+		Message: "oci blob fetch started",
+		Payload: map[string]any{
+			"operation": "blob",
+		},
+	}); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+		return
+	}
 
 	resp, err := h.upstream.FetchContent(r.Context(), blobUpstream, digest)
 	if err != nil {
@@ -198,6 +380,24 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 			writeOCIError(w, r, "BLOB_UNKNOWN", "blob not found", http.StatusNotFound)
 			return
 		}
+		_ = h.recordAudit(r.Context(), domain.AuditEvent{
+			TenantID:      tenant.ID,
+			CorrelationID: requestID,
+			EventType:     domain.AuditEventUpstreamFetchFailed,
+			Source:        "delivery/oci",
+			UpstreamID:    upstream.ID,
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemOCI,
+				Namespace: namespace,
+				Name:      name,
+				Digest:    digest,
+			},
+			Message: "oci blob fetch failed",
+			Payload: map[string]any{
+				"operation": "blob",
+				"error":     err.Error(),
+			},
+		})
 		h.logger.Error("upstream blob fetch failed",
 			"error", err,
 			"tenant_id", tenant.ID,
@@ -265,6 +465,18 @@ func splitRepo(repo string) (namespace, name string) {
 		return "", repo
 	}
 	return repo[:idx], repo[idx+1:]
+}
+
+func (h *RegistryHandler) recordAudit(ctx context.Context, event domain.AuditEvent) error {
+	if h.audit == nil {
+		return nil
+	}
+	return h.audit.Record(ctx, event)
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	requestID, _ := middleware.RequestIDFromContext(ctx)
+	return requestID
 }
 
 func (h *RegistryHandler) resolveUpstream(ctx context.Context, tenantID string) (*domain.Upstream, error) {

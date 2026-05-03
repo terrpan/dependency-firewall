@@ -21,6 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
@@ -28,6 +29,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 	npmdelivery "github.com/danielterry/dependency-firewall/internal/delivery/npm"
 	ocidelivery "github.com/danielterry/dependency-firewall/internal/delivery/oci"
+	auditinfra "github.com/danielterry/dependency-firewall/internal/infra/audit"
 	"github.com/danielterry/dependency-firewall/internal/infra/enrichment"
 	"github.com/danielterry/dependency-firewall/internal/infra/npm"
 	"github.com/danielterry/dependency-firewall/internal/infra/ocicache"
@@ -155,6 +157,7 @@ func run() error {
 	policyRepo := postgres.NewPolicyRepository(pool)
 	policyRevisionRepo := postgres.NewPolicyRevisionRepository(pool)
 	decisionRepo := postgres.NewDecisionRepository(pool)
+	auditRepo := postgres.NewAuditEventRepository(pool)
 	upstreamRepo := postgres.NewUpstreamRepository(pool)
 
 	// Instantiate caches.
@@ -165,7 +168,22 @@ func run() error {
 	osvEnricher := osv.NewClient(&http.Client{}, logger)
 	npmEnricher := npm.NewMetadataEnricher(&http.Client{}, logger)
 	enricher := enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
-	enrichmentService := service.NewEnrichmentService(enricher, metadataCache, logger)
+	auditRecorders := make([]port.AuditEventRecorder, 0, 2)
+	if cfg.Audit.Enabled && cfg.Audit.Slog {
+		auditRecorders = append(auditRecorders, auditinfra.NewSlogRecorder(logger))
+	}
+	if cfg.Audit.Enabled && cfg.Audit.Postgres {
+		auditRecorders = append(auditRecorders, auditRepo)
+	}
+	auditService := service.NewAuditService(
+		auditinfra.NewFanoutRecorder(auditRecorders...),
+		auditRepo,
+		logger,
+		cfg.Audit.Enabled,
+		parseAuditFailureMode(cfg.Audit.FailureMode),
+		parseAuditDetailLevel(cfg.Audit.DetailLevel),
+	)
+	enrichmentService := service.NewEnrichmentService(enricher, metadataCache, logger, auditService)
 
 	// Create upstream client.
 	baseOCIClient := upstream.NewOCIClient(newOCIHTTPClient())
@@ -189,14 +207,15 @@ func run() error {
 		ociClient,
 		upstreamRepo,
 		logger,
+		auditService,
 	)
 
 	// Create OCI handler.
-	ociHandler := ocidelivery.NewRegistryHandler(accessService, ociClient, upstreamRepo, logger)
+	ociHandler := ocidelivery.NewRegistryHandler(accessService, ociClient, upstreamRepo, logger, auditService)
 
 	// Create npm handler.
 	npmClient := upstream.NewNPMClient(&http.Client{Timeout: 30 * time.Second})
-	npmHandler := npmdelivery.NewRegistryHandler(accessService, npmClient, upstreamRepo, logger)
+	npmHandler := npmdelivery.NewRegistryHandler(accessService, npmClient, upstreamRepo, logger, auditService)
 
 	// Build middleware chain.
 	tenantResolver := middleware.NewTenantResolver(tenantRepo)
@@ -231,12 +250,14 @@ func run() error {
 	ociWrapped = middleware.OCITenantFromHost()(ociWrapped)
 	ociWrapped = middleware.RequestLogging(logger)(ociWrapped)
 	ociWrapped = middleware.Recovery(logger)(ociWrapped)
+	ociWrapped = middleware.RequestID()(ociWrapped)
 
 	var npmWrapped http.Handler = npmMux
 	npmWrapped = tenantResolver.Middleware(npmWrapped)
 	npmWrapped = middleware.NPMTenantFromPath()(npmWrapped) // Extract tenant from /npm/t/{id}/... (runs before tenant resolver)
 	npmWrapped = middleware.RequestLogging(logger)(npmWrapped)
 	npmWrapped = middleware.Recovery(logger)(npmWrapped)
+	npmWrapped = middleware.RequestID()(npmWrapped)
 
 	mux.Handle("/v2/", ociWrapped)
 	mux.Handle("/npm/", npmWrapped)
@@ -247,18 +268,21 @@ func run() error {
 	cacheService := service.NewCacheService(decisionCache, metadataCache)
 	upstreamService := service.NewUpstreamService(upstreamRepo, policyRepo)
 	evaluationService := service.NewEvaluationService(decisionRepo)
+	auditListService := service.NewAuditService(nil, auditRepo, logger, cfg.Audit.Enabled, parseAuditFailureMode(cfg.Audit.FailureMode), parseAuditDetailLevel(cfg.Audit.DetailLevel))
 
 	tenantHandler := api.NewTenantHandler(tenantService, logger)
 	policyHandler := api.NewPolicyHandler(policyService, logger)
 	cacheHandler := api.NewCacheHandler(cacheService, logger)
 	upstreamHandler := api.NewUpstreamHandler(upstreamService, logger)
 	evaluationHandler := api.NewEvaluationHandler(evaluationService, logger)
+	auditHandler := api.NewAuditHandler(auditListService, logger)
 
 	tenantHandler.RegisterHumaRoutes(controlPlaneAPI)
 	policyHandler.RegisterHumaRoutes(controlPlaneAPI)
 	cacheHandler.RegisterHumaRoutes(controlPlaneAPI)
 	upstreamHandler.RegisterHumaRoutes(controlPlaneAPI)
 	evaluationHandler.RegisterHumaRoutes(controlPlaneAPI)
+	auditHandler.RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
@@ -322,5 +346,23 @@ func newOCIArtifactCache(cfg config.OCICacheConfig) (port.OCIArtifactCache, erro
 		return nil, fmt.Errorf("OCI cache backend %q is not implemented yet", cfg.Backend)
 	default:
 		return nil, fmt.Errorf("unsupported OCI cache backend %q", cfg.Backend)
+	}
+}
+
+func parseAuditFailureMode(value string) domain.AuditFailureMode {
+	if strings.EqualFold(strings.TrimSpace(value), string(domain.AuditFailureModeFailOpen)) {
+		return domain.AuditFailureModeFailOpen
+	}
+	return domain.AuditFailureModeFailClosed
+}
+
+func parseAuditDetailLevel(value string) domain.AuditDetailLevel {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(domain.AuditDetailLevelMinimal):
+		return domain.AuditDetailLevelMinimal
+	case string(domain.AuditDetailLevelFull):
+		return domain.AuditDetailLevelFull
+	default:
+		return domain.AuditDetailLevelSummary
 	}
 }

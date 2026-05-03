@@ -695,9 +695,10 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
                 <p className="muted">Use a short name and a concrete registry base URL.</p>
               </div>
 
-              <div className="upstreams-field">
+              <div className={`upstreams-field${draftErrors.name ? ' upstreams-field-invalid' : ''}`}>
                 <label htmlFor="upstream-name">Display name</label>
                 <input
+                  aria-invalid={Boolean(draftErrors.name)}
                   id="upstream-name"
                   name="name"
                   onChange={(event) => handleDraftChange('name', event.target.value)}
@@ -709,9 +710,10 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
                 {draftErrors.name ? <p className="upstreams-field-error">{draftErrors.name}</p> : null}
               </div>
 
-              <div className="upstreams-field">
+              <div className={`upstreams-field${draftErrors.ecosystem ? ' upstreams-field-invalid' : ''}`}>
                 <label htmlFor="upstream-ecosystem">Ecosystem</label>
                 <select
+                  aria-invalid={Boolean(draftErrors.ecosystem)}
                   id="upstream-ecosystem"
                   name="ecosystem"
                   onChange={(event) => handleDraftChange('ecosystem', event.target.value)}
@@ -729,9 +731,10 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
                 ) : null}
               </div>
 
-              <div className="upstreams-field">
+              <div className={`upstreams-field${draftErrors.baseUrl ? ' upstreams-field-invalid' : ''}`}>
                 <label htmlFor="upstream-base-url">Base URL</label>
                 <input
+                  aria-invalid={Boolean(draftErrors.baseUrl)}
                   id="upstream-base-url"
                   name="baseUrl"
                   onChange={(event) => handleDraftChange('baseUrl', event.target.value)}

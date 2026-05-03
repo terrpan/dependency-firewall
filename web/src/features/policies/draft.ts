@@ -1,4 +1,5 @@
 import type {
+  LicenseAllowlistMissingBehavior,
   PolicyAction,
   PolicyConfigByType,
   PolicyType,
@@ -99,7 +100,7 @@ export const policyDraftDefinitions: Record<PolicyType, DraftDefinition> = {
   license_allowlist: {
     displayName: 'License allowlist',
     summary: 'Deny artifacts unless all declared licenses are part of an approved SPDX list.',
-    description: 'This is the strict fail-closed license policy and should remain a deny rule.',
+    description: 'This is the strict approved-license policy and should remain a deny rule, with configurable handling for unlicensed packages and unavailable metadata.',
     defaultPriority: 30,
     listField: 'licenses',
     listLabel: 'Approved licenses',
@@ -150,6 +151,8 @@ export type PolicyDraftState = {
   listValue: string
   excludePackages: string
   dryRun: boolean
+  unlicensedBehavior: LicenseAllowlistMissingBehavior
+  unavailableMetadataBehavior: LicenseAllowlistMissingBehavior
 }
 
 type PreviewMode = 'preview' | 'strict'
@@ -232,8 +235,8 @@ export function createFallbackPolicyTypeDescriptor(type: PolicyType): PolicyType
     help: definition.description,
     example: `${type}: see control-plane docs`,
     supported_actions: getFallbackActions(type),
-    supported_schema_versions: [1],
-    current_schema_version: 1,
+    supported_schema_versions: type === 'license_allowlist' ? [1, 2] : [1],
+    current_schema_version: type === 'license_allowlist' ? 2 : 1,
     supported_ecosystems: supportedEcosystems,
     required_capabilities: requiredCapabilities,
   }
@@ -256,6 +259,8 @@ export function createEmptyPolicyDraft(): PolicyDraftState {
     listValue: '',
     excludePackages: '',
     dryRun: false,
+    unlicensedBehavior: 'deny',
+    unavailableMetadataBehavior: 'deny',
   }
 }
 
@@ -279,6 +284,8 @@ export function createPolicyDraftForType(
     listValue: definition.listDefault?.join('\n') ?? '',
     excludePackages: '',
     dryRun: false,
+    unlicensedBehavior: 'deny',
+    unavailableMetadataBehavior: 'deny',
   }
 }
 
@@ -296,6 +303,10 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
     listValue: '',
     excludePackages: '',
     dryRun: Boolean(policy.config.dry_run),
+    unlicensedBehavior:
+      policy.type === 'license_allowlist' ? policy.config.unlicensed_behavior ?? 'deny' : 'deny',
+    unavailableMetadataBehavior:
+      policy.type === 'license_allowlist' ? policy.config.unavailable_metadata_behavior ?? 'deny' : 'deny',
   } satisfies PolicyDraftState
 
   switch (policy.type) {
@@ -444,9 +455,14 @@ function maybeIncludeDryRun<TConfig extends { dry_run?: boolean }>(
   return config
 }
 
+function licenseAllowlistSupportsMissingBehavior(schemaVersion: number): boolean {
+  return schemaVersion >= 2
+}
+
 function buildConfig(
   draft: PolicyDraftState,
   type: PolicyType,
+  schemaVersion: number,
   mode: PreviewMode,
 ): PolicyConfigByType[PolicyType] {
   switch (type) {
@@ -501,12 +517,17 @@ function buildConfig(
       )
     }
     case 'license_allowlist': {
-      return maybeIncludeDryRun<PolicyConfigByType['license_allowlist']>(
+      const config = maybeIncludeDryRun<PolicyConfigByType['license_allowlist']>(
         {
           licenses: resolveListValue(draft, type, mode),
         },
         draft,
       )
+      if (licenseAllowlistSupportsMissingBehavior(schemaVersion)) {
+        config.unlicensed_behavior = draft.unlicensedBehavior
+        config.unavailable_metadata_behavior = draft.unavailableMetadataBehavior
+      }
+      return config
     }
     case 'allowlist': {
       return maybeIncludeDryRun<PolicyConfigByType['allowlist']>(
@@ -564,7 +585,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['cvss_threshold'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['cvss_threshold'],
       }
     case 'minimum_age':
       return {
@@ -575,7 +596,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['minimum_age'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['minimum_age'],
       }
     case 'maximum_age':
       return {
@@ -586,7 +607,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['maximum_age'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['maximum_age'],
       }
     case 'block_mutable_tag':
       return {
@@ -597,7 +618,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['block_mutable_tag'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['block_mutable_tag'],
       }
     case 'license':
       return {
@@ -608,7 +629,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['license'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['license'],
       }
     case 'license_allowlist':
       return {
@@ -619,7 +640,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['license_allowlist'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['license_allowlist'],
       }
     case 'allowlist':
       return {
@@ -630,7 +651,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['allowlist'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['allowlist'],
       }
     case 'namespace_allowlist':
       return {
@@ -641,7 +662,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['namespace_allowlist'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['namespace_allowlist'],
       }
     case 'blocklist':
       return {
@@ -652,7 +673,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, mode) as PolicyConfigByType['blocklist'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['blocklist'],
       }
   }
 }
@@ -872,6 +893,13 @@ function summarizeItems(label: string, items: string[]) {
   return `${label}: ${head}${suffix}`
 }
 
+function summarizeLicenseAllowlistMissingBehavior(
+ 	label: string,
+ 	behavior: LicenseAllowlistMissingBehavior | undefined,
+ ) {
+ 	return `${label}: ${(behavior ?? 'deny') === 'skip' ? 'skip' : 'deny'}`
+}
+
 export function summarizePolicyConfig(policy: PolicyRecord): string {
   switch (policy.type) {
     case 'cvss_threshold': {
@@ -892,7 +920,11 @@ export function summarizePolicyConfig(policy: PolicyRecord): string {
       return `${summarizeItems('Licenses', policy.config.licenses)}${policy.config.dry_run ? ' • dry run' : ''}`
     }
     case 'license_allowlist': {
-      return `${summarizeItems('Approved licenses', policy.config.licenses)}${policy.config.dry_run ? ' • dry run' : ''}`
+      const behaviorSummary =
+        policy.schema_version >= 2
+          ? ` • ${summarizeLicenseAllowlistMissingBehavior('unlicensed', policy.config.unlicensed_behavior)} • ${summarizeLicenseAllowlistMissingBehavior('metadata unavailable', policy.config.unavailable_metadata_behavior)}`
+          : ''
+      return `${summarizeItems('Approved licenses', policy.config.licenses)}${behaviorSummary}${policy.config.dry_run ? ' • dry run' : ''}`
     }
     case 'allowlist': {
       return `${summarizeItems('Namespaces', policy.config.namespaces)}${policy.config.dry_run ? ' • dry run' : ''}`

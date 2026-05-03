@@ -13,7 +13,7 @@ The system has two surfaces:
    - npm and OCI protocol adapters
 
 2. Control plane
-     - management API for policies, policy rollback/history, upstreams, evaluations, and cache maintenance
+     - management API for policies, policy rollback/history, upstreams, evaluations, audit events, and cache maintenance
      - intended for UI and automation
      - the React UI consumes generated TypeScript types from the Huma/OpenAPI document
      - Huma is used only on control-plane endpoints where code explicitly uses it
@@ -56,7 +56,7 @@ flowchart LR
 - control-plane request DTO parsing and response DTO rendering
 - Huma may be used on control-plane routes for OpenAPI/docs generation and typed request/response modeling
 - Huma remains control-plane only
-- the current Huma-backed control-plane set includes health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, decision-cache clearing, and upstream CRUD
+- the current Huma-backed control-plane set includes health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, audit-event listing, decision-cache clearing, and upstream CRUD
 - boundary request validation
 - handlers call core services, not repositories or parser packages
 
@@ -68,6 +68,7 @@ flowchart LR
 - upstream-aware policy selection
 - upstream capability compatibility validation for policy authoring and upstream updates
 - control-plane business workflows
+- audit event emission and audit-query workflows
 - typed domain and policy config models
 - shared ports named in protocol-neutral terms where used across ecosystems
 
@@ -95,12 +96,14 @@ flowchart TB
         upstreamService[UpstreamService]
         tenantService[TenantService]
         evaluationService[EvaluationService]
+        auditService[AuditService]
         enrichmentService[EnrichmentService]
         evaluator[policy evaluator + conditions]
     end
 
     subgraph infrastructure[infrastructure]
         pgRepos[PostgreSQL repositories]
+        auditSinks[audit sinks]
         valkeyCache[Valkey caches]
         upstreamClients[upstream clients]
         cachedOCI[cache-backed OCI client]
@@ -119,16 +122,19 @@ flowchart TB
     apiDelivery --> upstreamService
     apiDelivery --> tenantService
     apiDelivery --> evaluationService
+    apiDelivery --> auditService
 
     accessService --> enrichmentService
     accessService --> evaluator
     accessService --> pgRepos
+    accessService --> auditSinks
     accessService --> valkeyCache
     accessService --> upstreamClients
     policyService --> pgRepos
     upstreamService --> pgRepos
     tenantService --> pgRepos
     evaluationService --> pgRepos
+    auditService --> pgRepos
     enrichmentService --> valkeyCache
     enrichmentService --> enrichers
     ociDelivery --> cachedOCI
@@ -150,7 +156,7 @@ flowchart TB
 - control-plane API delivery only
 - OpenAPI/docs generation at the HTTP boundary
 - typed request and response models for the control-plane endpoints that use Huma
-- current Huma-backed control-plane endpoints include health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, decision-cache clearing, and upstream CRUD
+- current Huma-backed control-plane endpoints include health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, audit-event listing, decision-cache clearing, and upstream CRUD
 - per-endpoint Huma coverage remains explicit and human-controlled
 
 ### Out of scope
@@ -174,7 +180,7 @@ Huma is a delivery-layer tool. It must not move policy logic, tenant workflows, 
 - delivery must not expose raw PostgreSQL or Valkey errors to API clients; infrastructure errors should be translated to domain-safe errors and logged server-side
 - core types must not carry JSON response tags for delivery concerns
 - core policy config must use typed structs per policy type, not `map[string]any`
-- approved-license policies must keep missing license metadata behavior explicit; current `license_allowlist` behavior is fail-closed
+- approved-license policies must keep missing license metadata behavior explicit; `license_allowlist` schema v1 is fail-closed and schema v2 makes unlicensed vs unavailable-metadata handling configurable
 - shared ports in core must avoid ecosystem-specific names such as manifest, blob, or tag unless the port is OCI-only
 - OCI artifact cache ports may be OCI-specific, but cache ownership, lookup, and lifecycle must remain tenant-aware across the full app lifecycle
 
@@ -189,20 +195,24 @@ sequenceDiagram
     participant enrich as core.EnrichmentService
     participant policyrepo as PostgreSQL policy repository
     participant decisionrepo as PostgreSQL decision repository
+    participant audit as audit sinks
     participant ocicache as OCI artifact cache
     participant upstream as upstream client
 
     client->>delivery: proxy request
     delivery->>delivery: parse protocol request + resolve tenant_id + upstream_id
+    delivery->>audit: record request_received
     delivery->>access: Evaluate(access request)
     access->>access: normalize artifact identity
     access->>dcache: lookup decision
 
     alt decision cache hit
         dcache-->>access: cached decision
+        access->>audit: record cache hit
     else decision cache miss
         access->>enrich: load metadata
         enrich-->>access: metadata
+        access->>audit: record enrichment result
         access->>policyrepo: list tenant policies
         policyrepo-->>access: policies
         access->>access: filter policies by upstream scope
@@ -210,17 +220,21 @@ sequenceDiagram
         access->>access: evaluate policies
         access->>dcache: store decision
         access->>decisionrepo: record decision with policy_hash
+        access->>audit: record matched policies + final decision
     end
 
     alt deny
         access-->>delivery: deny decision
+        delivery->>audit: record denied response
         delivery-->>client: protocol-specific denied response
     else allow
         access-->>delivery: allow decision
+        delivery->>audit: record allowed response
         delivery->>ocicache: lookup tenant-scoped digest entry
         alt cache hit
             ocicache-->>delivery: cached response stream
         else cache miss
+            delivery->>audit: record upstream fetch
             delivery->>upstream: fetch metadata/content
             upstream-->>delivery: upstream response stream
             delivery->>ocicache: opportunistic tenant-scoped cache fill
@@ -264,6 +278,18 @@ sequenceDiagram
 4. If denied, delivery renders a protocol-specific error.
 5. If allowed, OCI delivery checks the tenant-aware artifact cache by digest before going upstream.
 6. On OCI cache miss, delivery streams content from upstream while opportunistically filling the cache.
+
+## Audit logging rules
+
+- audit logging uses typed events emitted from delivery and core, not ad hoc text logs
+- core decides **when** evaluation audit events are emitted
+- infrastructure decides **where** audit events are written
+- phase 1 writes audit events to both:
+  - structured `slog`
+  - PostgreSQL `audit_events`
+- request correlation uses a human-readable `X-Request-ID`
+- audit sink failure is configurable and defaults to fail-closed
+- future external shipping must remain compatible with tenant-scoped routing without changing core service signatures
 
 ## Deferred goal: graph-backed npm dependency context
 

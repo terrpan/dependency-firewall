@@ -1358,6 +1358,29 @@ code {
   min-height: 96px;
 }
 
+.policy-field-invalid span,
+.policy-field-error {
+  color: #fca5a5;
+}
+
+.policy-field-invalid input,
+.policy-field-invalid select,
+.policy-field-invalid textarea {
+  border-color: rgba(248, 113, 113, 0.9);
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.28);
+}
+
+.policy-field-invalid input:focus-visible,
+.policy-field-invalid select:focus-visible,
+.policy-field-invalid textarea:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.32);
+  outline-offset: 1px;
+}
+
+.policy-field-error {
+  margin: 0;
+}
+
 .checkbox-field {
   grid-template-columns: auto 1fr;
   align-items: start;

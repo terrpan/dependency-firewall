@@ -147,6 +147,30 @@ func TestToDomainPolicies(t *testing.T) {
 		assert.Equal(t, domain.PolicyTypeLicenseAllowlist, policies[0].Type)
 	})
 
+	t.Run("license allowlist schema v2 is accepted", func(t *testing.T) {
+		pf := &PolicyFile{
+			TenantID: "t1",
+			Policies: []PolicyDef{
+				{
+					Name:          "allow-approved-licenses",
+					Type:          "license_allowlist",
+					SchemaVersion: intPtr(2),
+					Action:        "deny",
+					Config: map[string]any{
+						"licenses":                      []string{"MIT", "Apache-2.0"},
+						"unlicensed_behavior":           "skip",
+						"unavailable_metadata_behavior": "deny",
+					},
+				},
+			},
+		}
+		policies, err := ToDomainPolicies(pf)
+		require.NoError(t, err)
+		require.Len(t, policies, 1)
+		assert.Equal(t, domain.PolicyTypeLicenseAllowlist, policies[0].Type)
+		assert.IsType(t, &domain.LicenseAllowlistPolicyConfigV2{}, policies[0].Config)
+	})
+
 	t.Run("namespace allowlist policy type is accepted", func(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",

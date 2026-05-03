@@ -171,6 +171,31 @@ func TestEvaluate(t *testing.T) {
 			wantDenyCount: 1,
 		},
 		{
+			name: "license allowlist schema v2 can skip unavailable metadata",
+			req: domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "unknown-license-package",
+					Version:   "1.0.0",
+				},
+				Metadata:  nil,
+				Timestamp: now,
+			},
+			policies: []domain.Policy{
+				{
+					ID: "p-license-allowlist", TenantID: "tenant-1", Name: "allow-approved-licenses",
+					Type: domain.PolicyTypeLicenseAllowlist, Action: domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfigV2{
+						Licenses:                    []string{"MIT"},
+						UnavailableMetadataBehavior: domain.LicenseAllowlistMissingBehaviorSkip,
+					}, Priority: 0, Enabled: true,
+				},
+			},
+			wantOutcome:   domain.DecisionAllow,
+			wantReasonSub: "no matching policy",
+		},
+		{
 			name: "license allowlist allows approved license set",
 			req: domain.AccessRequest{
 				TenantID: "tenant-1",

@@ -36,6 +36,9 @@ func RequestLogging(logger *slog.Logger) func(http.Handler) http.Handler {
 			if tenant, ok := TenantFromContext(r.Context()); ok {
 				attrs = append(attrs, slog.String("tenant_id", tenant.ID))
 			}
+			if requestID, ok := RequestIDFromContext(r.Context()); ok {
+				attrs = append(attrs, slog.String("request_id", requestID))
+			}
 
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "request completed", attrs...)
 		})

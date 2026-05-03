@@ -575,7 +575,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		assert.Equal(t, decision.PolicyHash, decisionRepo.recorded[0].PolicyHash)
 	})
 
-	t.Run("npm license allowlist denies missing license metadata", func(t *testing.T) {
+	t.Run("npm license allowlist denies unlicensed artifacts", func(t *testing.T) {
 		policyRepo := &spyPolicyRepository{
 			policies: []domain.Policy{
 				{
@@ -622,7 +622,60 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, decision)
 		assert.Equal(t, domain.DecisionDeny, decision.Outcome)
-		assert.Contains(t, decision.Reason, "license metadata is unavailable")
+		assert.Contains(t, decision.Reason, "does not declare a license")
+		assert.Equal(t, 1, enricher.calls)
+		assert.Equal(t, 1, decisionRepo.recordCalls)
+	})
+
+	t.Run("npm license allowlist schema v2 can skip missing license metadata", func(t *testing.T) {
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:       "p4-v2",
+					TenantID: "tenant-1",
+					Name:     "allow-approved-licenses",
+					Type:     domain.PolicyTypeLicenseAllowlist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfigV2{
+						Licenses:                    []string{"MIT", "Apache-2.0"},
+						UnavailableMetadataBehavior: domain.LicenseAllowlistMissingBehaviorSkip,
+					},
+					Priority: 10,
+					Enabled:  true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := newSpyDecisionCache()
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			&spyUpstreamClient{},
+			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
+
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "unknown-license-package",
+				Version:   "1.0.0",
+			},
+			Timestamp: time.Now(),
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+		assert.Equal(t, "no matching policy", decision.Reason)
 		assert.Equal(t, 1, enricher.calls)
 		assert.Equal(t, 1, decisionRepo.recordCalls)
 	})

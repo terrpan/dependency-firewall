@@ -26,6 +26,59 @@
         ],
         "type": "object"
       },
+      "AuditEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactIdentityResponse"
+          },
+          "correlation_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "policy_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "upstream_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "artifact",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "CacheClearResponse": {
         "additionalProperties": false,
         "properties": {
@@ -579,6 +632,165 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/audit/events": {
+      "get": {
+        "description": "Lists tenant-scoped audit events for evaluation, proxy, and decision workflows with structured filtering options.",
+        "operationId": "list-audit-events",
+        "parameters": [
+          {
+            "description": "Tenant identifier",
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "schema": {
+              "description": "Tenant identifier",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum audit events to return",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum audit events to return",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Audit events to skip",
+            "explode": false,
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "description": "Audit events to skip",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Case-insensitive search across event type, message, correlation ID, policy, upstream, and artifact fields",
+            "explode": false,
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "description": "Case-insensitive search across event type, message, correlation ID, policy, upstream, and artifact fields",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact audit event type filter",
+            "explode": false,
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "description": "Exact audit event type filter",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact decision outcome filter",
+            "explode": false,
+            "in": "query",
+            "name": "outcome",
+            "schema": {
+              "description": "Exact decision outcome filter",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact request correlation identifier",
+            "explode": false,
+            "in": "query",
+            "name": "correlation_id",
+            "schema": {
+              "description": "Exact request correlation identifier",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact policy identifier",
+            "explode": false,
+            "in": "query",
+            "name": "policy_id",
+            "schema": {
+              "description": "Exact policy identifier",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exact source filter such as delivery/npm or core/access",
+            "explode": false,
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "description": "Exact source filter such as delivery/npm or core/access",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive RFC3339 lower bound for created_at",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "Inclusive RFC3339 lower bound for created_at",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive RFC3339 upper bound for created_at",
+            "explode": false,
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "description": "Inclusive RFC3339 upper bound for created_at",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEventResponse"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List audit events",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
     "/api/v1/cache/decisions": {
       "delete": {
         "description": "Invalidates cached policy decisions for the tenant so subsequent proxy requests are evaluated again.",

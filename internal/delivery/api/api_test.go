@@ -427,8 +427,17 @@ type mockDecisionRepo struct {
 	decisions []domain.Decision
 }
 
+type mockAuditRepo struct {
+	mu     sync.RWMutex
+	events []domain.AuditEvent
+}
+
 func newMockDecisionRepo() *mockDecisionRepo {
 	return &mockDecisionRepo{}
+}
+
+func newMockAuditRepo() *mockAuditRepo {
+	return &mockAuditRepo{}
 }
 
 func (m *mockDecisionRepo) Record(_ context.Context, d *domain.Decision) error {
@@ -495,6 +504,77 @@ func (m *mockDecisionRepo) HasRecentAllow(_ context.Context, _ string, _ domain.
 	return false, nil
 }
 
+func (m *mockAuditRepo) ListByTenant(_ context.Context, filter domain.AuditEventFilter) ([]domain.AuditEvent, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []domain.AuditEvent
+	search := strings.ToLower(strings.TrimSpace(filter.Search))
+	for _, event := range m.events {
+		if event.TenantID != filter.TenantID {
+			continue
+		}
+		if filter.EventType != "" && event.EventType != filter.EventType {
+			continue
+		}
+		if filter.Outcome != "" && event.Outcome != filter.Outcome {
+			continue
+		}
+		if filter.CorrelationID != "" && event.CorrelationID != filter.CorrelationID {
+			continue
+		}
+		if filter.PolicyID != "" && event.PolicyID != filter.PolicyID {
+			continue
+		}
+		if filter.Source != "" && event.Source != filter.Source {
+			continue
+		}
+		if filter.Since != nil && event.CreatedAt.Before(*filter.Since) {
+			continue
+		}
+		if filter.Until != nil && event.CreatedAt.After(*filter.Until) {
+			continue
+		}
+		if search != "" && !matchesAuditSearch(event, search) {
+			continue
+		}
+		result = append(result, event)
+	}
+	if filter.Offset >= len(result) {
+		return nil, nil
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	end := min(filter.Offset+limit, len(result))
+	return result[filter.Offset:end], nil
+}
+
+func matchesAuditSearch(event domain.AuditEvent, search string) bool {
+	fields := []string{
+		string(event.EventType),
+		event.Source,
+		event.Message,
+		event.CorrelationID,
+		event.PolicyID,
+		event.UpstreamID,
+		event.Artifact.Namespace,
+		event.Artifact.Name,
+		event.Artifact.Version,
+		event.Artifact.Digest,
+	}
+	if event.Artifact.Namespace != "" && event.Artifact.Name != "" {
+		fields = append(fields, event.Artifact.Namespace+"/"+event.Artifact.Name)
+	}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), search) {
+			return true
+		}
+	}
+	return false
+}
+
 // --- Test helpers ---
 
 func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache) {
@@ -509,6 +589,7 @@ func setupTestServerWithCaches(t *testing.T) (*httptest.Server, *mockTenantRepo,
 	policyRepo := newMockPolicyRepo()
 	upstreamRepo := newMockUpstreamRepo()
 	decisionRepo := newMockDecisionRepo()
+	auditRepo := newMockAuditRepo()
 	decisionCache := &mockDecisionCache{}
 	metadataCache := &mockMetadataCache{}
 
@@ -526,10 +607,26 @@ func setupTestServerWithCaches(t *testing.T) (*httptest.Server, *mockTenantRepo,
 	NewCacheHandler(service.NewCacheService(decisionCache, metadataCache), logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo, policyRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewEvaluationHandler(service.NewEvaluationService(decisionRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewAuditHandler(service.NewAuditService(nil, auditRepo, logger, true, domain.AuditFailureModeFailClosed, domain.AuditDetailLevelSummary), logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache, metadataCache
+}
+
+func setupAuditTestServer(t *testing.T) (*httptest.Server, *mockAuditRepo) {
+	t.Helper()
+	logger := slog.Default()
+	auditRepo := newMockAuditRepo()
+
+	mux := http.NewServeMux()
+	controlPlaneAPI := NewControlPlaneAPI(mux, "test")
+	NewAuditHandler(service.NewAuditService(nil, auditRepo, logger, true, domain.AuditFailureModeFailClosed, domain.AuditDetailLevelSummary), logger).
+		RegisterHumaRoutes(controlPlaneAPI)
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, auditRepo
 }
 
 func doJSON(t *testing.T, method, url string, body any, headers map[string]string) *http.Response {
@@ -1112,8 +1209,8 @@ func Test_PolicyTypesEndpoint(t *testing.T) {
 			assert.NotEmpty(t, descriptor.Description)
 			assert.NotEmpty(t, descriptor.Help)
 			assert.Contains(t, descriptor.Example, "license_allowlist")
-			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
-			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
+			assert.Equal(t, 2, descriptor.CurrentSchemaVersion)
+			assert.Equal(t, []int{1, 2}, descriptor.SupportedSchemaVersions)
 			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
 			assert.Equal(t, []string{"npm"}, descriptor.SupportedEcosystems)
 			assert.Equal(t, []string{"licenses"}, descriptor.RequiredCapabilities)
@@ -1664,6 +1761,85 @@ func Test_EvaluationList_InvalidPaginationFallsBackToDefaults(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	list := decodeJSON[[]DecisionResponse](t, resp)
 	assert.Len(t, list, 3)
+}
+
+func Test_AuditEventList(t *testing.T) {
+	srv, auditRepo := setupAuditTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+	now := time.Now().UTC()
+
+	auditRepo.events = []domain.AuditEvent{
+		{
+			ID:            "evt-1",
+			TenantID:      "tenant-1",
+			CorrelationID: "req-20260503-101500-abcd12",
+			EventType:     domain.AuditEventDecisionComputed,
+			Source:        "core/access",
+			PolicyID:      "policy-1",
+			Outcome:       domain.DecisionDeny,
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "lodash",
+				Version:   "4.17.20",
+			},
+			Message:   "decision computed",
+			Payload:   map[string]any{"reason": "blocked"},
+			CreatedAt: now,
+		},
+		{
+			ID:            "evt-2",
+			TenantID:      "tenant-1",
+			CorrelationID: "req-20260503-101600-ffff00",
+			EventType:     domain.AuditEventRequestAllowed,
+			Source:        "delivery/npm",
+			Outcome:       domain.DecisionAllow,
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Namespace: "@acme",
+				Name:      "widget",
+				Version:   "1.2.3",
+			},
+			Message:   "npm request allowed",
+			CreatedAt: now.Add(1 * time.Minute),
+		},
+		{
+			ID:        "evt-other",
+			TenantID:  "tenant-2",
+			EventType: domain.AuditEventRequestDenied,
+			CreatedAt: now,
+		},
+	}
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/audit/events", nil, headers)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	list := decodeJSON[[]AuditEventResponse](t, resp)
+	require.Len(t, list, 2)
+	assert.Equal(t, "evt-1", list[0].ID)
+	assert.Equal(t, "evt-2", list[1].ID)
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/audit/events?event_type=decision_computed&outcome=deny&search=lodash", nil, headers)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	list = decodeJSON[[]AuditEventResponse](t, resp)
+	require.Len(t, list, 1)
+	assert.Equal(t, "evt-1", list[0].ID)
+	assert.Equal(t, "policy-1", list[0].PolicyID)
+
+	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/audit/events?correlation_id=req-20260503-101600-ffff00", nil, headers)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	list = decodeJSON[[]AuditEventResponse](t, resp)
+	require.Len(t, list, 1)
+	assert.Equal(t, "evt-2", list[0].ID)
+	assert.Equal(t, "@acme", list[0].Artifact.Namespace)
+}
+
+func Test_AuditEventList_InvalidTimestamp(t *testing.T) {
+	srv, _ := setupAuditTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/audit/events?since=not-a-time", nil, headers)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "since must be a valid RFC3339 timestamp", body["error"])
 }
 
 func Test_ClearDecisionCache(t *testing.T) {

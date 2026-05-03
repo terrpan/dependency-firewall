@@ -1061,3 +1061,81 @@ func TestDecisionRepository_TenantIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }
+
+func TestAuditEventRepository_RecordAndListByTenant(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenantA := createTestTenant(t, ctx, pool, "audit-tenant-a")
+	tenantB := createTestTenant(t, ctx, pool, "audit-tenant-b")
+	repo := postgres.NewAuditEventRepository(pool)
+	now := time.Now().UTC()
+
+	require.NoError(t, repo.Record(ctx, &domain.AuditEvent{
+		TenantID:      tenantA.ID,
+		CorrelationID: "req-20260503-101500-abcd12",
+		EventType:     domain.AuditEventDecisionComputed,
+		Source:        "core/access",
+		EntityType:    "decision",
+		UpstreamID:    "upstream-a",
+		PolicyID:      "policy-a",
+		Outcome:       domain.DecisionDeny,
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Namespace: "@acme",
+			Name:      "lodash",
+			Version:   "4.17.20",
+		},
+		Message: "decision computed",
+		Payload: map[string]any{
+			"reason": "blocked",
+		},
+		CreatedAt: now,
+	}))
+	require.NoError(t, repo.Record(ctx, &domain.AuditEvent{
+		TenantID:      tenantA.ID,
+		CorrelationID: "req-20260503-101600-ffff00",
+		EventType:     domain.AuditEventRequestAllowed,
+		Source:        "delivery/npm",
+		Outcome:       domain.DecisionAllow,
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "widget",
+			Version:   "1.2.3",
+		},
+		Message:   "request allowed",
+		CreatedAt: now.Add(1 * time.Minute),
+	}))
+	require.NoError(t, repo.Record(ctx, &domain.AuditEvent{
+		TenantID:      tenantB.ID,
+		CorrelationID: "req-other",
+		EventType:     domain.AuditEventRequestDenied,
+		Source:        "delivery/oci",
+		Outcome:       domain.DecisionDeny,
+		Message:       "other tenant event",
+		CreatedAt:     now,
+	}))
+
+	events, err := repo.ListByTenant(ctx, domain.AuditEventFilter{
+		TenantID:  tenantA.ID,
+		Limit:     10,
+		EventType: domain.AuditEventDecisionComputed,
+		Outcome:   domain.DecisionDeny,
+		Search:    "lodash",
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "req-20260503-101500-abcd12", events[0].CorrelationID)
+	assert.Equal(t, "policy-a", events[0].PolicyID)
+	assert.Equal(t, "blocked", events[0].Payload["reason"])
+
+	events, err = repo.ListByTenant(ctx, domain.AuditEventFilter{
+		TenantID:      tenantA.ID,
+		Limit:         10,
+		CorrelationID: "req-20260503-101600-ffff00",
+		Source:        "delivery/npm",
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, domain.AuditEventRequestAllowed, events[0].EventType)
+	assert.Equal(t, "widget", events[0].Artifact.Name)
+}

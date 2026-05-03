@@ -101,22 +101,24 @@ var policyTypeCatalog = []domain.PolicyTypeDescriptor{
 		Type:                    domain.PolicyTypeLicenseAllowlist,
 		Summary:                 "Allow only approved licenses",
 		Description:             "Denies artifacts whose declared licenses are outside the configured approved SPDX list.",
-		Help:                    "Use this for strict approved-license enforcement. This policy must use action deny and fails closed when license metadata is unavailable.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
+		Help:                    "Use this for strict approved-license enforcement. This policy must use action deny and can separately deny or skip unlicensed artifacts and unavailable license metadata.",
+		CurrentSchemaVersion:    2,
+		SupportedSchemaVersions: []int{1, 2},
 		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
 		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
 		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses},
 		Example: `- name: allow-approved-licenses
   type: license_allowlist
-  schema_version: 1
+  schema_version: 2
   action: deny
   priority: 30
   config:
     licenses:
       - MIT
       - Apache-2.0
-      - BSD-3-Clause`,
+      - BSD-3-Clause
+    unlicensed_behavior: deny
+    unavailable_metadata_behavior: skip`,
 	},
 	{
 		Type:                    domain.PolicyTypeAllowlist,

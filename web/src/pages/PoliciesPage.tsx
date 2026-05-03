@@ -72,6 +72,13 @@ type PreviewFormat = 'json' | 'yaml'
 type PolicyFilter = 'enabled' | 'disabled' | 'dry_run' | 'allow' | 'deny'
 type PolicyDetailTab = 'overview' | 'history'
 type PolicyDisplayRecord = TypedPolicy | TypedPolicyVersion
+type PolicyDraftFieldErrorKey =
+  | 'upstreamId'
+  | 'name'
+  | 'priority'
+  | 'schemaVersion'
+  | 'numericValue'
+  | 'listValue'
 type PolicyDiffLine = {
   type: 'added' | 'removed' | 'context'
   oldLineNumber: number | null
@@ -147,6 +154,29 @@ function getEnabledTone(enabled: boolean) {
   return enabled ? 'policy-badge-info' : 'policy-badge-muted'
 }
 
+function isPositiveIntegerString(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  const parsed = Number(trimmed)
+  return Number.isInteger(parsed) && parsed > 0
+}
+
+function isValidNumberString(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  return Number.isFinite(Number(trimmed))
+}
+
+function formatLicenseAllowlistBehaviorLabel(value?: string) {
+  return value === 'skip' ? 'Skip this policy' : 'Deny artifact'
+}
+
 function matchesPolicyFilter(policy: TypedPolicy, filter: PolicyFilter) {
   if (filter === 'enabled') {
     return policy.enabled
@@ -214,7 +244,21 @@ function getPolicyConfigFields(policy: PolicyDisplayRecord): Array<{ label: stri
     case 'license':
       return [{ label: 'Licenses', values: policy.config.licenses }]
     case 'license_allowlist':
-      return [{ label: 'Approved licenses', values: policy.config.licenses }]
+      return [
+        { label: 'Approved licenses', values: policy.config.licenses },
+        ...(policy.schema_version >= 2
+          ? [
+              {
+                label: 'When unlicensed',
+                values: [formatLicenseAllowlistBehaviorLabel(policy.config.unlicensed_behavior)],
+              },
+              {
+                label: 'When metadata unavailable',
+                values: [formatLicenseAllowlistBehaviorLabel(policy.config.unavailable_metadata_behavior)],
+              },
+            ]
+          : []),
+      ]
     case 'allowlist':
       return [{ label: 'Namespaces', values: policy.config.namespaces }]
     case 'namespace_allowlist':
@@ -361,6 +405,7 @@ export function PoliciesPage() {
   const [selectedComparisonVersion, setSelectedComparisonVersion] = useState<TypedPolicyVersion | null>(null)
   const [policyDetailTab, setPolicyDetailTab] = useState<PolicyDetailTab>('overview')
   const [activeFilters, setActiveFilters] = useState<PolicyFilter[]>([])
+  const [draftFieldErrors, setDraftFieldErrors] = useState<Partial<Record<PolicyDraftFieldErrorKey, string>>>({})
   const [policySearch, setPolicySearch] = useState('')
   const [wizardStep, setWizardStep] = useState(0)
   const [draft, setDraft] = useState<PolicyDraftState>(() => createEmptyPolicyDraft())
@@ -492,6 +537,10 @@ export function PoliciesPage() {
   const supportedDraftActions = useMemo<PolicyDraftState['action'][]>(
     () => (draft.type ? getSupportedActions(draft.type, selectedDescriptor) : ['allow', 'deny']),
     [draft.type, selectedDescriptor],
+  )
+  const supportsLicenseAllowlistMissingBehavior = useMemo(
+    () => draft.type === 'license_allowlist' && Number(draft.schemaVersion) >= 2,
+    [draft.schemaVersion, draft.type],
   )
   const normalizedDraft = useMemo(() => {
     if (!draft.type || supportedDraftActions.includes(draft.action)) {
@@ -752,6 +801,7 @@ export function PoliciesPage() {
         name: currentDraft.type === type ? currentDraft.name : '',
       }
     })
+    setDraftFieldErrors({})
     setWizardStep(1)
   }
 
@@ -761,12 +811,14 @@ export function PoliciesPage() {
       resetDraftFlow()
     }
 
+    setDraftFieldErrors({})
     setIsCreateModalOpen(true)
   }
 
   function openEditModal(policy: TypedPolicy) {
     setEditingPolicyId(policy.id)
     savePolicyMutation.reset()
+    setDraftFieldErrors({})
     setDraft(createPolicyDraftFromPolicy(policy))
     setWizardStep(1)
     setPreviewFormat('json')
@@ -817,6 +869,7 @@ export function PoliciesPage() {
 
   function resetDraftFlow() {
     savePolicyMutation.reset()
+    setDraftFieldErrors({})
     setDraft(createEmptyPolicyDraft())
     setWizardStep(0)
     setPreviewFormat('json')
@@ -827,6 +880,7 @@ export function PoliciesPage() {
       const editingPolicy = policies.find((policy) => policy.id === editingPolicyId)
       if (editingPolicy) {
         savePolicyMutation.reset()
+        setDraftFieldErrors({})
         setDraft(createPolicyDraftFromPolicy(editingPolicy))
         setWizardStep(1)
         setPreviewFormat('json')
@@ -837,16 +891,89 @@ export function PoliciesPage() {
     resetDraftFlow()
   }
 
+  function validatePolicyStep(step: number): Partial<Record<PolicyDraftFieldErrorKey, string>> {
+    const nextErrors: Partial<Record<PolicyDraftFieldErrorKey, string>> = {}
+
+    if (step === 1) {
+      if (!draft.name.trim()) {
+        nextErrors.name = 'Enter a policy name.'
+      }
+      if (!isPositiveIntegerString(draft.priority)) {
+        nextErrors.priority = 'Priority must be a positive whole number.'
+      }
+      if (!isPositiveIntegerString(draft.schemaVersion)) {
+        nextErrors.schemaVersion = 'Choose a valid schema version.'
+      }
+      if (!normalizedDraft.upstreamId.trim()) {
+        nextErrors.upstreamId = 'Choose the upstream this policy applies to.'
+      } else if (!compatibleUpstreams.some((upstream) => upstream.id === normalizedDraft.upstreamId.trim())) {
+        nextErrors.upstreamId = 'Choose an upstream that supports the selected policy type.'
+      }
+    }
+
+    if (step === 2 && selectedDefinition) {
+      if (selectedDefinition.numberField && !isValidNumberString(draft.numericValue)) {
+        nextErrors.numericValue = `${selectedDefinition.numberLabel ?? 'Config value'} is required.`
+      }
+      if (selectedDefinition.listField && draft.listValue.trim().length === 0) {
+        nextErrors.listValue = `${selectedDefinition.listLabel ?? 'List values'} must include at least one item.`
+      }
+    }
+
+    return nextErrors
+  }
+
+  function findFirstInvalidPolicyStep(fromStep: number, toStep: number) {
+    for (let step = fromStep; step < toStep; step += 1) {
+      const nextErrors = validatePolicyStep(step)
+      if (Object.keys(nextErrors).length > 0) {
+        return { step, errors: nextErrors }
+      }
+    }
+
+    return null
+  }
+
   function handleWizardStepChange(step: number) {
     if (step > 0 && !draft.type) {
       return
     }
 
+    if (step > wizardStep) {
+      const invalidStep = findFirstInvalidPolicyStep(wizardStep, step)
+      if (invalidStep) {
+        setDraftFieldErrors(invalidStep.errors)
+        setWizardStep(invalidStep.step)
+        return
+      }
+    }
+
+    setDraftFieldErrors({})
     setWizardStep(Math.min(Math.max(step, 0), policyWizardSteps.length - 1))
   }
 
   function updateDraft<K extends keyof PolicyDraftState>(key: K, value: PolicyDraftState[K]) {
     setDraft((currentDraft) => ({ ...currentDraft, [key]: value }))
+    setDraftFieldErrors((currentErrors) => {
+      if (!(key in currentErrors)) {
+        return currentErrors
+      }
+
+      const nextErrors = { ...currentErrors }
+      delete nextErrors[key as PolicyDraftFieldErrorKey]
+      return nextErrors
+    })
+  }
+
+  function handleWizardNext() {
+    const nextErrors = validatePolicyStep(wizardStep)
+    if (Object.keys(nextErrors).length > 0) {
+      setDraftFieldErrors(nextErrors)
+      return
+    }
+
+    setDraftFieldErrors({})
+    setWizardStep((currentStep) => Math.min(currentStep + 1, policyWizardSteps.length - 1))
   }
 
   async function handleSavePolicy() {
@@ -1545,7 +1672,10 @@ export function PoliciesPage() {
             <button
               className="secondary-button"
               disabled={wizardStep === 0}
-              onClick={() => setWizardStep((currentStep) => Math.max(currentStep - 1, 0))}
+              onClick={() => {
+                setDraftFieldErrors({})
+                setWizardStep((currentStep) => Math.max(currentStep - 1, 0))
+              }}
               type="button"
             >
               Back
@@ -1573,9 +1703,7 @@ export function PoliciesPage() {
                 <button
                   className="primary-button"
                   disabled={!canAdvanceWizard}
-                  onClick={() =>
-                    setWizardStep((currentStep) => Math.min(currentStep + 1, policyWizardSteps.length - 1))
-                  }
+                  onClick={handleWizardNext}
                   type="button"
                 >
                   Next
@@ -1698,19 +1826,22 @@ export function PoliciesPage() {
                 </div>
               </label>
 
-              <label className="policy-field">
+              <label className={`policy-field${draftFieldErrors.name ? ' policy-field-invalid' : ''}`}>
                 <span>Policy name</span>
                 <input
+                  aria-invalid={Boolean(draftFieldErrors.name)}
                   onChange={(event) => updateDraft('name', event.target.value)}
                   placeholder="block-outdated-packages"
                   type="text"
                   value={draft.name}
                 />
+                {draftFieldErrors.name ? <p className="policy-field-error">{draftFieldErrors.name}</p> : null}
               </label>
 
-              <label className="policy-field">
+              <label className={`policy-field${draftFieldErrors.upstreamId ? ' policy-field-invalid' : ''}`}>
                 <span>Upstream scope</span>
                 <select
+                  aria-invalid={Boolean(draftFieldErrors.upstreamId)}
                   disabled={upstreamsQuery.isPending || compatibleUpstreams.length === 0}
                   onChange={(event) => updateDraft('upstreamId', event.target.value)}
                   value={draft.upstreamId}
@@ -1732,6 +1863,9 @@ export function PoliciesPage() {
                   Clients must use the matching upstream-specific firewall route or host.
                   {compatibleUpstreams.length > 0 ? ` ${compatibleUpstreams.length} compatible upstreams available.` : ''}
                 </small>
+                {draftFieldErrors.upstreamId ? (
+                  <p className="policy-field-error">{draftFieldErrors.upstreamId}</p>
+                ) : null}
               </label>
 
               <label className="policy-field">
@@ -1749,20 +1883,25 @@ export function PoliciesPage() {
                 </select>
               </label>
 
-              <label className="policy-field">
+              <label className={`policy-field${draftFieldErrors.priority ? ' policy-field-invalid' : ''}`}>
                 <span>Priority</span>
                 <input
+                  aria-invalid={Boolean(draftFieldErrors.priority)}
                   onChange={(event) => updateDraft('priority', event.target.value)}
                   placeholder={String(selectedDefinition.defaultPriority)}
                   step="1"
                   type="number"
                   value={draft.priority}
                 />
+                {draftFieldErrors.priority ? (
+                  <p className="policy-field-error">{draftFieldErrors.priority}</p>
+                ) : null}
               </label>
 
-              <label className="policy-field">
+              <label className={`policy-field${draftFieldErrors.schemaVersion ? ' policy-field-invalid' : ''}`}>
                 <span>Schema version</span>
                 <select
+                  aria-invalid={Boolean(draftFieldErrors.schemaVersion)}
                   onChange={(event) => updateDraft('schemaVersion', event.target.value)}
                   value={draft.schemaVersion}
                 >
@@ -1772,6 +1911,9 @@ export function PoliciesPage() {
                     </option>
                   ))}
                 </select>
+                {draftFieldErrors.schemaVersion ? (
+                  <p className="policy-field-error">{draftFieldErrors.schemaVersion}</p>
+                ) : null}
               </label>
 
               <label className="policy-field checkbox-field">
@@ -1820,9 +1962,10 @@ export function PoliciesPage() {
           {wizardStep === 2 && draft.type && selectedDescriptor && selectedDefinition ? (
             <div className="policy-form-stack">
               {selectedDefinition.numberField ? (
-                <label className="policy-field">
+                <label className={`policy-field${draftFieldErrors.numericValue ? ' policy-field-invalid' : ''}`}>
                   <span>{selectedDefinition.numberLabel}</span>
                   <input
+                    aria-invalid={Boolean(draftFieldErrors.numericValue)}
                     min={selectedDefinition.numberMin}
                     onChange={(event) => updateDraft('numericValue', event.target.value)}
                     placeholder={
@@ -1834,21 +1977,28 @@ export function PoliciesPage() {
                     type="number"
                     value={draft.numericValue}
                   />
+                  {draftFieldErrors.numericValue ? (
+                    <p className="policy-field-error">{draftFieldErrors.numericValue}</p>
+                  ) : null}
                 </label>
               ) : null}
 
               {selectedDefinition.listField ? (
-                <label className="policy-field">
+                <label className={`policy-field${draftFieldErrors.listValue ? ' policy-field-invalid' : ''}`}>
                   <span>{selectedDefinition.listLabel}</span>
-                    <textarea
-                      onChange={(event) => updateDraft('listValue', event.target.value)}
-                      placeholder={selectedDefinition.listPlaceholder}
-                      rows={4}
-                      value={draft.listValue}
-                    />
-                    <small>Enter one value per line or separate items with commas.</small>
-                  </label>
-                ) : null}
+                  <textarea
+                    aria-invalid={Boolean(draftFieldErrors.listValue)}
+                    onChange={(event) => updateDraft('listValue', event.target.value)}
+                    placeholder={selectedDefinition.listPlaceholder}
+                    rows={4}
+                    value={draft.listValue}
+                  />
+                  <small>Enter one value per line or separate items with commas.</small>
+                  {draftFieldErrors.listValue ? (
+                    <p className="policy-field-error">{draftFieldErrors.listValue}</p>
+                  ) : null}
+                </label>
+              ) : null}
 
               {selectedDefinition.supportsExcludePackages ? (
                 <label className="policy-field">
@@ -1861,6 +2011,44 @@ export function PoliciesPage() {
                   />
                   <small>Optional package exceptions for age-based rules.</small>
                 </label>
+              ) : null}
+
+              {supportsLicenseAllowlistMissingBehavior ? (
+                <div className="policy-form-grid">
+                  <label className="policy-field">
+                    <span>When no license is declared</span>
+                    <select
+                      onChange={(event) =>
+                        updateDraft(
+                          'unlicensedBehavior',
+                          event.target.value as PolicyDraftState['unlicensedBehavior'],
+                        )
+                      }
+                      value={draft.unlicensedBehavior}
+                    >
+                      <option value="deny">Deny artifact</option>
+                      <option value="skip">Skip this policy</option>
+                    </select>
+                    <small>Use deny to fail closed or skip to ignore artifacts that declare no license.</small>
+                  </label>
+
+                  <label className="policy-field">
+                    <span>When license metadata is unavailable</span>
+                    <select
+                      onChange={(event) =>
+                        updateDraft(
+                          'unavailableMetadataBehavior',
+                          event.target.value as PolicyDraftState['unavailableMetadataBehavior'],
+                        )
+                      }
+                      value={draft.unavailableMetadataBehavior}
+                    >
+                      <option value="deny">Deny artifact</option>
+                      <option value="skip">Skip this policy</option>
+                    </select>
+                    <small>Use skip if unavailable enrichment should not deny on its own.</small>
+                  </label>
+                </div>
               ) : null}
 
               <label className="policy-field checkbox-field">

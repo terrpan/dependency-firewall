@@ -168,7 +168,69 @@ func TestLicenseAllowlist(t *testing.T) {
 			},
 			config:     &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT"}},
 			wantMatch:  true,
-			wantReason: "license metadata is unavailable for legacy-package@1.0.0",
+			wantReason: "legacy-package@1.0.0 does not declare a license",
+		},
+		{
+			name: "schema v2 can skip unavailable metadata",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "unknown-license-package",
+					Version:   "1.0.0",
+				},
+				Metadata: nil,
+			},
+			config: &domain.LicenseAllowlistPolicyConfigV2{
+				Licenses:                    []string{"MIT"},
+				UnavailableMetadataBehavior: domain.LicenseAllowlistMissingBehaviorSkip,
+			},
+			wantMatch: false,
+		},
+		{
+			name: "schema v2 can skip unlicensed artifacts",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "legacy-package",
+					Version:   "1.0.0",
+				},
+				Metadata: &domain.ArtifactMetadata{},
+			},
+			config: &domain.LicenseAllowlistPolicyConfigV2{
+				Licenses:           []string{"MIT"},
+				UnlicensedBehavior: domain.LicenseAllowlistMissingBehaviorSkip,
+			},
+			wantMatch: false,
+		},
+		{
+			name: "schema v2 can deny unlicensed artifacts explicitly",
+			req: domain.AccessRequest{
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "legacy-package",
+					Version:   "1.0.0",
+				},
+				Metadata: &domain.ArtifactMetadata{},
+			},
+			config: &domain.LicenseAllowlistPolicyConfigV2{
+				Licenses:           []string{"MIT"},
+				UnlicensedBehavior: domain.LicenseAllowlistMissingBehaviorDeny,
+			},
+			wantMatch:  true,
+			wantReason: "does not declare a license",
+		},
+		{
+			name: "schema v2 rejects invalid missing-license behavior",
+			req: domain.AccessRequest{
+				Metadata: &domain.ArtifactMetadata{
+					Licenses: []string{"MIT"},
+				},
+			},
+			config: &domain.LicenseAllowlistPolicyConfigV2{
+				Licenses:           []string{"MIT"},
+				UnlicensedBehavior: "block",
+			},
+			wantErr: true,
 		},
 		{
 			name:    "allow action config type mismatch returns error",
