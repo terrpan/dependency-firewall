@@ -3,22 +3,22 @@ package valkey
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	valkeygo "github.com/valkey-io/valkey-go"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 // DecisionCache implements port.DecisionCache using Valkey.
 type DecisionCache struct {
-	client *redis.Client
+	client valkeygo.Client
 }
 
 // NewDecisionCache creates a new DecisionCache.
-func NewDecisionCache(client *redis.Client) *DecisionCache {
+func NewDecisionCache(client valkeygo.Client) *DecisionCache {
 	return &DecisionCache{client: client}
 }
 
@@ -37,9 +37,9 @@ func (c *DecisionCache) Get(ctx context.Context, tenantID string, artifact domai
 		return nil, err
 	}
 
-	data, err := c.client.Get(ctx, decisionKey(tenantID, generation, artifact)).Bytes()
+	data, err := c.client.Do(ctx, c.client.B().Get().Key(decisionKey(tenantID, generation, artifact)).Build()).AsBytes()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
+		if valkeygo.IsValkeyNil(err) {
 			return nil, domain.ErrCacheMiss
 		}
 		return nil, fmt.Errorf("getting cached decision: %w", err)
@@ -65,7 +65,14 @@ func (c *DecisionCache) Set(ctx context.Context, decision *domain.Decision, ttl 
 	}
 
 	key := decisionKey(decision.TenantID, generation, decision.Artifact)
-	if err := c.client.Set(ctx, key, data, ttl).Err(); err != nil {
+	cmd := c.client.B().Set().Key(key).Value(valkeygo.BinaryString(data))
+	if ttl > 0 {
+		if err := c.client.Do(ctx, cmd.Px(ttl).Build()).Error(); err != nil {
+			return fmt.Errorf("setting cached decision: %w", err)
+		}
+		return nil
+	}
+	if err := c.client.Do(ctx, cmd.Build()).Error(); err != nil {
 		return fmt.Errorf("setting cached decision: %w", err)
 	}
 	return nil
@@ -78,7 +85,7 @@ func (c *DecisionCache) Invalidate(ctx context.Context, tenantID string, artifac
 		return err
 	}
 
-	if err := c.client.Del(ctx, decisionKey(tenantID, generation, artifact)).Err(); err != nil {
+	if err := c.client.Do(ctx, c.client.B().Del().Key(decisionKey(tenantID, generation, artifact)).Build()).Error(); err != nil {
 		return fmt.Errorf("invalidating cached decision: %w", err)
 	}
 	return nil
@@ -87,18 +94,22 @@ func (c *DecisionCache) Invalidate(ctx context.Context, tenantID string, artifac
 // InvalidateTenant invalidates all cached decisions for a tenant by bumping the
 // tenant cache generation.
 func (c *DecisionCache) InvalidateTenant(ctx context.Context, tenantID string) error {
-	if err := c.client.Incr(ctx, decisionGenerationKey(tenantID)).Err(); err != nil {
+	if err := c.client.Do(ctx, c.client.B().Incr().Key(decisionGenerationKey(tenantID)).Build()).Error(); err != nil {
 		return fmt.Errorf("invalidating tenant decision cache: %w", err)
 	}
 	return nil
 }
 
 func (c *DecisionCache) currentGeneration(ctx context.Context, tenantID string) (int64, error) {
-	generation, err := c.client.Get(ctx, decisionGenerationKey(tenantID)).Int64()
+	value, err := c.client.Do(ctx, c.client.B().Get().Key(decisionGenerationKey(tenantID)).Build()).ToString()
 	if err == nil {
+		generation, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("parsing decision cache generation: %w", parseErr)
+		}
 		return generation, nil
 	}
-	if errors.Is(err, redis.Nil) {
+	if valkeygo.IsValkeyNil(err) {
 		return 0, nil
 	}
 	return 0, fmt.Errorf("getting decision cache generation: %w", err)

@@ -5,28 +5,28 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/redis/go-redis/extra/redisotel/v9"
-	"github.com/redis/go-redis/v9"
+	valkeygo "github.com/valkey-io/valkey-go"
+	"github.com/valkey-io/valkey-go/valkeyotel"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 )
 
 // Connect creates a new Valkey client from the given configuration.
-func Connect(_ context.Context, cfg config.ValkeyConfig) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
+func Connect(_ context.Context, cfg config.ValkeyConfig) (valkeygo.Client, error) {
+	client, err := valkeyotel.NewClient(valkeygo.ClientOption{
+		InitAddress: []string{cfg.Addr},
+		Password:    cfg.Password,
+		SelectDB:    cfg.DB,
 	})
-	if err := redisotel.InstrumentTracing(client); err != nil {
-		return nil, fmt.Errorf("instrumenting valkey tracing: %w", err)
+	if err != nil {
+		return nil, fmt.Errorf("creating valkey client: %w", err)
 	}
 	return client, nil
 }
 
 // HealthCheck verifies the Valkey connection is alive.
-func HealthCheck(ctx context.Context, client *redis.Client) error {
-	if err := client.Ping(ctx).Err(); err != nil {
+func HealthCheck(ctx context.Context, client valkeygo.Client) error {
+	if err := client.Do(ctx, client.B().Ping().Build()).Error(); err != nil {
 		return fmt.Errorf("valkey health check: %w", err)
 	}
 	return nil

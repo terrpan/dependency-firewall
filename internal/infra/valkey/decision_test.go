@@ -6,18 +6,22 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	valkeygo "github.com/valkey-io/valkey-go"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func TestDecisionCache_InvalidateTenant(t *testing.T) {
 	mini := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	client, err := valkeygo.NewClient(valkeygo.ClientOption{
+		InitAddress:  []string{mini.Addr()},
+		DisableCache: true,
+	})
+	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = client.Close()
+		client.Close()
 	})
 
 	cache := NewDecisionCache(client)
@@ -55,9 +59,13 @@ func TestDecisionCache_InvalidateTenant(t *testing.T) {
 
 func TestMetadataCache_InvalidateTenant(t *testing.T) {
 	mini := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	client, err := valkeygo.NewClient(valkeygo.ClientOption{
+		InitAddress:  []string{mini.Addr()},
+		DisableCache: true,
+	})
+	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = client.Close()
+		client.Close()
 	})
 
 	cache := NewMetadataCache(client)

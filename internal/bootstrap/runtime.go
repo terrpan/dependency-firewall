@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
+	valkeygo "github.com/valkey-io/valkey-go"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -44,7 +44,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
 	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
 	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
-	"github.com/danielterry/dependency-firewall/internal/infra/valkey"
+	valkeyinfra "github.com/danielterry/dependency-firewall/internal/infra/valkey"
 	"github.com/danielterry/dependency-firewall/migrations"
 )
 
@@ -73,7 +73,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, info Buil
 
 type dependencies struct {
 	pool         *pgxpool.Pool
-	valkeyClient *redis.Client
+	valkeyClient valkeygo.Client
 
 	tenantRepo         port.TenantRepository
 	policyRepo         port.PolicyRepository
@@ -455,7 +455,7 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 			return nil, fmt.Errorf("connecting to database: %w", err)
 		}
 	}
-	valkeyClient, err := valkey.Connect(ctx, cfg.Valkey)
+	valkeyClient, err := valkeyinfra.Connect(ctx, cfg.Valkey)
 	if err != nil {
 		if pool != nil {
 			pool.Close()
@@ -466,8 +466,8 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 	deps := &dependencies{
 		pool:          pool,
 		valkeyClient:  valkeyClient,
-		decisionCache: valkey.NewDecisionCache(valkeyClient),
-		metadataCache: valkey.NewMetadataCache(valkeyClient),
+		decisionCache: valkeyinfra.NewDecisionCache(valkeyClient),
+		metadataCache: valkeyinfra.NewMetadataCache(valkeyClient),
 	}
 	if pool != nil {
 		deps.tenantRepo = postgres.NewTenantRepository(pool)
@@ -519,7 +519,7 @@ func (d *dependencies) close() {
 		return
 	}
 	if d.valkeyClient != nil {
-		_ = d.valkeyClient.Close()
+		d.valkeyClient.Close()
 	}
 	if d.pool != nil {
 		d.pool.Close()
@@ -558,9 +558,11 @@ type dbHealthChecker struct{ pool *pgxpool.Pool }
 
 func (c *dbHealthChecker) Ping(ctx context.Context) error { return c.pool.Ping(ctx) }
 
-type cacheHealthChecker struct{ client *redis.Client }
+type cacheHealthChecker struct{ client valkeygo.Client }
 
-func (c *cacheHealthChecker) Ping(ctx context.Context) error { return c.client.Ping(ctx).Err() }
+func (c *cacheHealthChecker) Ping(ctx context.Context) error {
+	return c.client.Do(ctx, c.client.B().Ping().Build()).Error()
+}
 
 type proxyHealthChecker struct {
 	url    string

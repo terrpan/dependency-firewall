@@ -127,6 +127,10 @@ All config keys can be overridden with `FIREWALL_*` environment variables.
 | `telemetry.stdout` | `false` | Emit spans to stdout for troubleshooting; can be used with OTLP or on its own |
 | `audit.failure_mode` | `fail_closed` | Audit sink failure behavior |
 
+The Valkey configuration surface is unchanged by the client migration: keep using `valkey.addr`, `valkey.password`, and `valkey.db` to point the runtime at your Valkey endpoint. Under the hood, the Go runtime now uses `github.com/valkey-io/valkey-go`.
+
+If tracing is enabled, Valkey client spans now report `db.system=valkey`.
+
 See [`config.yaml.example`](./config.yaml.example) for a full sample.
 
 In split mode, set `health.proxy_url` if you want the control-plane `/healthz` response to include the proxy's live `/healthz` status instead of the static `separate` marker. The default Compose setup wires this automatically.

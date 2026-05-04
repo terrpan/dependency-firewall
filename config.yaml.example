@@ -33,6 +33,7 @@ database:
   conn_max_lifetime: 5m
 
 valkey:
+  # Used by the valkey-go client; the endpoint/password/db config stays the same.
   addr: "localhost:6379"
   password: ""
   db: 0
@@ -46,6 +47,7 @@ telemetry:
   # Local collector defaults:
   # - OTLP/gRPC: http://localhost:4317
   # - OTLP/HTTP: http://localhost:4318
+  # Valkey client spans emitted by valkey-go report db.system=valkey.
   endpoint: "http://localhost:4317"
   protocol: grpc
   insecure: true

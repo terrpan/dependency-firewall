@@ -70,6 +70,8 @@ Valkey is used for:
 - decision cache
 - metadata cache
 - proxy-local caching in split mode
+- runtime access through `github.com/valkey-io/valkey-go` while keeping the operator-facing config under `valkey.addr`, `valkey.password`, and `valkey.db`
+- OpenTelemetry client spans reporting `db.system=valkey`
 
 ### Cache rules
 - keys must include tenant and normalized artifact identity

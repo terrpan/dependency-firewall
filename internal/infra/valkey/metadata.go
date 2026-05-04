@@ -3,22 +3,22 @@ package valkey
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	valkeygo "github.com/valkey-io/valkey-go"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 // MetadataCache implements port.MetadataCache using Valkey.
 type MetadataCache struct {
-	client *redis.Client
+	client valkeygo.Client
 }
 
 // NewMetadataCache creates a new MetadataCache.
-func NewMetadataCache(client *redis.Client) *MetadataCache {
+func NewMetadataCache(client valkeygo.Client) *MetadataCache {
 	return &MetadataCache{client: client}
 }
 
@@ -37,9 +37,9 @@ func (c *MetadataCache) Get(ctx context.Context, tenantID string, artifact domai
 		return nil, err
 	}
 
-	data, err := c.client.Get(ctx, metadataKey(tenantID, generation, artifact)).Bytes()
+	data, err := c.client.Do(ctx, c.client.B().Get().Key(metadataKey(tenantID, generation, artifact)).Build()).AsBytes()
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
+		if valkeygo.IsValkeyNil(err) {
 			return nil, domain.ErrCacheMiss
 		}
 		return nil, fmt.Errorf("getting cached metadata: %w", err)
@@ -65,7 +65,14 @@ func (c *MetadataCache) Set(ctx context.Context, tenantID string, artifact domai
 	}
 
 	key := metadataKey(tenantID, generation, artifact)
-	if err := c.client.Set(ctx, key, data, ttl).Err(); err != nil {
+	cmd := c.client.B().Set().Key(key).Value(valkeygo.BinaryString(data))
+	if ttl > 0 {
+		if err := c.client.Do(ctx, cmd.Px(ttl).Build()).Error(); err != nil {
+			return fmt.Errorf("setting cached metadata: %w", err)
+		}
+		return nil
+	}
+	if err := c.client.Do(ctx, cmd.Build()).Error(); err != nil {
 		return fmt.Errorf("setting cached metadata: %w", err)
 	}
 	return nil
@@ -74,18 +81,22 @@ func (c *MetadataCache) Set(ctx context.Context, tenantID string, artifact domai
 // InvalidateTenant invalidates all cached metadata for a tenant by bumping the
 // tenant cache generation.
 func (c *MetadataCache) InvalidateTenant(ctx context.Context, tenantID string) error {
-	if err := c.client.Incr(ctx, metadataGenerationKey(tenantID)).Err(); err != nil {
+	if err := c.client.Do(ctx, c.client.B().Incr().Key(metadataGenerationKey(tenantID)).Build()).Error(); err != nil {
 		return fmt.Errorf("invalidating tenant metadata cache: %w", err)
 	}
 	return nil
 }
 
 func (c *MetadataCache) currentGeneration(ctx context.Context, tenantID string) (int64, error) {
-	generation, err := c.client.Get(ctx, metadataGenerationKey(tenantID)).Int64()
+	value, err := c.client.Do(ctx, c.client.B().Get().Key(metadataGenerationKey(tenantID)).Build()).ToString()
 	if err == nil {
+		generation, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil {
+			return 0, fmt.Errorf("parsing metadata cache generation: %w", parseErr)
+		}
 		return generation, nil
 	}
-	if errors.Is(err, redis.Nil) {
+	if valkeygo.IsValkeyNil(err) {
 		return 0, nil
 	}
 	return 0, fmt.Errorf("getting metadata cache generation: %w", err)
