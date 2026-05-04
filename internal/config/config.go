@@ -22,15 +22,16 @@ func defaultOCICacheRootDir() string {
 
 // Config holds all application configuration sections.
 type Config struct {
-	Runtime  RuntimeConfig  `mapstructure:"runtime" validate:"required"`
-	Server   ServerConfig   `mapstructure:"server" validate:"required"`
-	OCICache OCICacheConfig `mapstructure:"oci_cache"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Valkey   ValkeyConfig   `mapstructure:"valkey" validate:"required"`
-	Log      LogConfig      `mapstructure:"log" validate:"required"`
-	Audit    AuditConfig    `mapstructure:"audit" validate:"required"`
-	Health   HealthConfig   `mapstructure:"health"`
-	Bundle   BundleConfig   `mapstructure:"bundle" validate:"required"`
+	Runtime   RuntimeConfig   `mapstructure:"runtime" validate:"required"`
+	Server    ServerConfig    `mapstructure:"server" validate:"required"`
+	OCICache  OCICacheConfig  `mapstructure:"oci_cache"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Valkey    ValkeyConfig    `mapstructure:"valkey" validate:"required"`
+	Log       LogConfig       `mapstructure:"log" validate:"required"`
+	Telemetry TelemetryConfig `mapstructure:"telemetry"`
+	Audit     AuditConfig     `mapstructure:"audit" validate:"required"`
+	Health    HealthConfig    `mapstructure:"health"`
+	Bundle    BundleConfig    `mapstructure:"bundle" validate:"required"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
@@ -102,6 +103,24 @@ type LogConfig struct {
 	Format string `mapstructure:"format" validate:"oneof=json text"`
 }
 
+// TelemetryConfig holds OpenTelemetry tracing settings.
+type TelemetryConfig struct {
+	Enabled     bool              `mapstructure:"enabled"`
+	Endpoint    string            `mapstructure:"endpoint"`
+	Protocol    string            `mapstructure:"protocol" validate:"omitempty,oneof=grpc http/protobuf"`
+	Insecure    bool              `mapstructure:"insecure"`
+	SampleRatio float64           `mapstructure:"sample_ratio" validate:"gte=0,lte=1"`
+	Stdout      bool              `mapstructure:"stdout"`
+	Headers     map[string]string `mapstructure:"headers"`
+	SQLTracing  SQLTracingConfig  `mapstructure:"sql_tracing"`
+}
+
+// SQLTracingConfig holds settings for SQL query tracing.
+type SQLTracingConfig struct {
+	TrimSQLInSpanName               bool `mapstructure:"trim_sql_in_span_name"`
+	DisableSQLStatementInAttributes bool `mapstructure:"disable_sql_statement_in_attributes"`
+}
+
 // AuditConfig holds audit-specific capture and durability settings.
 type AuditConfig struct {
 	Enabled     bool   `mapstructure:"enabled"`
@@ -168,6 +187,15 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
+	v.SetDefault("telemetry.enabled", false)
+	v.SetDefault("telemetry.endpoint", "http://localhost:4317")
+	v.SetDefault("telemetry.protocol", "grpc")
+	v.SetDefault("telemetry.insecure", true)
+	v.SetDefault("telemetry.sample_ratio", 1.0)
+	v.SetDefault("telemetry.stdout", false)
+	v.SetDefault("telemetry.headers", map[string]string{})
+	v.SetDefault("telemetry.sql_tracing.trim_sql_in_span_name", true)
+	v.SetDefault("telemetry.sql_tracing.disable_sql_statement_in_attributes", true)
 	v.SetDefault("audit.enabled", true)
 	v.SetDefault("audit.slog", true)
 	v.SetDefault("audit.postgres", true)
@@ -243,6 +271,18 @@ func (c *Config) Validate() error {
 		parsed, err := url.Parse(proxyURL)
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 			return fmt.Errorf("invalid config: field %q must be a valid absolute URL", "health.proxy_url")
+		}
+	}
+	if c.Telemetry.Enabled {
+		endpoint := strings.TrimSpace(c.Telemetry.Endpoint)
+		if endpoint == "" && !c.Telemetry.Stdout {
+			return fmt.Errorf("invalid config: either %q must be set or %q must be true when telemetry is enabled", "telemetry.endpoint", "telemetry.stdout")
+		}
+		if endpoint != "" {
+			parsed, err := url.Parse(endpoint)
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+				return fmt.Errorf("invalid config: field %q must be a valid absolute URL without query or fragment", "telemetry.endpoint")
+			}
 		}
 	}
 	switch c.Runtime.Mode {

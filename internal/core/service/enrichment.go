@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -60,8 +61,25 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	tenantID, correlationID string,
 	artifact domain.ArtifactIdentity,
 ) (*domain.ArtifactMetadata, error) {
-	cached, err := s.metadataCache.Get(ctx, tenantID, artifact)
+	ctx, span := tracer.Start(ctx, "enrichment.fetch_metadata")
+	span.SetAttributes(
+		attribute.String("tenant.id", tenantID),
+		attribute.String("artifact.ecosystem", string(artifact.Ecosystem)),
+		attribute.String("artifact.reference_type", artifactReferenceType(artifact)),
+	)
+	if correlationID != "" {
+		span.SetAttributes(attribute.String("request.id", correlationID))
+	}
+	defer span.End()
+
+	cacheCtx, cacheSpan := tracer.Start(ctx, "enrichment.metadata_cache_lookup")
+	cached, err := s.metadataCache.Get(cacheCtx, tenantID, artifact)
+	if err != nil {
+		recordSpanError(cacheSpan, err)
+	}
 	if err == nil && cached != nil {
+		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
+		cacheSpan.End()
 		if auditErr := s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      tenantID,
 			CorrelationID: correlationID,
@@ -78,6 +96,8 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 		)
 		return cached, nil
 	}
+	cacheSpan.SetAttributes(attribute.Bool("cache.hit", false))
+	cacheSpan.End()
 	if auditErr := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      tenantID,
 		CorrelationID: correlationID,
@@ -89,8 +109,14 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 		return nil, auditErr
 	}
 
-	metadata, err := s.enricher.Enrich(ctx, artifact)
+	enrichCtx, enrichSpan := tracer.Start(ctx, "enrichment.query_sources")
+	metadata, err := s.enricher.Enrich(enrichCtx, artifact)
 	if err != nil {
+		recordSpanError(enrichSpan, err)
+	}
+	if err != nil {
+		enrichSpan.AddEvent("enrichment.failed_open")
+		enrichSpan.End()
 		if auditErr := s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      tenantID,
 			CorrelationID: correlationID,
@@ -111,16 +137,22 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 		)
 		return nil, nil
 	}
+	enrichSpan.SetAttributes(attribute.Bool("metadata.available", metadata != nil))
+	enrichSpan.End()
 
 	ttl := s.cacheTTL(artifact)
 	if metadata != nil {
-		if cacheErr := s.metadataCache.Set(ctx, tenantID, artifact, metadata, ttl); cacheErr != nil {
+		writeCtx, writeSpan := tracer.Start(ctx, "enrichment.metadata_cache_store")
+		if cacheErr := s.metadataCache.Set(writeCtx, tenantID, artifact, metadata, ttl); cacheErr != nil {
+			recordSpanError(writeSpan, cacheErr)
 			s.logger.WarnContext(ctx, "failed to cache metadata",
 				slog.String("tenant_id", tenantID),
 				slog.String("name", artifact.Name),
 				slog.String("error", cacheErr.Error()),
 			)
 		}
+		writeSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
+		writeSpan.End()
 	}
 
 	return metadata, nil

@@ -1,6 +1,8 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useLocation, useNavigationType } from 'react-router-dom'
 import { useTenant } from '../features/tenant/useTenant.ts'
 import { docsUrl } from '../lib/config.ts'
+import { recordSpanError, startSpan } from '../lib/telemetry.ts'
 
 type NavigationItem = {
   to: string
@@ -81,6 +83,7 @@ function TenantShellState() {
 
 export function AppShell() {
   const location = useLocation()
+  const navigationType = useNavigationType()
   const { activeTenant, hasTenants, isError, isLoading, setTenantId, status, tenantId, tenants } =
     useTenant()
   const currentSection = getCurrentSection(location.pathname)
@@ -120,6 +123,29 @@ export function AppShell() {
         : status === 'empty'
           ? 'No tenant has been created yet.'
           : 'Choose a tenant to continue.'
+
+  useEffect(() => {
+    const span = startSpan('ui.navigation', {
+      'navigation.type': navigationType,
+      'route.path': location.pathname,
+      'route.search': location.search,
+      'tenant.id': tenantId ?? 'none',
+    })
+
+    const frameId = window.requestAnimationFrame(() => {
+      try {
+        span.setAttribute('document.title', document.title)
+      } catch (error) {
+        recordSpanError(span, error, 'navigation tracing failed')
+      } finally {
+        span.end()
+      }
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [location.pathname, location.search, navigationType, tenantId])
 
   return (
     <div className="app-shell">

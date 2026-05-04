@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 	"github.com/danielterry/dependency-firewall/internal/delivery/ingestgrpc"
+	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
 )
 
 type grpcDecisionRepository struct {
@@ -59,7 +59,7 @@ func TestGRPCClient_DecisionRepositoryAndAuditRecorder(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	decisionRepo := &grpcDecisionRepository{}
 	auditRecorder := &grpcAuditRecorder{}
-	grpcServer := grpc.NewServer(grpc.ForceServerCodec(jsonCodec{}))
+	grpcServer := grpc.NewServer(controlplanegrpc.ServerOptions()...)
 	ingestgrpc.NewServer(service.NewProxyIngestService(decisionRepo, auditRecorder)).Register(grpcServer)
 	defer grpcServer.Stop()
 
@@ -67,14 +67,13 @@ func TestGRPCClient_DecisionRepositoryAndAuditRecorder(t *testing.T) {
 		_ = grpcServer.Serve(listener)
 	}()
 
-	conn, err := grpc.DialContext(
-		context.Background(),
-		"bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return listener.Dial()
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.ForceCodec(jsonCodec{})),
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		append([]grpc.DialOption{
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return listener.Dial()
+			}),
+		}, controlplanegrpc.DialOptions()...)...,
 	)
 	require.NoError(t, err)
 	defer conn.Close()
@@ -134,7 +133,7 @@ func TestGRPCClient_MapsArtifactNotFound(t *testing.T) {
 	t.Parallel()
 
 	listener := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer(grpc.ForceServerCodec(jsonCodec{}))
+	grpcServer := grpc.NewServer(controlplanegrpc.ServerOptions()...)
 	ingestgrpc.NewServer(service.NewProxyIngestService(&grpcDecisionRepository{}, &grpcAuditRecorder{})).Register(grpcServer)
 	defer grpcServer.Stop()
 
@@ -142,14 +141,13 @@ func TestGRPCClient_MapsArtifactNotFound(t *testing.T) {
 		_ = grpcServer.Serve(listener)
 	}()
 
-	conn, err := grpc.DialContext(
-		context.Background(),
-		"bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return listener.Dial()
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.ForceCodec(jsonCodec{})),
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		append([]grpc.DialOption{
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return listener.Dial()
+			}),
+		}, controlplanegrpc.DialOptions()...)...,
 	)
 	require.NoError(t, err)
 	defer conn.Close()

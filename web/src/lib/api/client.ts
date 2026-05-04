@@ -1,5 +1,6 @@
 import { controlPlaneBaseUrl, controlPlaneRootUrl, joinUrlPath } from '../config.ts'
 import { ApiError, getErrorMessage } from './error.ts'
+import { injectTraceContext, recordSpanError, startSpan } from '../telemetry.ts'
 import type {
   CacheClearResult,
   CreatePolicyRequest,
@@ -108,6 +109,23 @@ function buildRequestUrl(baseUrl: string, path: string, query?: Record<string, Q
   return url.toString()
 }
 
+function normalizeTracePath(path: string): string {
+  const segments = path.split('/').filter(Boolean)
+
+  return `/${segments
+    .map((segment, index) => {
+      const previous = segments[index - 1]
+      if (previous === 'tenants' || previous === 'upstreams' || previous === 'policies') {
+        return ':id'
+      }
+      if (/^[0-9a-f]{8,}$/i.test(segment) || /^[0-9a-f]{8,}-[0-9a-f-]+$/i.test(segment)) {
+        return ':id'
+      }
+      return segment
+    })
+    .join('/')}`
+}
+
 async function readResponseBody(response: Response): Promise<unknown> {
   const contentType = response.headers.get('content-type') ?? ''
 
@@ -144,15 +162,25 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
     const requestBaseUrl = scope === 'root' ? rootUrl : baseUrl
     const url = buildRequestUrl(requestBaseUrl, path, query)
     const requestHeaders = mergeHeaders(options.getSessionHeaders?.(), options.getHeaders?.(), headers)
+    const resolvedTenantId = tenantId ?? options.getTenantId?.()
+    const normalizedPath = normalizeTracePath(path)
+    const span = startSpan(`${method} ${normalizedPath}`, {
+      'http.method': method,
+      'http.route': normalizedPath,
+      'request.scope': scope,
+      'request.tenant_scoped': tenantScoped,
+      ...(resolvedTenantId ? { 'tenant.id': resolvedTenantId } : {}),
+      ...(method === 'GET' ? {} : { 'ui.action.type': 'mutation' }),
+    })
 
     if (accept) {
       requestHeaders.set('Accept', accept)
     }
 
-    const resolvedTenantId = tenantId ?? options.getTenantId?.()
     if (tenantScoped && resolvedTenantId) {
       requestHeaders.set('X-Tenant-ID', resolvedTenantId)
     }
+    injectTraceContext(requestHeaders, span)
 
     let requestBody: BodyInit | undefined
     if (body !== undefined) {
@@ -177,9 +205,13 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
       })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        span.setStatus({ code: 1 })
+        span.end()
         throw error
       }
 
+      recordSpanError(span, error, 'Request failed')
+      span.end()
       throw new ApiError({
         message: error instanceof Error ? error.message : 'Request failed',
         status: 0,
@@ -188,9 +220,12 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
         cause: error,
       })
     }
+    span.setAttribute('http.status_code', response.status)
 
     if (!response.ok) {
       const responseBody = await readResponseBody(response)
+      recordSpanError(span, responseBody instanceof Error ? responseBody : undefined, `Request failed with status ${response.status}`)
+      span.end()
       throw new ApiError({
         message: getErrorMessage(responseBody, `Request failed with status ${response.status}`),
         status: response.status,
@@ -201,10 +236,12 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
     }
 
     if (response.status === 204) {
+      span.end()
       return undefined as TResponse
     }
 
     const responseBody = await readResponseBody(response)
+    span.end()
     return responseBody as TResponse
   }
 

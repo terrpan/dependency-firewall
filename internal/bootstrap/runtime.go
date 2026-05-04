@@ -42,6 +42,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/infra/ocicache"
 	"github.com/danielterry/dependency-firewall/internal/infra/osv"
 	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
+	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
 	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
 	"github.com/danielterry/dependency-firewall/internal/infra/valkey"
 	"github.com/danielterry/dependency-firewall/migrations"
@@ -93,6 +94,12 @@ type dependencies struct {
 
 // RunControlPlane starts the control-plane HTTP API and bundle gRPC service.
 func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logger, info BuildInfo) error {
+	telemetryProvider, logger, err := startTelemetry(ctx, cfg, logger, info)
+	if err != nil {
+		return err
+	}
+	defer shutdownTelemetry(telemetryProvider)
+
 	deps, err := openDependencies(ctx, cfg, logger, true, true)
 	if err != nil {
 		return err
@@ -100,11 +107,15 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 	defer deps.close()
 
 	controlPlaneMux := http.NewServeMux()
-	registerControlPlaneRoutes(controlPlaneMux, deps, cfg, logger, info)
+	if err := registerControlPlaneRoutes(controlPlaneMux, deps, cfg, logger, info); err != nil {
+		return err
+	}
 
 	httpServer := newHTTPServer(cfg, controlPlaneMux)
 
-	grpcServer := grpc.NewServer(grpc.ForceServerCodec(jsonCodec{}))
+	grpcServer := grpc.NewServer(append([]grpc.ServerOption{
+		grpc.ForceServerCodec(jsonCodec{}),
+	}, telemetry.ServerOptions()...)...)
 	bundlegrpc.NewServer(service.NewBundleService(deps.tenantRepo, deps.policyRepo, deps.upstreamRepo)).Register(grpcServer)
 	ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo)).Register(grpcServer)
 
@@ -155,6 +166,12 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 
 // RunProxy starts the proxy HTTP service with a remote bundle client.
 func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info BuildInfo) error {
+	telemetryProvider, logger, err := startTelemetry(ctx, cfg, logger, info)
+	if err != nil {
+		return err
+	}
+	defer shutdownTelemetry(telemetryProvider)
+
 	deps, err := openDependencies(ctx, cfg, logger, false, false)
 	if err != nil {
 		return err
@@ -197,6 +214,12 @@ func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info
 
 // RunAllInOne starts the combined local runtime with control-plane HTTP and proxy HTTP.
 func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, info BuildInfo) error {
+	telemetryProvider, logger, err := startTelemetry(ctx, cfg, logger, info)
+	if err != nil {
+		return err
+	}
+	defer shutdownTelemetry(telemetryProvider)
+
 	deps, err := openDependencies(ctx, cfg, logger, true, true)
 	if err != nil {
 		return err
@@ -229,12 +252,14 @@ func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, i
 	proxyDeps.enrichmentService = service.NewEnrichmentService(proxyDeps.enricher, proxyDeps.metadataCache, logger, proxyDeps.auditService)
 
 	mux := http.NewServeMux()
-	registerControlPlaneRoutes(mux, deps, cfg, logger, BuildInfo{
+	if err := registerControlPlaneRoutes(mux, deps, cfg, logger, BuildInfo{
 		ServiceName: info.ServiceName,
 		Version:     info.Version,
 		Commit:      info.Commit,
 		BuildTime:   info.BuildTime,
-	})
+	}); err != nil {
+		return err
+	}
 	registerProxyRoutes(mux, &proxyDeps, logger, info, localBundles, false)
 
 	httpServer := newHTTPServer(cfg, mux)
@@ -287,7 +312,7 @@ func registerControlPlaneRoutes(
 	cfg *config.Config,
 	logger *slog.Logger,
 	info BuildInfo,
-) {
+) error {
 	controlPlaneAPI := apidelivery.NewControlPlaneAPI(mux, info.Version)
 
 	healthOptions := []service.HealthOption{}
@@ -295,7 +320,7 @@ func registerControlPlaneRoutes(
 		if proxyURL := strings.TrimSpace(cfg.Health.ProxyURL); proxyURL != "" {
 			healthOptions = append(healthOptions, service.WithProxyStatusChecker(&proxyHealthChecker{
 				url:    proxyURL,
-				client: &http.Client{Timeout: 3 * time.Second},
+				client: telemetry.WrapHTTPClient(&http.Client{Timeout: 3 * time.Second}),
 			}))
 		} else {
 			healthOptions = append(healthOptions, service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"))
@@ -328,6 +353,8 @@ func registerControlPlaneRoutes(
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewEvaluationHandler(evaluationService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewAuditHandler(auditListService, logger).RegisterHumaRoutes(controlPlaneAPI)
+
+	return nil
 }
 
 func registerProxyRoutes(
@@ -423,7 +450,7 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		pool *pgxpool.Pool
 	)
 	if openDatabase {
-		pool, err = postgres.Connect(ctx, cfg.Database)
+		pool, err = postgres.Connect(ctx, cfg.Database, cfg.Telemetry.SQLTracing)
 		if err != nil {
 			return nil, fmt.Errorf("connecting to database: %w", err)
 		}
@@ -467,12 +494,12 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		parseAuditDetailLevel(cfg.Audit.DetailLevel),
 	)
 
-	osvEnricher := osv.NewClient(&http.Client{}, logger)
-	npmEnricher := npm.NewMetadataEnricher(&http.Client{}, logger)
+	osvEnricher := osv.NewClient(telemetry.WrapHTTPClient(&http.Client{}), logger)
+	npmEnricher := npm.NewMetadataEnricher(telemetry.WrapHTTPClient(&http.Client{}), logger)
 	deps.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
 	deps.enrichmentService = service.NewEnrichmentService(deps.enricher, deps.metadataCache, logger, deps.auditService)
 
-	baseOCIClient := upstream.NewOCIClient(newOCIHTTPClient())
+	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOCIHTTPClient()))
 	deps.ociClient = baseOCIClient
 	if cfg.OCICache.Enabled {
 		artifactCache, err := newOCIArtifactCache(cfg.OCICache)
@@ -482,7 +509,7 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		}
 		deps.ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
 	}
-	deps.npmClient = upstream.NewNPMClient(&http.Client{Timeout: 30 * time.Second})
+	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(&http.Client{Timeout: 30 * time.Second}))
 
 	return deps, nil
 }
@@ -676,7 +703,7 @@ func serve(ctx context.Context, logger *slog.Logger, servers ...server) error {
 func newHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      handler,
+		Handler:      telemetry.WrapHTTPHandler(handler),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
@@ -743,4 +770,38 @@ func (jsonCodec) Unmarshal(data []byte, v any) error {
 
 func (jsonCodec) Name() string {
 	return "json"
+}
+
+func startTelemetry(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	info BuildInfo,
+) (*telemetry.Provider, *slog.Logger, error) {
+	provider, err := telemetry.Start(
+		ctx,
+		cfg.Telemetry,
+		info.ServiceName,
+		info.Version,
+		info.Commit,
+		info.BuildTime,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("starting telemetry: %w", err)
+	}
+
+	wrappedLogger := telemetry.WrapLogger(logger)
+	slog.SetDefault(wrappedLogger)
+
+	return provider, wrappedLogger, nil
+}
+
+func shutdownTelemetry(provider *telemetry.Provider) {
+	if provider == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = provider.Shutdown(ctx)
 }

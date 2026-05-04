@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type requestIDContextKey struct{}
@@ -23,6 +26,10 @@ func RequestID() func(http.Handler) http.Handler {
 
 			w.Header().Set(requestIDHeader, requestID)
 			ctx := context.WithValue(r.Context(), requestIDContextKey{}, requestID)
+			span := trace.SpanFromContext(ctx)
+			if span.SpanContext().IsValid() {
+				span.SetAttributes(attribute.String("request.id", requestID))
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -11,6 +11,8 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -63,6 +65,10 @@ func NewAccessService(
 // Evaluate processes an access request through the full pipeline:
 // normalize -> check decision cache -> enrich (with metadata cache) -> evaluate policies -> cache decision -> record decision.
 func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) (*domain.Decision, error) {
+	ctx, span := tracer.Start(ctx, "access.evaluate")
+	span.SetAttributes(accessRequestAttributes(req)...)
+	defer span.End()
+
 	if err := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
 		CorrelationID: req.RequestID,
@@ -77,8 +83,12 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 
 	// 1. Normalize the artifact identity.
 	originalArtifact := req.Artifact
+	_, normalizeSpan := tracer.Start(ctx, "access.normalize_artifact")
 	normalized, err := domain.NormalizeArtifactIdentity(req.Artifact)
 	if err != nil {
+		recordSpanError(normalizeSpan, err)
+		normalizeSpan.End()
+		recordSpanError(span, err)
 		_ = s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      req.TenantID,
 			CorrelationID: req.RequestID,
@@ -94,6 +104,7 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		})
 		return nil, fmt.Errorf("normalizing artifact: %w", err)
 	}
+	normalizeSpan.End()
 	req.Artifact = normalized
 	if err := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
@@ -114,10 +125,13 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	wasMutableTag := false
 	if req.Artifact.Ecosystem == domain.EcosystemOCI && req.Artifact.IsMutableReference() {
 		wasMutableTag = true
+		resolveCtx, resolveSpan := tracer.Start(ctx, "access.resolve_reference")
+		resolveSpan.SetAttributes(attribute.String("upstream.id", req.Upstream.ID))
 		upstream := req.Upstream
 		if upstream.ID == "" {
 			up, upErr := s.upstreamRepo.GetByEcosystem(ctx, req.TenantID, domain.EcosystemOCI)
 			if upErr != nil {
+				recordSpanError(resolveSpan, upErr)
 				s.logger.Debug("no OCI upstream for tag resolution, continuing with tag",
 					"error", upErr,
 					"tenant_id", req.TenantID,
@@ -131,8 +145,9 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 				"tenant_id", req.TenantID,
 			)
 		} else {
-			digest, resolveErr := s.upstreamClient.ResolveReference(ctx, upstream, req.Artifact)
+			digest, resolveErr := s.upstreamClient.ResolveReference(resolveCtx, upstream, req.Artifact)
 			if resolveErr != nil {
+				recordSpanError(resolveSpan, resolveErr)
 				_ = s.recordAudit(ctx, domain.AuditEvent{
 					TenantID:      req.TenantID,
 					CorrelationID: req.RequestID,
@@ -153,6 +168,7 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 				)
 			} else {
 				req.Artifact.Digest = digest
+				resolveSpan.SetAttributes(attribute.Bool("artifact.digest_resolved", true))
 				if err := s.recordAudit(ctx, domain.AuditEvent{
 					TenantID:      req.TenantID,
 					CorrelationID: req.RequestID,
@@ -169,11 +185,15 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 				}
 			}
 		}
+		resolveSpan.End()
 	}
 
 	// 2. Check decision cache.
-	cached, err := s.decisionCache.Get(ctx, req.TenantID, req.Artifact)
+	cacheCtx, cacheSpan := tracer.Start(ctx, "access.decision_cache_lookup")
+	cached, err := s.decisionCache.Get(cacheCtx, req.TenantID, req.Artifact)
 	if err == nil {
+		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
+		cacheSpan.End()
 		now := time.Now()
 		cached.CachedAt = &now
 		if auditErr := s.recordAudit(ctx, domain.AuditEvent{
@@ -193,8 +213,14 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 			"tenant_id", req.TenantID,
 			"artifact", req.Artifact.CacheKey(),
 		)
+		span.SetAttributes(attribute.Bool("cache.hit", true))
 		return cached, nil
 	}
+	cacheSpan.SetAttributes(attribute.Bool("cache.hit", false))
+	if !errors.Is(err, domain.ErrCacheMiss) {
+		recordSpanError(cacheSpan, err)
+	}
+	cacheSpan.End()
 	if !errors.Is(err, domain.ErrCacheMiss) {
 		_ = s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      req.TenantID,
@@ -237,8 +263,12 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	}); err != nil {
 		return nil, err
 	}
-	metadata, err := s.enrichment.EnrichWithCorrelation(ctx, req.TenantID, req.RequestID, req.Artifact)
+	enrichCtx, enrichSpan := tracer.Start(ctx, "access.enrich_artifact")
+	metadata, err := s.enrichment.EnrichWithCorrelation(enrichCtx, req.TenantID, req.RequestID, req.Artifact)
 	if err != nil {
+		recordSpanError(enrichSpan, err)
+		enrichSpan.End()
+		recordSpanError(span, err)
 		_ = s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      req.TenantID,
 			CorrelationID: req.RequestID,
@@ -254,6 +284,8 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		})
 		return nil, fmt.Errorf("enriching artifact: %w", err)
 	}
+	enrichSpan.SetAttributes(attribute.Bool("metadata.available", metadata != nil))
+	enrichSpan.End()
 
 	// 4. Set the metadata on the access request.
 	req.Metadata = metadata
@@ -267,8 +299,12 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	}
 
 	// 5. Load tenant's policies.
-	policies, err := s.policies.ListByTenant(ctx, req.TenantID)
+	policiesCtx, policiesSpan := tracer.Start(ctx, "access.load_policies")
+	policies, err := s.policies.ListByTenant(policiesCtx, req.TenantID)
 	if err != nil {
+		recordSpanError(policiesSpan, err)
+		policiesSpan.End()
+		recordSpanError(span, err)
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
 			return s.denyForInvalidPolicySet(ctx, req, err), nil
 		}
@@ -287,14 +323,19 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		})
 		return nil, fmt.Errorf("loading policies: %w", err)
 	}
+	policiesSpan.SetAttributes(attribute.Int("policy.tenant_count", len(policies)))
+	policiesSpan.End()
 	if err := policy.ValidatePolicies(policies); err != nil {
+		recordSpanError(span, err)
 		return s.denyForInvalidPolicySet(ctx, req, err), nil
 	}
 	effectivePolicies := filterPoliciesForUpstream(policies, req.Upstream.ID)
 	policyHash, err := policy.HashPolicies(effectivePolicies)
 	if err != nil {
+		recordSpanError(span, err)
 		return s.denyForInvalidPolicySet(ctx, req, err), nil
 	}
+	span.SetAttributes(attribute.Int("policy.effective_count", len(effectivePolicies)))
 	if err := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
 		CorrelationID: req.RequestID,
@@ -313,9 +354,25 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	}
 
 	// 6. Run policy evaluator.
+	_, evaluateSpan := tracer.Start(ctx, "access.evaluate_policies")
 	decision := s.evaluator.Evaluate(req, effectivePolicies)
+	evaluateSpan.SetAttributes(
+		attribute.String("decision.outcome", string(decision.Outcome)),
+		attribute.Int("decision.reason_count", len(decision.Reasons)),
+	)
+	evaluateSpan.End()
 	decision.PolicyHash = policyHash
+	span.SetAttributes(
+		attribute.String("decision.outcome", string(decision.Outcome)),
+		attribute.Int("decision.reason_count", len(decision.Reasons)),
+	)
 	for _, reason := range decision.Reasons {
+		span.AddEvent("policy.matched", trace.WithAttributes(
+			attribute.String("policy.id", reason.PolicyID),
+			attribute.String("policy.name", reason.PolicyName),
+			attribute.String("reason.category", string(reason.Category)),
+			attribute.String("policy.action", string(reason.Action)),
+		))
 		if err := s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      req.TenantID,
 			CorrelationID: req.RequestID,
@@ -361,15 +418,22 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	if req.Artifact.IsMutableReference() {
 		ttl = mutableDecisionTTL
 	}
-	if cacheErr := s.decisionCache.Set(ctx, &decision, ttl); cacheErr != nil {
-		s.logger.Warn("failed to cache decision",
+	cacheWriteCtx, cacheWriteSpan := tracer.Start(ctx, "access.cache_decision")
+	if cacheErr := s.decisionCache.Set(cacheWriteCtx, &decision, ttl); cacheErr != nil {
+		recordSpanError(cacheWriteSpan, cacheErr)
+		s.logger.WarnContext(ctx, "failed to cache decision",
 			"error", cacheErr,
 			"tenant_id", req.TenantID,
 		)
 	}
+	cacheWriteSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
+	cacheWriteSpan.End()
 
 	// 8. Record the decision in the repository.
-	if recordErr := s.decisions.Record(ctx, &decision); recordErr != nil {
+	recordCtx, recordSpan := tracer.Start(ctx, "access.persist_decision")
+	if recordErr := s.decisions.Record(recordCtx, &decision); recordErr != nil {
+		recordSpanError(recordSpan, recordErr)
+		recordSpan.End()
 		_ = s.recordAudit(ctx, domain.AuditEvent{
 			TenantID:      req.TenantID,
 			CorrelationID: req.RequestID,
@@ -385,11 +449,12 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 				"error": recordErr.Error(),
 			},
 		})
-		s.logger.Error("failed to record decision",
+		s.logger.ErrorContext(ctx, "failed to record decision",
 			"error", recordErr,
 			"tenant_id", req.TenantID,
 			"artifact", req.Artifact.CacheKey(),
 		)
+		recordSpanError(span, recordErr)
 	} else if auditErr := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
 		CorrelationID: req.RequestID,
@@ -406,7 +471,12 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 			"policy_hash": decision.PolicyHash,
 		},
 	}); auditErr != nil {
+		recordSpanError(recordSpan, auditErr)
+		recordSpan.End()
+		recordSpanError(span, auditErr)
 		return nil, auditErr
+	} else {
+		recordSpan.End()
 	}
 
 	return &decision, nil
@@ -419,6 +489,8 @@ func (s *AccessService) HasRecentAllow(ctx context.Context, tenantID string, art
 }
 
 func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.AccessRequest, validationErr error) *domain.Decision {
+	span := trace.SpanFromContext(ctx)
+	recordSpanError(span, validationErr)
 	_ = s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
 		CorrelationID: req.RequestID,
@@ -432,7 +504,7 @@ func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.
 			"error": validationErr.Error(),
 		},
 	})
-	s.logger.Error("invalid policy set, denying request",
+	s.logger.ErrorContext(ctx, "invalid policy set, denying request",
 		"error", validationErr,
 		"tenant_id", req.TenantID,
 		"artifact", req.Artifact.CacheKey(),
@@ -458,7 +530,7 @@ func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.
 		ttl = mutableDecisionTTL
 	}
 	if cacheErr := s.decisionCache.Set(ctx, &decision, ttl); cacheErr != nil {
-		s.logger.Warn("failed to cache invalid-policy decision",
+		s.logger.WarnContext(ctx, "failed to cache invalid-policy decision",
 			"error", cacheErr,
 			"tenant_id", req.TenantID,
 		)
@@ -478,7 +550,7 @@ func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.
 				"error": recordErr.Error(),
 			},
 		})
-		s.logger.Error("failed to record invalid-policy decision",
+		s.logger.ErrorContext(ctx, "failed to record invalid-policy decision",
 			"error", recordErr,
 			"tenant_id", req.TenantID,
 			"artifact", req.Artifact.CacheKey(),

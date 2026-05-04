@@ -50,6 +50,35 @@ func TestConfigValidate(t *testing.T) {
 		assert.Contains(t, err.Error(), "health.proxy_url")
 	})
 
+	t.Run("enabled telemetry requires endpoint", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Telemetry.Enabled = true
+		cfg.Telemetry.Endpoint = " "
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "telemetry.endpoint")
+	})
+
+	t.Run("enabled telemetry allows stdout only", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Telemetry.Enabled = true
+		cfg.Telemetry.Endpoint = " "
+		cfg.Telemetry.Stdout = true
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("enabled telemetry requires absolute endpoint url", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Telemetry.Enabled = true
+		cfg.Telemetry.Endpoint = "localhost:4317"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "telemetry.endpoint")
+	})
+
 	t.Run("max idle conns cannot exceed max open conns", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Database.MaxOpenConns = 10
@@ -155,6 +184,14 @@ func validConfig() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		Telemetry: TelemetryConfig{
+			Enabled:     false,
+			Endpoint:    "http://localhost:4317",
+			Protocol:    "grpc",
+			Insecure:    true,
+			SampleRatio: 1,
+			Stdout:      false,
 		},
 		Audit: AuditConfig{
 			Enabled:     true,

@@ -2,15 +2,13 @@ package ingest
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/delivery/ingestgrpc"
+	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
 )
 
 // GRPCClient calls the control-plane proxy ingestion service over gRPC.
@@ -19,18 +17,10 @@ type GRPCClient struct {
 }
 
 // NewGRPCClient creates a new GRPCClient.
-func NewGRPCClient(ctx context.Context, address string) (*GRPCClient, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(
-		dialCtx,
-		address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.ForceCodec(jsonCodec{})),
-	)
+func NewGRPCClient(_ context.Context, address string) (*GRPCClient, error) {
+	conn, err := controlplanegrpc.NewClientConn(address)
 	if err != nil {
-		return nil, fmt.Errorf("dialing proxy ingestion service: %w", err)
+		return nil, fmt.Errorf("creating proxy ingestion client: %w", err)
 	}
 
 	return &GRPCClient{conn: conn}, nil
@@ -77,18 +67,4 @@ func (c *GRPCClient) RecordAuditEvent(ctx context.Context, event *domain.AuditEv
 	}
 	*event = *persisted
 	return nil
-}
-
-type jsonCodec struct{}
-
-func (jsonCodec) Marshal(v any) ([]byte, error) {
-	return json.Marshal(v)
-}
-
-func (jsonCodec) Unmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
-}
-
-func (jsonCodec) Name() string {
-	return "json"
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
@@ -17,6 +18,9 @@ func Connect(_ context.Context, cfg config.ValkeyConfig) (*redis.Client, error) 
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	})
+	if err := redisotel.InstrumentTracing(client); err != nil {
+		return nil, fmt.Errorf("instrumenting valkey tracing: %w", err)
+	}
 	return client, nil
 }
 

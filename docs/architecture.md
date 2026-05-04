@@ -90,6 +90,7 @@ flowchart LR
 - tenant-aware OCI artifact cache implementations
 - OSV enricher
 - upstream registry clients
+- OpenTelemetry exporters and transport instrumentation
 - gRPC bundle and ingest client adapters for proxy pulls and write-back
 
 ## Layered component view
@@ -184,6 +185,14 @@ flowchart TB
 - assuming every future control-plane endpoint must use Huma automatically
 - core service signatures or domain models
 - infrastructure repositories, caches, enrichers, or upstream clients
+
+## Observability
+
+- OpenTelemetry tracing is a cross-cutting runtime concern that stays outside core policy logic.
+- Delivery boundaries should propagate W3C trace context across HTTP and gRPC.
+- Core services may add business spans and span events for evaluation, enrichment, cache, and audit stages.
+- Infrastructure clients may instrument PostgreSQL, Valkey, OSV, and upstream registry calls.
+- Local development may use Aspire as the OTLP dashboard; this does not change runtime layering or introduce Prometheus requirements.
 
 Huma is a delivery-layer tool. It must not move policy logic, tenant workflows, or persistence concerns out of core and infrastructure. Endpoint coverage stays human-controlled and must reflect explicit code changes, not inferred drift from shared helpers or documentation alone.
 

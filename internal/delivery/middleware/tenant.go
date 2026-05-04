@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type contextKey string
@@ -46,6 +48,7 @@ func (tr *TenantResolver) Middleware(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), tenantContextKey, *tenant)
+		annotateSpan(ctx, attribute.String("tenant.id", tenant.ID))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -104,6 +107,7 @@ func NPMTenantFromPath() func(http.Handler) http.Handler {
 				upstreamID, nextPath, _ := strings.Cut(upstreamRemainder, "/")
 				if upstreamID != "" {
 					ctx = ContextWithUpstreamID(ctx, upstreamID)
+					annotateSpan(ctx, attribute.String("upstream.id", upstreamID))
 					packagePath = nextPath
 				}
 			}
@@ -133,10 +137,12 @@ func OCITenantFromHost() func(http.Handler) http.Handler {
 			tenantID, upstreamID := tenantAndUpstreamIDFromHost(r.Host)
 			if upstreamID != "" {
 				ctx = ContextWithUpstreamID(ctx, upstreamID)
+				annotateSpan(ctx, attribute.String("upstream.id", upstreamID))
 			}
 			if r.Header.Get("X-Tenant-ID") == "" {
 				if tenantID != "" {
 					r.Header.Set("X-Tenant-ID", tenantID)
+					annotateSpan(ctx, attribute.String("tenant.id", tenantID))
 				}
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -182,4 +188,12 @@ func writeJSONError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func annotateSpan(ctx context.Context, attrs ...attribute.KeyValue) {
+	span := trace.SpanFromContext(ctx)
+	if !span.SpanContext().IsValid() {
+		return
+	}
+	span.SetAttributes(attrs...)
 }

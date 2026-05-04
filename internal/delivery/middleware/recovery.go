@@ -22,7 +22,7 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 					if requestID, ok := RequestIDFromContext(r.Context()); ok {
 						attrs = append(attrs, "request_id", requestID)
 					}
-					logger.Error("panic recovered", attrs...)
+					logger.ErrorContext(r.Context(), "panic recovered", attrs...)
 					http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 				}
 			}()
