@@ -47,24 +47,29 @@ import {
 
 const policyWizardSteps = [
   {
+    id: 'choose-upstream',
+    label: 'Choose upstream',
+    description: 'Select the upstream scope.',
+  },
+  {
     id: 'choose-type',
     label: 'Choose type',
-    description: 'Start from the policy catalog and pick the rule shape that matches the workflow.',
+    description: 'Pick a compatible policy type.',
   },
   {
     id: 'set-basics',
     label: 'Set basics',
-    description: 'Name the rule, pick the upstream scope, and confirm action defaults.',
+    description: 'Set the name and defaults.',
   },
   {
     id: 'configure-rule',
     label: 'Configure rule',
-    description: 'Fill in thresholds or lists while the policy metadata and examples stay close by.',
+    description: 'Add the rule values.',
   },
   {
     id: 'review-create',
     label: 'Review and create',
-    description: 'Review the rule and switch between JSON and YAML previews before submission.',
+    description: 'Review the preview and save.',
   },
 ] satisfies readonly ModalWizardStep[]
 
@@ -73,6 +78,7 @@ type PolicyFilter = 'enabled' | 'disabled' | 'dry_run' | 'allow' | 'deny'
 type PolicyDetailTab = 'overview' | 'history'
 type PolicyDisplayRecord = TypedPolicy | TypedPolicyVersion
 type PolicyDraftFieldErrorKey =
+  | 'type'
   | 'upstreamId'
   | 'name'
   | 'priority'
@@ -466,17 +472,25 @@ export function PoliciesPage() {
     () => new Map(upstreams.map((upstream) => [upstream.id, upstream] as const)),
     [upstreams],
   )
-  const compatibleUpstreamCountByType = useMemo(
+  const selectedUpstream = useMemo(
+    () => upstreams.find((upstream) => upstream.id === draft.upstreamId.trim()) ?? null,
+    [draft.upstreamId, upstreams],
+  )
+  const compatiblePolicyTypesByUpstream = useMemo(
     () =>
       new Map(
-        policyTypes.map((type) => [
-          type,
-          upstreams.filter((upstream) =>
-            upstreamSupportsPolicyType(upstream, type, descriptorsByType.get(type)),
-          ).length,
+        upstreams.map((upstream) => [
+          upstream.id,
+          descriptors.filter((descriptor) =>
+            upstreamSupportsPolicyType(upstream, descriptor.type as PolicyType, descriptor),
+          ),
         ]),
       ),
-    [descriptorsByType, upstreams],
+    [descriptors, upstreams],
+  )
+  const compatiblePolicyTypes = useMemo(
+    () => (selectedUpstream ? compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? [] : []),
+    [compatiblePolicyTypesByUpstream, selectedUpstream],
   )
   const compatibleUpstreams = useMemo(
     () =>
@@ -609,6 +623,7 @@ export function PoliciesPage() {
     () => formatPolicyDraftYamlPreview(tenantId, previewPolicy),
     [previewPolicy, tenantId],
   )
+  const currentPolicyWizardStep = policyWizardSteps[wizardStep] ?? null
   const currentPolicyDiffPreview = useMemo(
     () =>
       diffFormat === 'json'
@@ -773,7 +788,13 @@ export function PoliciesPage() {
   const isEditingPolicy = editingPolicyId !== null
   const hasCreateDraftInProgress = !isEditingPolicy && (draft.type !== null || draft.name.trim().length > 0 || wizardStep > 0)
   const canOpenCreateModal = Boolean(tenantId) && !upstreamsQuery.isPending && upstreams.length > 0
-  const canAdvanceWizard = Boolean(draft.type) && wizardStep < policyWizardSteps.length - 1
+  const canAdvanceWizard =
+    wizardStep < policyWizardSteps.length - 1 &&
+    (wizardStep === 0
+      ? Boolean(normalizedDraft.upstreamId.trim())
+      : wizardStep === 1
+        ? Boolean(draft.type)
+        : true)
 
   async function refreshAll() {
     await Promise.all([
@@ -788,17 +809,50 @@ export function PoliciesPage() {
     const descriptor = descriptors.find((item) => item.type === type) ?? createFallbackPolicyTypeDescriptor(type)
 
     setDraft((currentDraft) => {
+      if (currentDraft.type === type) {
+        return currentDraft
+      }
+
       const nextDraft = createPolicyDraftForType(type, descriptor)
-      const currentUpstream =
-        currentDraft.upstreamId && upstreams.find((upstream) => upstream.id === currentDraft.upstreamId)
-      const nextUpstreamId =
-        currentUpstream && upstreamSupportsPolicyType(currentUpstream, type, descriptor)
-          ? currentDraft.upstreamId
-          : ''
+      const nextSupportedActions = getSupportedActions(type, descriptor)
       return {
         ...nextDraft,
-        upstreamId: nextUpstreamId,
-        name: currentDraft.type === type ? currentDraft.name : '',
+        upstreamId: currentDraft.upstreamId,
+        name: currentDraft.name,
+        action: nextSupportedActions.includes(currentDraft.action) ? currentDraft.action : nextDraft.action,
+        enabled: currentDraft.enabled,
+      }
+    })
+    setDraftFieldErrors({})
+    setWizardStep(2)
+  }
+
+  function handleUpstreamSelect(upstreamId: string) {
+    setDraft((currentDraft) => {
+      if (currentDraft.upstreamId === upstreamId) {
+        return currentDraft
+      }
+
+      const nextUpstream = upstreamsByID.get(upstreamId)
+      if (!nextUpstream || !currentDraft.type) {
+        return {
+          ...currentDraft,
+          upstreamId,
+        }
+      }
+
+      const currentDescriptor = descriptorsByType.get(currentDraft.type)
+      if (upstreamSupportsPolicyType(nextUpstream, currentDraft.type, currentDescriptor)) {
+        return {
+          ...currentDraft,
+          upstreamId,
+        }
+      }
+
+      return {
+        ...currentDraft,
+        upstreamId,
+        type: null,
       }
     })
     setDraftFieldErrors({})
@@ -820,7 +874,7 @@ export function PoliciesPage() {
     savePolicyMutation.reset()
     setDraftFieldErrors({})
     setDraft(createPolicyDraftFromPolicy(policy))
-    setWizardStep(1)
+    setWizardStep(0)
     setPreviewFormat('json')
     setIsCreateModalOpen(true)
   }
@@ -882,7 +936,7 @@ export function PoliciesPage() {
         savePolicyMutation.reset()
         setDraftFieldErrors({})
         setDraft(createPolicyDraftFromPolicy(editingPolicy))
-        setWizardStep(1)
+        setWizardStep(0)
         setPreviewFormat('json')
         return
       }
@@ -894,7 +948,26 @@ export function PoliciesPage() {
   function validatePolicyStep(step: number): Partial<Record<PolicyDraftFieldErrorKey, string>> {
     const nextErrors: Partial<Record<PolicyDraftFieldErrorKey, string>> = {}
 
+    if (step === 0) {
+      if (!normalizedDraft.upstreamId.trim()) {
+        nextErrors.upstreamId = 'Choose the upstream this policy applies to.'
+      } else if (!selectedUpstream) {
+        nextErrors.upstreamId = 'Choose an upstream that is available in this tenant.'
+      }
+    }
+
     if (step === 1) {
+      if (!draft.type) {
+        nextErrors.type = 'Choose a policy type.'
+      } else if (
+        selectedUpstream &&
+        !upstreamSupportsPolicyType(selectedUpstream, draft.type, selectedDescriptor)
+      ) {
+        nextErrors.type = 'Choose a policy type that matches the selected upstream.'
+      }
+    }
+
+    if (step === 2) {
       if (!draft.name.trim()) {
         nextErrors.name = 'Enter a policy name.'
       }
@@ -904,14 +977,9 @@ export function PoliciesPage() {
       if (!isPositiveIntegerString(draft.schemaVersion)) {
         nextErrors.schemaVersion = 'Choose a valid schema version.'
       }
-      if (!normalizedDraft.upstreamId.trim()) {
-        nextErrors.upstreamId = 'Choose the upstream this policy applies to.'
-      } else if (!compatibleUpstreams.some((upstream) => upstream.id === normalizedDraft.upstreamId.trim())) {
-        nextErrors.upstreamId = 'Choose an upstream that supports the selected policy type.'
-      }
     }
 
-    if (step === 2 && selectedDefinition) {
+    if (step === 3 && selectedDefinition) {
       if (selectedDefinition.numberField && !isValidNumberString(draft.numericValue)) {
         nextErrors.numericValue = `${selectedDefinition.numberLabel ?? 'Config value'} is required.`
       }
@@ -935,10 +1003,6 @@ export function PoliciesPage() {
   }
 
   function handleWizardStepChange(step: number) {
-    if (step > 0 && !draft.type) {
-      return
-    }
-
     if (step > wizardStep) {
       const invalidStep = findFirstInvalidPolicyStep(wizardStep, step)
       if (invalidStep) {
@@ -1632,7 +1696,7 @@ export function PoliciesPage() {
               <div className="policy-preview-header">
                 <div>
                   <h4>Policy preview</h4>
-                  <p className="muted">Inspect the current draft in the format you prefer before creating it.</p>
+                  <p className="muted">Preview the current draft in JSON or YAML.</p>
                 </div>
                 <div className="policy-preview-toggle" aria-label="Policy preview format">
                   <button
@@ -1662,8 +1726,8 @@ export function PoliciesPage() {
         currentStep={wizardStep}
         description={
           isEditingPolicy
-            ? 'Guided editing stays in an overlay so the current list and retained history remain visible behind it.'
-            : 'Guided creation stays in an overlay so the current list and retained history remain visible behind it.'
+            ? 'Edit the policy in guided steps.'
+            : 'Create the policy in guided steps.'
         }
         dismissible={!savePolicyMutation.isPending}
         eyebrow="Guided creation"
@@ -1725,7 +1789,9 @@ export function PoliciesPage() {
         onClose={closeCreateModal}
         onStepChange={handleWizardStepChange}
         open={isCreateModalOpen}
+        showStepDescriptions={false}
         size="full"
+        stepGuideVariant="compact"
         steps={policyWizardSteps}
         title={isEditingPolicy ? 'Edit policy' : hasCreateDraftInProgress ? 'Create policy draft' : 'Create policy'}
       >
@@ -1734,11 +1800,10 @@ export function PoliciesPage() {
             <div className="policy-section-heading">
               <div>
                 <p className="eyebrow">Guided-first flow</p>
-                <h3>{policyWizardSteps[wizardStep]?.label}</h3>
-                <p className="muted">
-                  Fill in the rule a step at a time, then switch between the generated JSON and YAML
-                  previews before saving the policy.
-                </p>
+                <h3>{currentPolicyWizardStep?.label}</h3>
+                {currentPolicyWizardStep?.description ? (
+                  <p className="muted">{currentPolicyWizardStep.description}</p>
+                ) : null}
               </div>
               <span className="policy-preview-note">{previewFormat.toUpperCase()} preview</span>
             </div>
@@ -1748,76 +1813,172 @@ export function PoliciesPage() {
             <div className="policy-form-stack">
               {upstreams.length > 0 ? (
                 <section className="policy-summary-card">
-                  <h4>Policy availability follows upstream compatibility</h4>
-                  <p className="muted">
-                    Greyed-out policy types do not match any configured upstream for this tenant. Add a compatible
-                    npm or OCI upstream, or enable the required capability profile on an existing upstream first.
-                  </p>
+                  <h4>Choose the upstream scope first</h4>
+                  <p className="muted">Policy types depend on the selected upstream.</p>
                 </section>
               ) : null}
 
-              <div className="policy-type-grid">
-                {descriptors.map((descriptor) => {
-                  const isSelected = descriptor.type === draft.type
-                  const supportedActions = getSupportedActions(descriptor.type as PolicyType, descriptor)
-                  const compatibleUpstreamCount =
-                    compatibleUpstreamCountByType.get(descriptor.type as PolicyType) ?? 0
-                  const isUnavailable = upstreams.length > 0 && compatibleUpstreamCount === 0
+              {draftFieldErrors.upstreamId ? (
+                <section className="policy-error-panel">
+                  <h4>Choose an upstream to continue</h4>
+                  <p className="muted">{draftFieldErrors.upstreamId}</p>
+                </section>
+              ) : null}
 
+              {upstreams.length > 0 ? (
+                <div className="policy-type-grid">
+                  {upstreams.map((upstream) => {
+                    const isSelected = upstream.id === normalizedDraft.upstreamId.trim()
+                    const compatibleDescriptorsForUpstream =
+                      compatiblePolicyTypesByUpstream.get(upstream.id) ?? []
                   return (
                     <button
-                      key={descriptor.type}
+                      key={upstream.id}
                       className={`policy-type-card${isSelected ? ' selected' : ''}`}
-                      disabled={isUnavailable}
-                      onClick={() => handleTypeSelect(descriptor.type as PolicyType)}
+                      onClick={() => handleUpstreamSelect(upstream.id)}
                       type="button"
                     >
                       <div className="policy-type-card-header">
-                        <strong>{getPolicyTypeLabel(descriptor.type as PolicyType)}</strong>
-                        <span className="policy-badge policy-badge-info">{descriptor.type}</span>
+                        <strong>{upstream.name}</strong>
+                        <span className="policy-badge policy-badge-info">{upstream.ecosystem.toUpperCase()}</span>
                       </div>
-                      <p className="muted">{descriptor.summary}</p>
-                      <p className={`policy-type-card-note${isUnavailable ? ' unavailable' : ''}`}>
-                        {upstreams.length === 0
-                          ? 'Create an upstream to scope this policy.'
-                          : isUnavailable
-                            ? 'Unavailable for the current upstreams.'
-                            : `${compatibleUpstreamCount} compatible upstream${compatibleUpstreamCount === 1 ? '' : 's'} in this tenant.`}
+                      <p className="muted">{upstream.base_url}</p>
+                      <p className="policy-type-card-note">
+                        {compatibleDescriptorsForUpstream.length > 0
+                          ? `${compatibleDescriptorsForUpstream.length} compatible policy type${compatibleDescriptorsForUpstream.length === 1 ? '' : 's'} available for this upstream.`
+                          : 'No compatible policy types are currently available for this upstream.'}
                       </p>
                       <div className="policy-chip-row">
-                        {supportedActions.map((action) => (
-                          <span key={action} className="policy-chip">
-                            {action}
-                          </span>
-                        ))}
-                        {getSchemaVersions(descriptor).map((version) => (
-                          <span key={version} className="policy-chip">
-                            schema v{version}
-                          </span>
-                        ))}
-                        {getSupportedEcosystems(descriptor).map((ecosystem) => (
-                          <span key={ecosystem} className="policy-chip">
-                            {ecosystem.toUpperCase()}
-                          </span>
-                        ))}
-                        {getRequiredCapabilities(descriptor).map((capability) => (
+                        <span className="policy-chip">
+                          {compatibleDescriptorsForUpstream.length} policy type
+                          {compatibleDescriptorsForUpstream.length === 1 ? '' : 's'}
+                        </span>
+                        {(upstream.capabilities ?? []).map((capability) => (
                           <span key={capability} className="policy-chip">
                             {formatUpstreamCapabilityLabel(capability)}
                           </span>
                         ))}
-                        {upstreams.length > 0 ? (
-                          <span className="policy-chip">{compatibleUpstreamCount} compatible upstreams</span>
-                        ) : null}
+                        {upstream.capabilities?.length ? null : (
+                          <span className="policy-chip">Base compatibility only</span>
+                        )}
                       </div>
                     </button>
                   )
-                })}
-              </div>
+                  })}
+                </div>
+              ) : null}
+
+              {upstreamsQuery.isError ? (
+                <section className="policy-error-panel">
+                  <h4>Unable to load upstreams</h4>
+                  <p className="muted">{upstreamsQuery.error.message}</p>
+                </section>
+              ) : null}
+
+              {!upstreamsQuery.isPending && upstreams.length === 0 ? (
+                <section className="policy-summary-card">
+                  <h4>Create an upstream first</h4>
+                  <p className="muted">
+                    Policies are scoped to an upstream in the firewall, so add an npm or OCI upstream before creating
+                    this rule.
+                  </p>
+                </section>
+              ) : null}
             </div>
           ) : null}
 
-          {wizardStep === 1 && draft.type && selectedDescriptor && selectedDefinition ? (
+          {wizardStep === 1 ? (
+            <div className="policy-form-stack">
+              {selectedUpstream ? (
+                <section className="policy-summary-card">
+                  <h4>{selectedUpstream.name} policy catalog</h4>
+                  <p className="muted">
+                    Showing policy types that match this {selectedUpstream.ecosystem.toUpperCase()} upstream.
+                  </p>
+                  <div className="policy-chip-row">
+                    <span className="policy-chip">{selectedUpstream.base_url}</span>
+                    {(selectedUpstream.capabilities ?? []).map((capability) => (
+                      <span key={capability} className="policy-chip">
+                        {formatUpstreamCapabilityLabel(capability)}
+                      </span>
+                    ))}
+                    {selectedUpstream.capabilities?.length ? null : (
+                      <span className="policy-chip">Base compatibility only</span>
+                    )}
+                  </div>
+                </section>
+              ) : null}
+
+              {draftFieldErrors.type ? (
+                <section className="policy-error-panel">
+                  <h4>Choose a policy type to continue</h4>
+                  <p className="muted">{draftFieldErrors.type}</p>
+                </section>
+              ) : null}
+
+              {selectedUpstream && compatiblePolicyTypes.length > 0 ? (
+                <div className="policy-type-grid">
+                  {compatiblePolicyTypes.map((descriptor) => {
+                    const isSelected = descriptor.type === draft.type
+                    const supportedActions = getSupportedActions(descriptor.type as PolicyType, descriptor)
+
+                    return (
+                      <button
+                        key={descriptor.type}
+                        className={`policy-type-card${isSelected ? ' selected' : ''}`}
+                        onClick={() => handleTypeSelect(descriptor.type as PolicyType)}
+                        type="button"
+                      >
+                        <div className="policy-type-card-header">
+                          <strong>{getPolicyTypeLabel(descriptor.type as PolicyType)}</strong>
+                          <span className="policy-badge policy-badge-info">{descriptor.type}</span>
+                        </div>
+                        <p className="muted">{descriptor.summary}</p>
+                        <p className="policy-type-card-note">Available for the selected upstream.</p>
+                        <div className="policy-chip-row">
+                          {supportedActions.map((action) => (
+                            <span key={action} className="policy-chip">
+                              {action}
+                            </span>
+                          ))}
+                          {getSchemaVersions(descriptor).map((version) => (
+                            <span key={version} className="policy-chip">
+                              schema v{version}
+                            </span>
+                          ))}
+                          {getRequiredCapabilities(descriptor).map((capability) => (
+                            <span key={capability} className="policy-chip">
+                              {formatUpstreamCapabilityLabel(capability)}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+
+              {selectedUpstream && compatiblePolicyTypes.length === 0 ? (
+                <section className="policy-summary-card">
+                  <h4>No compatible policy types yet</h4>
+                  <p className="muted">
+                    Update this upstream's capability profile or choose another upstream before creating a policy.
+                  </p>
+                </section>
+              ) : null}
+            </div>
+          ) : null}
+
+          {wizardStep === 2 && draft.type && selectedDescriptor && selectedDefinition && selectedUpstream ? (
             <div className="policy-form-grid">
+              <label className="policy-field">
+                <span>Upstream scope</span>
+                <div className="policy-readonly-value">
+                  {formatUpstreamOptionLabel(selectedUpstream)}
+                  <code>{selectedUpstream.id}</code>
+                </div>
+              </label>
+
               <label className="policy-field">
                 <span>Policy type</span>
                 <div className="policy-readonly-value">
@@ -1836,36 +1997,6 @@ export function PoliciesPage() {
                   value={draft.name}
                 />
                 {draftFieldErrors.name ? <p className="policy-field-error">{draftFieldErrors.name}</p> : null}
-              </label>
-
-              <label className={`policy-field${draftFieldErrors.upstreamId ? ' policy-field-invalid' : ''}`}>
-                <span>Upstream scope</span>
-                <select
-                  aria-invalid={Boolean(draftFieldErrors.upstreamId)}
-                  disabled={upstreamsQuery.isPending || compatibleUpstreams.length === 0}
-                  onChange={(event) => updateDraft('upstreamId', event.target.value)}
-                  value={draft.upstreamId}
-                >
-                  <option value="">
-                    {upstreamsQuery.isPending
-                      ? 'Loading upstreams…'
-                      : compatibleUpstreams.length === 0
-                        ? 'No compatible upstreams'
-                        : 'Select an upstream'}
-                  </option>
-                  {compatibleUpstreams.map((upstream) => (
-                    <option key={upstream.id} value={upstream.id}>
-                      {formatUpstreamOptionLabel(upstream)}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  Clients must use the matching upstream-specific firewall route or host.
-                  {compatibleUpstreams.length > 0 ? ` ${compatibleUpstreams.length} compatible upstreams available.` : ''}
-                </small>
-                {draftFieldErrors.upstreamId ? (
-                  <p className="policy-field-error">{draftFieldErrors.upstreamId}</p>
-                ) : null}
               </label>
 
               <label className="policy-field">
@@ -1925,41 +2056,10 @@ export function PoliciesPage() {
                 <span>Policy is enabled</span>
               </label>
 
-              {upstreamsQuery.isError ? (
-                <section className="policy-error-panel">
-                  <h4>Unable to load upstreams</h4>
-                  <p className="muted">{upstreamsQuery.error.message}</p>
-                </section>
-              ) : null}
-
-              {!upstreamsQuery.isPending && upstreams.length === 0 ? (
-                <section className="policy-summary-card">
-                  <h4>Create an upstream first</h4>
-                  <p className="muted">
-                    Policies are scoped to an upstream in the firewall, so add an npm or OCI upstream before saving
-                    this rule.
-                  </p>
-                </section>
-              ) : null}
-
-              {!upstreamsQuery.isPending && upstreams.length > 0 && compatibleUpstreams.length === 0 ? (
-                <section className="policy-summary-card">
-                  <h4>No compatible upstreams yet</h4>
-                  <p className="muted">
-                    This policy supports {getSupportedEcosystems(selectedDescriptor).map((ecosystem) => ecosystem.toUpperCase()).join(', ')}
-                    {getRequiredCapabilities(selectedDescriptor).length > 0
-                      ? ` and requires ${getRequiredCapabilities(selectedDescriptor)
-                          .map((capability) => formatUpstreamCapabilityLabel(capability))
-                          .join(', ')}`
-                      : ''}
-                    .
-                  </p>
-                </section>
-              ) : null}
             </div>
           ) : null}
 
-          {wizardStep === 2 && draft.type && selectedDescriptor && selectedDefinition ? (
+          {wizardStep === 3 && draft.type && selectedDescriptor && selectedDefinition ? (
             <div className="policy-form-stack">
               {selectedDefinition.numberField ? (
                 <label className={`policy-field${draftFieldErrors.numericValue ? ' policy-field-invalid' : ''}`}>
@@ -2080,8 +2180,18 @@ export function PoliciesPage() {
             </div>
           ) : null}
 
-          {wizardStep === 3 && (reviewErrors.length > 0 || savePolicyMutation.isError) ? (
+          {wizardStep === 4 ? (
             <div className="policy-review-stack">
+              <section className="policy-summary-card">
+                <h4>Review before {isEditingPolicy ? 'saving' : 'creating'}</h4>
+                <p className="muted">Confirm the draft, then save.</p>
+                <div className="policy-chip-row">
+                  {selectedUpstream ? <span className="policy-chip">{formatUpstreamOptionLabel(selectedUpstream)}</span> : null}
+                  {draft.type ? <span className="policy-chip">{getPolicyTypeLabel(draft.type)}</span> : null}
+                  <span className={`policy-badge ${getActionTone(normalizedDraft.action)}`}>{normalizedDraft.action}</span>
+                </div>
+              </section>
+
               {reviewErrors.length > 0 ? (
                 <section className="policy-error-panel">
                   <h4>Complete these fields before saving the policy</h4>

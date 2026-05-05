@@ -41,12 +41,12 @@ const createWizardSteps = [
   {
     id: 'connection',
     label: 'Connection',
-    description: 'Choose the ecosystem, display name, and upstream URL.',
+    description: 'Choose the ecosystem, name, and URL.',
   },
   {
     id: 'review',
     label: 'Review',
-    description: 'Confirm the tenant-scoped details before creating the upstream.',
+    description: 'Confirm the tenant-scoped details.',
   },
 ] satisfies readonly ModalWizardStep[]
 
@@ -352,7 +352,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
         <p className="eyebrow">Tenant scope</p>
         <h3>Active tenant</h3>
         <p className="muted">
-          This upstream will be created only for <code>{tenantId ?? 'the selected tenant'}</code>.
+          Created for <code>{tenantId ?? 'the selected tenant'}</code> only.
         </p>
       </section>
 
@@ -380,13 +380,6 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
             </dd>
           </div>
         </dl>
-      </section>
-
-      <section className="upstreams-wizard-card">
-        <h3>What happens next</h3>
-        <p className="muted">
-          After create succeeds, the new upstream becomes selected in the detail panel.
-        </p>
       </section>
     </div>
   )
@@ -667,7 +660,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
         closeOnEscape={!createMutation.isPending}
         closeOnOverlayClick={!createMutation.isPending}
         currentStep={createStep}
-        description="Create a new npm or OCI upstream without leaving the list and detail context."
+        description="Create an npm or OCI upstream."
         dismissible={!createMutation.isPending}
         footer={createModalFooter}
         headerMeta={
@@ -692,7 +685,6 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
             <div className="upstreams-wizard-section">
               <div className="upstreams-wizard-copy">
                 <h3>Connection details</h3>
-                <p className="muted">Use a short name and a concrete registry base URL.</p>
               </div>
 
               <div className={`upstreams-field${draftErrors.name ? ' upstreams-field-invalid' : ''}`}>
@@ -725,7 +717,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
                     </option>
                   ))}
                 </select>
-                <small>Each tenant can register multiple upstreams per ecosystem. Duplicate registry URLs are blocked.</small>
+                <small>Duplicate registry URLs are blocked for the same tenant and ecosystem.</small>
                 {draftErrors.ecosystem ? (
                   <p className="upstreams-field-error">{draftErrors.ecosystem}</p>
                 ) : null}
@@ -749,9 +741,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
 
               <fieldset className="upstreams-capability-group">
                 <legend>Capability profile</legend>
-                <p className="muted">
-                  Capabilities decide which policy types can be scoped to this upstream.
-                </p>
+                <p className="muted">Capabilities control which policy types can use this upstream.</p>
                 <div className="upstreams-capability-list">
                   {getUpstreamCapabilityDefinitions(draft.ecosystem).map((capability) => {
                     const checked = draft.capabilities.includes(capability.id)
@@ -776,7 +766,6 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
             <div className="upstreams-wizard-section">
               <div className="upstreams-wizard-copy">
                 <h3>Review upstream</h3>
-                <p className="muted">Confirm the upstream details before creating it for this tenant.</p>
               </div>
 
               <div className="upstreams-review-card">

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { ModalDialog, type ModalDialogProps } from './ModalDialog.tsx'
 import styles from './ModalWizard.module.css'
 
@@ -15,6 +15,8 @@ export type ModalWizardProps = Omit<ModalDialogProps, 'children'> & {
   aside?: ReactNode
   progressLabel?: string
   allowStepSelection?: boolean
+  showStepDescriptions?: boolean
+  stepGuideVariant?: 'default' | 'compact'
   onStepChange?: (step: number) => void
 }
 
@@ -25,6 +27,8 @@ export function ModalWizard({
   aside,
   progressLabel = 'Wizard steps',
   allowStepSelection = false,
+  showStepDescriptions = true,
+  stepGuideVariant = 'default',
   onStepChange,
   headerMeta,
   size = 'wide',
@@ -33,6 +37,15 @@ export function ModalWizard({
   const maxStepIndex = Math.max(steps.length - 1, 0)
   const activeStep = Math.min(Math.max(currentStep, 0), maxStepIndex)
   const showStepCounter = steps.length > 0
+  const stepCount = Math.max(steps.length, 1)
+  const stepListClassName = [styles.stepList, stepGuideVariant === 'compact' ? styles.stepListCompact : '']
+    .filter(Boolean)
+    .join(' ')
+  const stepListStyle = {
+    '--modal-wizard-step-columns': String(stepCount),
+    '--modal-wizard-step-columns-medium': String(Math.min(stepCount, 3)),
+    '--modal-wizard-step-columns-small': String(Math.min(stepCount, 2)),
+  } as CSSProperties
 
   return (
     <ModalDialog
@@ -52,7 +65,7 @@ export function ModalWizard({
       <div className={styles.shell}>
         {steps.length > 0 ? (
           <nav aria-label={progressLabel}>
-            <ol className={styles.stepList}>
+            <ol className={stepListClassName} style={stepListStyle}>
               {steps.map((step, index) => {
                 const toneClassName =
                   index === activeStep
@@ -60,13 +73,20 @@ export function ModalWizard({
                     : index < activeStep
                       ? styles.stepComplete
                       : styles.stepUpcoming
+                const stepSurfaceClassName = [
+                  allowStepSelection ? styles.stepButton : styles.stepCard,
+                  toneClassName,
+                  stepGuideVariant === 'compact' ? styles.stepSurfaceCompact : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
 
                 const stepContent = (
                   <>
                     <span className={styles.stepNumber}>{index + 1}</span>
-                    <div>
+                    <div className={styles.stepText}>
                       <p className={styles.stepLabel}>{step.label}</p>
-                      {step.description ? (
+                      {showStepDescriptions && step.description ? (
                         <p className={styles.stepDescription}>{step.description}</p>
                       ) : null}
                     </div>
@@ -78,7 +98,7 @@ export function ModalWizard({
                     {allowStepSelection && onStepChange ? (
                       <button
                         aria-current={index === activeStep ? 'step' : undefined}
-                        className={`${styles.stepButton} ${toneClassName}`}
+                        className={stepSurfaceClassName}
                         onClick={() => onStepChange(index)}
                         type="button"
                       >
@@ -87,7 +107,7 @@ export function ModalWizard({
                     ) : (
                       <div
                         aria-current={index === activeStep ? 'step' : undefined}
-                        className={`${styles.stepCard} ${toneClassName}`}
+                        className={stepSurfaceClassName}
                       >
                         {stepContent}
                       </div>
