@@ -13,6 +13,7 @@ const (
 	UpstreamCapabilityPublishTime          UpstreamCapability = "publish_time"
 	UpstreamCapabilityLicenses             UpstreamCapability = "licenses"
 	UpstreamCapabilityVulnerabilityLookup  UpstreamCapability = "vulnerability_lookup"
+	UpstreamCapabilityScorecardLookup      UpstreamCapability = "scorecard_lookup"
 	UpstreamCapabilityManifestDigestLookup UpstreamCapability = "manifest_digest_lookup"
 )
 
@@ -21,9 +22,20 @@ var allowedUpstreamCapabilities = map[EcosystemType][]UpstreamCapability{
 		UpstreamCapabilityPublishTime,
 		UpstreamCapabilityLicenses,
 		UpstreamCapabilityVulnerabilityLookup,
+		UpstreamCapabilityScorecardLookup,
 	},
 	EcosystemOCI: {
 		UpstreamCapabilityManifestDigestLookup,
+	},
+}
+
+var legacyDefaultUpstreamCapabilities = map[EcosystemType][][]UpstreamCapability{
+	EcosystemNPM: {
+		{
+			UpstreamCapabilityPublishTime,
+			UpstreamCapabilityLicenses,
+			UpstreamCapabilityVulnerabilityLookup,
+		},
 	},
 }
 
@@ -72,6 +84,23 @@ func NormalizeUpstreamCapabilities(
 	return normalized, nil
 }
 
+// EffectiveUpstreamCapabilities upgrades legacy default capability profiles to
+// the current default set while preserving explicitly customized profiles.
+func EffectiveUpstreamCapabilities(
+	ecosystem EcosystemType,
+	capabilities []UpstreamCapability,
+) []UpstreamCapability {
+	if capabilities == nil {
+		return DefaultUpstreamCapabilities(ecosystem)
+	}
+	for _, legacyDefaults := range legacyDefaultUpstreamCapabilities[ecosystem] {
+		if slices.Equal(capabilities, legacyDefaults) {
+			return DefaultUpstreamCapabilities(ecosystem)
+		}
+	}
+	return append([]UpstreamCapability(nil), capabilities...)
+}
+
 // UpstreamCapabilityStrings converts capability values into plain strings for delivery or storage.
 func UpstreamCapabilityStrings(capabilities []UpstreamCapability) []string {
 	if len(capabilities) == 0 {
@@ -93,7 +122,13 @@ func ParseUpstreamCapabilities(values []string) []UpstreamCapability {
 	return result
 }
 
+// EffectiveCapabilities returns the capability profile the application should
+// use for compatibility and API responses.
+func (u Upstream) EffectiveCapabilities() []UpstreamCapability {
+	return EffectiveUpstreamCapabilities(u.Ecosystem, u.Capabilities)
+}
+
 // UpstreamSupports reports whether the upstream currently provides the capability.
 func (u Upstream) UpstreamSupports(capability UpstreamCapability) bool {
-	return slices.Contains(u.Capabilities, capability)
+	return slices.Contains(u.EffectiveCapabilities(), capability)
 }

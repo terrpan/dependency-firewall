@@ -2,6 +2,7 @@ package npm
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -9,10 +10,21 @@ import (
 	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
+type stubScorecardClient struct {
+	result *domain.ScorecardResult
+	err    error
+}
+
+func (s stubScorecardClient) Lookup(context.Context, domain.SourceRepository) (*domain.ScorecardResult, error) {
+	return s.result, s.err
+}
+
 func TestMetadataEnricher_Enrich(t *testing.T) {
-	logger := slog.Default()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	t.Run("successfully extracts PublishedAt for npm package", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -273,6 +285,84 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 			t.Fatal("expected error on malformed JSON, got nil")
 		}
 	})
+
+	t.Run("extracts source repository and scorecard metadata", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"time": {
+					"1.0.0": "2024-03-20T15:53:05.388Z"
+				},
+				"versions": {
+					"1.0.0": {
+						"repository": {
+							"type": "git",
+							"url": "git+https://github.com/acme/express.git"
+						}
+					}
+				}
+			}`))
+		}))
+		defer ts.Close()
+
+		enricher := NewMetadataEnricher(http.DefaultClient, logger, stubScorecardClient{
+			result: &domain.ScorecardResult{
+				Score: ptrNPMScore(8.1),
+				Checks: map[string]float64{
+					"binary-artifacts": 10,
+				},
+			},
+		})
+		enricher.registry = ts.URL
+
+		meta, err := enricher.Enrich(context.Background(), domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "express",
+			Version:   "1.0.0",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, meta.SourceRepository)
+		assert.Equal(t, "github.com/acme/express", meta.SourceRepository.ProjectURI())
+		require.NotNil(t, meta.Scorecard)
+		require.NotNil(t, meta.Scorecard.Score)
+		assert.InDelta(t, 8.1, *meta.Scorecard.Score, 0.001)
+		assert.Equal(t, 10.0, meta.Scorecard.Checks["binary-artifacts"])
+	})
+
+	t.Run("marks unsupported source repositories as unavailable scorecard data", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"time": {
+					"1.0.0": "2024-03-20T15:53:05.388Z"
+				},
+				"versions": {
+					"1.0.0": {
+						"repository": {
+							"type": "git",
+							"url": "https://gitlab.com/acme/express"
+						}
+					}
+				}
+			}`))
+		}))
+		defer ts.Close()
+
+		enricher := NewMetadataEnricher(http.DefaultClient, logger)
+		enricher.registry = ts.URL
+
+		meta, err := enricher.Enrich(context.Background(), domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "express",
+			Version:   "1.0.0",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, meta.Scorecard)
+		assert.Equal(t, "npm package does not declare a supported GitHub source repository", meta.Scorecard.UnavailableReason)
+		assert.Nil(t, meta.SourceRepository)
+	})
 }
 
 func TestSplitLicenseExpression(t *testing.T) {
@@ -341,4 +431,8 @@ func TestBuildPackageName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ptrNPMScore(v float64) *float64 {
+	return &v
 }

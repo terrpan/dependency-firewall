@@ -373,6 +373,12 @@ export interface components {
             cache: string;
             status: string;
         };
+        ComponentResponse: {
+            message?: string;
+            status: string;
+            /** Format: date-time */
+            timestamp: string;
+        };
         CreateTenantRequest: {
             /** @description Tenant display name */
             name: string;
@@ -419,12 +425,14 @@ export interface components {
         HealthResponse: {
             arch: string;
             build_time?: string;
+            bundle?: components["schemas"]["ComponentResponse"];
             commit?: string;
             dependencies: {
                 [key: string]: components["schemas"]["DependencyResponse"];
             };
             go_version: string;
             os: string;
+            proxy?: components["schemas"]["ComponentResponse"];
             service_name: string;
             status: string;
             /** Format: date-time */

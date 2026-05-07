@@ -1,9 +1,5 @@
 import { useMemo, useState } from 'react'
-import {
-  SearchFilterBar,
-  type FilterChipOption,
-} from '../components/filters/SearchFilterBar.tsx'
-import type { Evaluation } from '../lib/api/index.ts'
+import { SearchFilterBar } from '../components/filters/SearchFilterBar.tsx'
 import {
   EvaluationList,
   QueryStateNotice,
@@ -11,36 +7,17 @@ import {
 } from '../features/evaluations/components.tsx'
 import { evaluationsPageSize, useEvaluationsPage } from '../features/evaluations/api.ts'
 import {
+  evaluationFilterOptions,
+  matchesEvaluationFilter,
+  type EvaluationFilter,
+} from '../features/evaluations/filters.ts'
+import {
   formatTimestamp,
   getQueryErrorMessage,
   summarizeEvaluations,
 } from '../features/evaluations/model.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
-
-type EvaluationFilter = 'allow' | 'deny' | 'dry_run' | 'cached'
-
-const evaluationFilterOptions = [
-  { id: 'allow', label: 'Allow', tone: 'success' },
-  { id: 'deny', label: 'Deny', tone: 'danger' },
-  { id: 'dry_run', label: 'Dry run', tone: 'warning' },
-  { id: 'cached', label: 'Cached', tone: 'info' },
-] satisfies readonly FilterChipOption<EvaluationFilter>[]
-
-function matchesEvaluationFilter(evaluation: Evaluation, filter: EvaluationFilter) {
-  if (filter === 'allow') {
-    return evaluation.outcome.toLowerCase() === 'allow'
-  }
-
-  if (filter === 'deny') {
-    return evaluation.outcome.toLowerCase() === 'deny'
-  }
-
-  if (filter === 'dry_run') {
-    return (evaluation.warnings?.length ?? 0) > 0
-  }
-
-  return Boolean(evaluation.cached_at)
-}
+import '../features/evaluations/evaluations.css'
 
 export function EvaluationsPage() {
   const { tenantId } = useTenant()

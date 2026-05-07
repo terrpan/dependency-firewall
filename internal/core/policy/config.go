@@ -89,6 +89,8 @@ func newConfigForType(policyType domain.PolicyType, schemaVersion int) (domain.P
 			return &domain.MaximumAgePolicyConfig{}, nil
 		case domain.PolicyTypeBlockMutableTag:
 			return &domain.BlockMutableTagPolicyConfig{}, nil
+		case domain.PolicyTypeScorecard:
+			return &domain.ScorecardPolicyConfig{}, nil
 		case domain.PolicyTypeLicense:
 			return &domain.LicensePolicyConfig{}, nil
 		case domain.PolicyTypeLicenseAllowlist:
@@ -139,6 +141,9 @@ func configTypeMatchesPolicy(policyType domain.PolicyType, config domain.PolicyC
 		return ok
 	case domain.PolicyTypeBlockMutableTag:
 		_, ok := config.(*domain.BlockMutableTagPolicyConfig)
+		return ok
+	case domain.PolicyTypeScorecard:
+		_, ok := config.(*domain.ScorecardPolicyConfig)
 		return ok
 	case domain.PolicyTypeLicense:
 		_, ok := config.(*domain.LicensePolicyConfig)

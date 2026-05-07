@@ -71,4 +71,24 @@ func mergeMetadata(dst, src *domain.ArtifactMetadata) {
 	if src.IsMutableTag {
 		dst.IsMutableTag = true
 	}
+	if src.SourceRepository != nil {
+		copyRepo := *src.SourceRepository
+		dst.SourceRepository = &copyRepo
+	}
+	if src.Scorecard != nil {
+		copyScorecard := &domain.ScorecardResult{
+			UnavailableReason: src.Scorecard.UnavailableReason,
+		}
+		if src.Scorecard.Score != nil {
+			score := *src.Scorecard.Score
+			copyScorecard.Score = &score
+		}
+		if len(src.Scorecard.Checks) > 0 {
+			copyScorecard.Checks = make(map[string]float64, len(src.Scorecard.Checks))
+			for name, score := range src.Scorecard.Checks {
+				copyScorecard.Checks[name] = score
+			}
+		}
+		dst.Scorecard = copyScorecard
+	}
 }

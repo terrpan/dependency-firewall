@@ -34,6 +34,11 @@ const upstreamCapabilityDefinitions: Record<UpstreamEcosystem, readonly Upstream
       label: 'Vulnerability lookup',
       description: 'Enable CVSS threshold policies backed by the current enrichment flow.',
     },
+    {
+      id: 'scorecard_lookup',
+      label: 'Scorecard lookup',
+      description: 'Enable OpenSSF Scorecard policies backed by npm source-repository enrichment.',
+    },
   ],
   oci: [
     {

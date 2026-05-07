@@ -201,13 +201,14 @@ func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, er
 	}
 
 	for i := range bundle.Upstreams {
+		effectiveCapabilities := bundle.Upstreams[i].EffectiveCapabilities()
 		response.Bundle.Upstreams = append(response.Bundle.Upstreams, BundleUpstream{
 			ID:           bundle.Upstreams[i].ID,
 			TenantID:     bundle.Upstreams[i].TenantID,
 			Name:         bundle.Upstreams[i].Name,
 			Ecosystem:    bundle.Upstreams[i].Ecosystem,
 			BaseURL:      bundle.Upstreams[i].BaseURL,
-			Capabilities: domain.UpstreamCapabilityStrings(bundle.Upstreams[i].Capabilities),
+			Capabilities: domain.UpstreamCapabilityStrings(effectiveCapabilities),
 			CreatedAt:    bundle.Upstreams[i].CreatedAt.UTC().Format(timeLayout),
 			UpdatedAt:    bundle.Upstreams[i].UpdatedAt.UTC().Format(timeLayout),
 		})

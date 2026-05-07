@@ -22,6 +22,7 @@ Policies can be scoped to one upstream with `upstream_id`. When they are, the co
 - `publish_time` - supports age-based npm policies
 - `licenses` - supports npm license policies
 - `vulnerability_lookup` - supports npm CVSS policies
+- `scorecard_lookup` - supports npm OpenSSF Scorecard policies
 - `manifest_digest_lookup` - supports OCI mutable-tag policies
 
 ### Current policy requirements
@@ -31,6 +32,7 @@ Policies can be scoped to one upstream with `upstream_id`. When they are, the co
 | `cvss_threshold` | `npm` | `vulnerability_lookup` |
 | `minimum_age` | `npm` | `publish_time` |
 | `maximum_age` | `npm` | `publish_time` |
+| `scorecard` | `npm` | `scorecard_lookup` |
 | `license` | `npm` | `licenses` |
 | `license_allowlist` | `npm` | `licenses` |
 | `block_mutable_tag` | `oci` | `manifest_digest_lookup` |
@@ -40,6 +42,7 @@ Policies can be scoped to one upstream with `upstream_id`. When they are, the co
 
 - `GET /api/v1/policy-types` exposes `supported_ecosystems` and `required_capabilities` for UI and automation clients.
 - Upstream create and update requests persist a capability profile that the UI reuses when filtering compatible policy types.
+- Legacy upstreams that still match an older default capability profile may be upgraded to the current default capability set when new default-backed policy types are introduced.
 - Updating an upstream cannot remove capabilities that are still required by scoped policies on that upstream.
 
 ## Typed config model
@@ -93,7 +96,7 @@ Priority is an integer. Lower values run first. Use it to control evaluation ord
 | Priority range | Suggested use |
 |----------------|---------------|
 | 1–9 | Allow overrides (internal namespaces) |
-| 10–19 | Critical security (CVSS threshold) |
+| 10–19 | Critical security (CVSS threshold, Scorecard) |
 | 20–29 | Age-based rules (minimum/maximum age) |
 | 30–39 | License and namespace rules |
 | 40+ | Catch-all or low-priority rules |
@@ -174,6 +177,36 @@ Denies OCI artifacts that reference a mutable tag (e.g. `latest`). Forces pinnin
 
 - Only matches when the artifact metadata indicates a mutable tag.
 - Intended for OCI registries where tags can be overwritten.
+
+### `scorecard`
+
+Denies npm artifacts when the source repository OpenSSF Scorecard falls below the configured overall minimum score, one or more named check minimums, or both. Requires an npm upstream with `scorecard_lookup`.
+
+```yaml
+- name: require-secure-source-repos
+  type: scorecard
+  schema_version: 1
+  action: deny
+  priority: 15
+  config:
+    min_score: 7
+    checks:
+      binary-artifacts: 10
+      branch-protection: 7
+    unavailable_scorecard_behavior: skip
+```
+
+- `scorecard` must use `action: deny`.
+- At least one of `min_score` or `checks` is required.
+- `checks` is a map of Scorecard check name to minimum acceptable score.
+- Scorecard check names are normalized case-insensitively, so values such as `Branch Protection` and `branch-protection` refer to the same check.
+- `min_score` applies to the top-level Scorecard `score` value, while `checks` applies to individual entries in the Scorecard `checks[]` array.
+- If both `min_score` and `checks` are configured, both the aggregate score and every named check must pass.
+- `unavailable_scorecard_behavior` can be set to:
+  - `deny` to fail closed when the package does not resolve to a supported GitHub source repository or the hosted Scorecard data is unavailable
+  - `skip` to treat missing repository/Scorecard data as no match for this policy
+- Scorecard checks that report a negative score such as `-1` are treated as unavailable data and follow `unavailable_scorecard_behavior`.
+- v1 is npm-only. OCI support is deferred until OCI enrichment can derive a trustworthy source repository from image metadata or provenance.
 
 ### `license`
 

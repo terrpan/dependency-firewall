@@ -48,7 +48,7 @@ export function TenantProvider({ children }: PropsWithChildren) {
 
   const { data, error, isError, isPending, refetch } = useQuery({
     queryKey: ['tenants', authStatus, session?.user?.id ?? null],
-    queryFn: ({ signal }) => fetchTenants(api, signal),
+    queryFn: () => fetchTenants(api),
   })
 
   const tenants = data ?? emptyTenants

@@ -28,6 +28,7 @@ PostgreSQL is the system of record.
 - operational tables are indexed by tenant_id and timestamp
 - upstreams are unique by `tenant_id + ecosystem + base_url`
 - upstreams persist a `capabilities` profile so policy compatibility checks are stable across API, UI, and evaluation workflows
+- when a new capability is added to an ecosystem default set, legacy upstream rows that still match the previous default profile may be backfilled to the new default so existing tenants can use newly introduced compatible policy types
 - policies may reference one upstream through `upstream_id`
 - `policies.upstream_id` and `policy_versions.upstream_id` are nullable only for legacy tenant-wide rules
 - upstream references use foreign keys so upstream deletion is blocked while policies still point at it

@@ -17,6 +17,7 @@ var registry = map[domain.PolicyType]Condition{
 	domain.PolicyTypeMinimumAge:         MinimumAge{},
 	domain.PolicyTypeMaximumAge:         MaximumAge{},
 	domain.PolicyTypeBlockMutableTag:    BlockMutableTag{},
+	domain.PolicyTypeScorecard:          Scorecard{},
 	domain.PolicyTypeLicense:            License{},
 	domain.PolicyTypeLicenseAllowlist:   LicenseAllowlist{},
 	domain.PolicyTypeAllowlist:          Allowlist{},

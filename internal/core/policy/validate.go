@@ -37,6 +37,9 @@ func ValidatePolicy(p domain.Policy) error {
 	if p.Type == domain.PolicyTypeLicenseAllowlist && p.Action != domain.PolicyActionDeny {
 		return invalidPolicyf("policy type %q requires action %q", p.Type, domain.PolicyActionDeny)
 	}
+	if p.Type == domain.PolicyTypeScorecard && p.Action != domain.PolicyActionDeny {
+		return invalidPolicyf("policy type %q requires action %q", p.Type, domain.PolicyActionDeny)
+	}
 	if p.Type == domain.PolicyTypeNamespaceAllowlist && p.Action != domain.PolicyActionDeny {
 		return invalidPolicyf("policy type %q requires action %q", p.Type, domain.PolicyActionDeny)
 	}

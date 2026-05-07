@@ -47,6 +47,7 @@ flowchart LR
         core --> valkey[(Valkey)]
         ociProxy --> ociCache[(tenant-aware OCI artifact cache)]
         core --> osv[OSV API]
+        core --> scorecard[Scorecard API]
         deliveryProxy --> ingest
         ociProxy --> upstreams[upstream registries]
     end
@@ -88,7 +89,7 @@ flowchart LR
 - PostgreSQL repositories
 - Valkey cache implementations
 - tenant-aware OCI artifact cache implementations
-- OSV enricher
+- OSV and Scorecard-backed enrichers
 - upstream registry clients
 - OpenTelemetry exporters and transport instrumentation
 - gRPC bundle and ingest client adapters for proxy pulls and write-back
@@ -124,7 +125,7 @@ flowchart TB
         cachedOCI[cache-backed OCI client]
         ociCache[tenant-aware OCI artifact cache]
         ociStorage[disk backend today / future S3 or GCS]
-        enrichers[OSV + npm enrichers]
+        enrichers[OSV + npm/Scorecard enrichers]
         grpcClients[gRPC bundle + ingest clients]
     end
 

@@ -24,6 +24,8 @@ export {
   type PolicyImportContentType,
   type PolicyImportDocument,
   type PolicyImportResult,
+  type ScorecardPolicyConfig,
+  type ScorecardUnavailableBehavior,
   type PolicyType,
   type PolicyTypeDescriptor,
   type PolicyUpsertInput,

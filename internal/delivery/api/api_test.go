@@ -1220,6 +1220,23 @@ func Test_PolicyTypesEndpoint(t *testing.T) {
 
 	found = false
 	for _, descriptor := range types {
+		if descriptor.Type == "scorecard" {
+			found = true
+			assert.NotEmpty(t, descriptor.Summary)
+			assert.NotEmpty(t, descriptor.Description)
+			assert.NotEmpty(t, descriptor.Help)
+			assert.Contains(t, descriptor.Example, "scorecard")
+			assert.Equal(t, 1, descriptor.CurrentSchemaVersion)
+			assert.Equal(t, []int{1}, descriptor.SupportedSchemaVersions)
+			assert.Equal(t, []string{"deny"}, descriptor.SupportedActions)
+			assert.Equal(t, []string{"npm"}, descriptor.SupportedEcosystems)
+			assert.Equal(t, []string{"scorecard_lookup"}, descriptor.RequiredCapabilities)
+		}
+	}
+	assert.True(t, found)
+
+	found = false
+	for _, descriptor := range types {
 		if descriptor.Type == "namespace_allowlist" {
 			found = true
 			assert.NotEmpty(t, descriptor.Summary)
@@ -1297,6 +1314,100 @@ func Test_PolicyValidation(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body = decodeJSON[map[string]string](t, resp)
 	assert.Contains(t, body["error"], `field "schema_version" is required`)
+}
+
+func Test_ScorecardPolicyRequiresScorecardCapability(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	upstreamResp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", map[string]any{
+		"name":         "npmjs",
+		"ecosystem":    "npm",
+		"base_url":     "https://registry.npmjs.org",
+		"capabilities": []string{"publish_time", "licenses"},
+	}, headers)
+	require.Equal(t, http.StatusCreated, upstreamResp.StatusCode)
+	upstream := decodeJSON[UpstreamResponse](t, upstreamResp)
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "require-secure-source-repos",
+		"upstream_id":    upstream.ID,
+		"type":           "scorecard",
+		"schema_version": 1,
+		"action":         "deny",
+		"config": map[string]any{
+			"min_score": 7,
+		},
+	}, headers)
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Contains(t, body["error"], `requires upstream capabilities scorecard_lookup`)
+}
+
+func Test_LegacyDefaultNPMUpstreamAdvertisesNewScorecardPolicySupport(t *testing.T) {
+	srv, _, _, upstreamRepo, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-legacy"}
+
+	require.NoError(t, upstreamRepo.Create(context.Background(), &domain.Upstream{
+		TenantID:  "tenant-legacy",
+		Name:      "npmjs-legacy",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+		Capabilities: []domain.UpstreamCapability{
+			domain.UpstreamCapabilityPublishTime,
+			domain.UpstreamCapabilityLicenses,
+			domain.UpstreamCapabilityVulnerabilityLookup,
+		},
+	}))
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams", nil, headers)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	upstreams := decodeJSON[[]UpstreamResponse](t, resp)
+	require.Len(t, upstreams, 1)
+	assert.Equal(
+		t,
+		[]string{"publish_time", "licenses", "vulnerability_lookup", "scorecard_lookup"},
+		upstreams[0].Capabilities,
+	)
+	assert.Contains(t, upstreams[0].SupportedPolicyTypes, string(domain.PolicyTypeScorecard))
+}
+
+func Test_ScorecardPolicyAcceptsLegacyDefaultNPMUpstream(t *testing.T) {
+	srv, _, policyRepo, upstreamRepo, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-legacy"}
+
+	legacyUpstream := &domain.Upstream{
+		TenantID:  "tenant-legacy",
+		Name:      "npmjs-legacy",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+		Capabilities: []domain.UpstreamCapability{
+			domain.UpstreamCapabilityPublishTime,
+			domain.UpstreamCapabilityLicenses,
+			domain.UpstreamCapabilityVulnerabilityLookup,
+		},
+	}
+	require.NoError(t, upstreamRepo.Create(context.Background(), legacyUpstream))
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies", map[string]any{
+		"name":           "require-secure-source-repos",
+		"upstream_id":    legacyUpstream.ID,
+		"type":           "scorecard",
+		"schema_version": 1,
+		"action":         "deny",
+		"config": map[string]any{
+			"min_score": 7,
+		},
+	}, headers)
+
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	policies, err := policyRepo.ListByTenant(context.Background(), "tenant-legacy")
+	require.NoError(t, err)
+	require.Len(t, policies, 1)
+	assert.Equal(t, domain.PolicyTypeScorecard, policies[0].Type)
 }
 
 func Test_PolicyImportDocument(t *testing.T) {

@@ -218,6 +218,17 @@ func TestMetadataCache_realValkey(t *testing.T) {
 				Summary:  "critical vulnerability",
 			}},
 			IsMutableTag: false,
+			SourceRepository: &domain.SourceRepository{
+				Host:  "github.com",
+				Owner: "library",
+				Repo:  "alpine",
+			},
+			Scorecard: &domain.ScorecardResult{
+				Score: ptrFloat64(8.7),
+				Checks: map[string]float64{
+					"binary-artifacts": 10,
+				},
+			},
 		}
 
 		require.NoError(t, cache.Set(ctx, "tenant-round-trip", artifact, metadata, time.Minute))
@@ -232,6 +243,12 @@ func TestMetadataCache_realValkey(t *testing.T) {
 		assert.Equal(t, metadata.Licenses, cached.Licenses)
 		assert.Equal(t, metadata.Vulnerabilities, cached.Vulnerabilities)
 		assert.Equal(t, metadata.IsMutableTag, cached.IsMutableTag)
+		require.NotNil(t, cached.SourceRepository)
+		assert.Equal(t, metadata.SourceRepository.ProjectURI(), cached.SourceRepository.ProjectURI())
+		require.NotNil(t, cached.Scorecard)
+		require.NotNil(t, cached.Scorecard.Score)
+		assert.InDelta(t, 8.7, *cached.Scorecard.Score, 0.001)
+		assert.Equal(t, metadata.Scorecard.Checks, cached.Scorecard.Checks)
 	})
 
 	t.Run("invalidate tenant hides prior generation and allows repopulation", func(t *testing.T) {

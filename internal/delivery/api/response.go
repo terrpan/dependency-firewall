@@ -149,13 +149,14 @@ func toUpstreamResponse(u *domain.Upstream) *UpstreamResponse {
 	for i := range supportedPolicyTypes {
 		policyTypes[i] = string(supportedPolicyTypes[i])
 	}
+	effectiveCapabilities := u.EffectiveCapabilities()
 
 	return &UpstreamResponse{
 		ID:                   u.ID,
 		Name:                 u.Name,
 		Ecosystem:            string(u.Ecosystem),
 		BaseURL:              u.BaseURL,
-		Capabilities:         domain.UpstreamCapabilityStrings(u.Capabilities),
+		Capabilities:         domain.UpstreamCapabilityStrings(effectiveCapabilities),
 		SupportedPolicyTypes: policyTypes,
 		CreatedAt:            u.CreatedAt,
 		UpdatedAt:            u.UpdatedAt,

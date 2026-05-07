@@ -1,6 +1,15 @@
 import { controlPlaneBaseUrl, controlPlaneRootUrl, joinUrlPath } from '../config.ts'
 import { ApiError, getErrorMessage } from './error.ts'
 import { injectTraceContext, recordSpanError, startSpan } from '../telemetry.ts'
+import {
+  buildRequestUrl,
+  mergeHeaders,
+  normalizeTracePath,
+  readResponseBody,
+  trimTrailingSlash,
+  type QueryValue,
+  type RequestHeaders,
+} from './request.ts'
 import type {
   CacheClearResult,
   CreatePolicyRequest,
@@ -22,10 +31,6 @@ import type {
   UpdateUpstreamRequest,
   Upstream,
 } from './types.ts'
-
-type RequestHeaders = HeadersInit | undefined
-
-type QueryValue = string | number | boolean | null | undefined
 
 type RequestOptions = {
   signal?: AbortSignal
@@ -60,85 +65,6 @@ type InternalRequestOptions<TBody> = JsonRequestOptions<TBody> & {
   contentType?: string
   accept?: string
   tenantScoped?: boolean
-}
-
-function trimTrailingSlash(value: string): string {
-  if (value === '/') {
-    return ''
-  }
-
-  return value.replace(/\/+$/, '')
-}
-
-function withLeadingSlash(path: string): string {
-  return path.startsWith('/') ? path : `/${path}`
-}
-
-function mergeHeaders(...sources: RequestHeaders[]): Headers {
-  const headers = new Headers()
-
-  for (const source of sources) {
-    if (!source) {
-      continue
-    }
-
-    const nextHeaders = new Headers(source)
-    nextHeaders.forEach((value, key) => {
-      headers.set(key, value)
-    })
-  }
-
-  return headers
-}
-
-function buildRequestUrl(baseUrl: string, path: string, query?: Record<string, QueryValue>): string {
-  const url = new URL(`${trimTrailingSlash(baseUrl)}${withLeadingSlash(path)}`, 'http://localhost')
-
-  for (const [key, value] of Object.entries(query ?? {})) {
-    if (value === undefined || value === null || value === '') {
-      continue
-    }
-
-    url.searchParams.set(key, String(value))
-  }
-
-  if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
-    return `${url.pathname}${url.search}`
-  }
-
-  return url.toString()
-}
-
-function normalizeTracePath(path: string): string {
-  const segments = path.split('/').filter(Boolean)
-
-  return `/${segments
-    .map((segment, index) => {
-      const previous = segments[index - 1]
-      if (previous === 'tenants' || previous === 'upstreams' || previous === 'policies') {
-        return ':id'
-      }
-      if (/^[0-9a-f]{8,}$/i.test(segment) || /^[0-9a-f]{8,}-[0-9a-f-]+$/i.test(segment)) {
-        return ':id'
-      }
-      return segment
-    })
-    .join('/')}`
-}
-
-async function readResponseBody(response: Response): Promise<unknown> {
-  const contentType = response.headers.get('content-type') ?? ''
-
-  if (contentType.includes('application/json')) {
-    try {
-      return (await response.json()) as unknown
-    } catch {
-      return undefined
-    }
-  }
-
-  const text = await response.text()
-  return text || undefined
 }
 
 export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {

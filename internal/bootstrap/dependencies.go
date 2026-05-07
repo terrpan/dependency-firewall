@@ -1,0 +1,156 @@
+// dependencies.go constructs and closes repositories, caches, clients, and core services.
+package bootstrap
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	valkeygo "github.com/valkey-io/valkey-go"
+
+	"github.com/danielterry/dependency-firewall/internal/config"
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"github.com/danielterry/dependency-firewall/internal/core/service"
+	auditinfra "github.com/danielterry/dependency-firewall/internal/infra/audit"
+	"github.com/danielterry/dependency-firewall/internal/infra/enrichment"
+	"github.com/danielterry/dependency-firewall/internal/infra/npm"
+	"github.com/danielterry/dependency-firewall/internal/infra/osv"
+	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
+	"github.com/danielterry/dependency-firewall/internal/infra/scorecard"
+	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
+	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
+	valkeyinfra "github.com/danielterry/dependency-firewall/internal/infra/valkey"
+)
+
+type dependencies struct {
+	pool         *pgxpool.Pool
+	valkeyClient valkeygo.Client
+
+	tenantRepo         port.TenantRepository
+	policyRepo         port.PolicyRepository
+	policyRevisionRepo port.PolicyRevisionRepository
+	decisionRepo       port.DecisionRepository
+	auditRepo          *postgres.AuditEventRepository
+	upstreamRepo       port.UpstreamRepository
+
+	decisionCache port.DecisionCache
+	metadataCache port.MetadataCache
+	enricher      port.Enricher
+
+	auditService      *service.AuditService
+	enrichmentService *service.EnrichmentService
+	ociClient         port.UpstreamClient
+	npmClient         port.UpstreamClient
+}
+
+func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logger, openDatabase, runMigrations bool) (*dependencies, error) {
+	if openDatabase && runMigrations {
+		if err := migrateDatabase(cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	var (
+		err  error
+		pool *pgxpool.Pool
+	)
+	if openDatabase {
+		pool, err = postgres.Connect(ctx, cfg.Database, cfg.Telemetry.SQLTracing)
+		if err != nil {
+			return nil, fmt.Errorf("connecting to database: %w", err)
+		}
+	}
+	valkeyClient, err := valkeyinfra.Connect(ctx, cfg.Valkey)
+	if err != nil {
+		if pool != nil {
+			pool.Close()
+		}
+		return nil, fmt.Errorf("connecting to valkey: %w", err)
+	}
+
+	deps := &dependencies{
+		pool:          pool,
+		valkeyClient:  valkeyClient,
+		decisionCache: valkeyinfra.NewDecisionCache(valkeyClient),
+		metadataCache: valkeyinfra.NewMetadataCache(valkeyClient),
+	}
+	if pool != nil {
+		deps.tenantRepo = postgres.NewTenantRepository(pool)
+		deps.policyRepo = postgres.NewPolicyRepository(pool)
+		deps.policyRevisionRepo = postgres.NewPolicyRevisionRepository(pool)
+		deps.decisionRepo = postgres.NewDecisionRepository(pool)
+		deps.auditRepo = postgres.NewAuditEventRepository(pool)
+		deps.upstreamRepo = postgres.NewUpstreamRepository(pool)
+	}
+
+	auditRecorders := make([]port.AuditEventRecorder, 0, 2)
+	if cfg.Audit.Enabled && cfg.Audit.Slog {
+		auditRecorders = append(auditRecorders, auditinfra.NewSlogRecorder(logger))
+	}
+	if cfg.Audit.Enabled && cfg.Audit.Postgres {
+		auditRecorders = append(auditRecorders, deps.auditRepo)
+	}
+	deps.auditService = service.NewAuditService(
+		auditinfra.NewFanoutRecorder(auditRecorders...),
+		deps.auditRepo,
+		logger,
+		cfg.Audit.Enabled,
+		parseAuditFailureMode(cfg.Audit.FailureMode),
+		parseAuditDetailLevel(cfg.Audit.DetailLevel),
+	)
+
+	osvEnricher := osv.NewClient(telemetry.WrapHTTPClient(&http.Client{}), logger)
+	scorecardClient := scorecard.NewClient(telemetry.WrapHTTPClient(&http.Client{}), logger)
+	npmEnricher := npm.NewMetadataEnricher(telemetry.WrapHTTPClient(&http.Client{}), logger, scorecardClient)
+	deps.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
+	deps.enrichmentService = service.NewEnrichmentService(deps.enricher, deps.metadataCache, logger, deps.auditService)
+
+	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOCIHTTPClient()))
+	deps.ociClient = baseOCIClient
+	if cfg.OCICache.Enabled {
+		artifactCache, err := newOCIArtifactCache(cfg.OCICache)
+		if err != nil {
+			deps.close()
+			return nil, fmt.Errorf("creating OCI cache: %w", err)
+		}
+		deps.ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
+	}
+	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(&http.Client{Timeout: 30 * time.Second}))
+
+	return deps, nil
+}
+
+func (d *dependencies) close() {
+	if d == nil {
+		return
+	}
+	if d.valkeyClient != nil {
+		d.valkeyClient.Close()
+	}
+	if d.pool != nil {
+		d.pool.Close()
+	}
+}
+
+func parseAuditFailureMode(value string) domain.AuditFailureMode {
+	if strings.EqualFold(strings.TrimSpace(value), string(domain.AuditFailureModeFailOpen)) {
+		return domain.AuditFailureModeFailOpen
+	}
+	return domain.AuditFailureModeFailClosed
+}
+
+func parseAuditDetailLevel(value string) domain.AuditDetailLevel {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case string(domain.AuditDetailLevelMinimal):
+		return domain.AuditDetailLevelMinimal
+	case string(domain.AuditDetailLevelFull):
+		return domain.AuditDetailLevelFull
+	default:
+		return domain.AuditDetailLevelSummary
+	}
+}

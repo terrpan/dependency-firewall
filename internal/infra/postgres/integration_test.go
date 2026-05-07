@@ -123,6 +123,65 @@ func TestMigrations_UpAndDown(t *testing.T) {
 	require.NoError(t, m2.Up())
 }
 
+func TestMigrations_BackfillScorecardCapabilityForLegacyNPMUpstreams(t *testing.T) {
+	ctx := context.Background()
+
+	pgContainer, err := pgmodule.Run(ctx,
+		"postgres:16-alpine",
+		pgmodule.WithDatabase("testdb"),
+		pgmodule.WithUsername("test"),
+		pgmodule.WithPassword("test"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(30*time.Second),
+		),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pgContainer.Terminate(ctx)) })
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+	dbURL := fmt.Sprintf("pgx5://%s", connStr[len("postgres://"):])
+
+	srcDriver, err := iofs.New(migrations.FS, ".")
+	require.NoError(t, err)
+	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, dbURL)
+	require.NoError(t, err)
+	require.NoError(t, m.Migrate(16))
+
+	pool, err := pgxpool.New(ctx, connStr)
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+
+	var tenantID string
+	err = pool.QueryRow(ctx,
+		`INSERT INTO tenants (name) VALUES ('legacy-upstream-tenant') RETURNING id`,
+	).Scan(&tenantID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO upstreams (tenant_id, name, ecosystem, base_url, capabilities)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		tenantID,
+		"npmjs-legacy",
+		"npm",
+		"https://registry.npmjs.org",
+		[]string{"publish_time", "licenses", "vulnerability_lookup"},
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, m.Migrate(17))
+
+	var capabilities []string
+	err = pool.QueryRow(ctx,
+		`SELECT capabilities FROM upstreams WHERE tenant_id = $1`,
+		tenantID,
+	).Scan(&capabilities)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"publish_time", "licenses", "vulnerability_lookup", "scorecard_lookup"}, capabilities)
+}
+
 // ---------------------------------------------------------------------------
 // TenantRepository
 // ---------------------------------------------------------------------------

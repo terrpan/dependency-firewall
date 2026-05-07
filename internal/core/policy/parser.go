@@ -14,6 +14,7 @@ var knownPolicyTypes = map[string]domain.PolicyType{
 	string(domain.PolicyTypeMinimumAge):         domain.PolicyTypeMinimumAge,
 	string(domain.PolicyTypeMaximumAge):         domain.PolicyTypeMaximumAge,
 	string(domain.PolicyTypeBlockMutableTag):    domain.PolicyTypeBlockMutableTag,
+	string(domain.PolicyTypeScorecard):          domain.PolicyTypeScorecard,
 	string(domain.PolicyTypeLicense):            domain.PolicyTypeLicense,
 	string(domain.PolicyTypeLicenseAllowlist):   domain.PolicyTypeLicenseAllowlist,
 	string(domain.PolicyTypeAllowlist):          domain.PolicyTypeAllowlist,

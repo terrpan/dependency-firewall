@@ -95,6 +95,26 @@
         ],
         "type": "object"
       },
+      "ComponentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "timestamp"
+        ],
+        "type": "object"
+      },
       "CreateTenantRequest": {
         "additionalProperties": false,
         "properties": {
@@ -257,6 +277,9 @@
           "build_time": {
             "type": "string"
           },
+          "bundle": {
+            "$ref": "#/components/schemas/ComponentResponse"
+          },
           "commit": {
             "type": "string"
           },
@@ -271,6 +294,9 @@
           },
           "os": {
             "type": "string"
+          },
+          "proxy": {
+            "$ref": "#/components/schemas/ComponentResponse"
           },
           "service_name": {
             "type": "string"

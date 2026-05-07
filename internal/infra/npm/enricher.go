@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,34 +25,46 @@ type MetadataEnricher struct {
 	httpClient *http.Client
 	registry   string
 	logger     *slog.Logger
+	scorecards scorecardClient
 }
 
 // npmPackageResponse is the relevant subset of the npm registry package JSON response.
 type npmPackageResponse struct {
-	Time     map[string]string            `json:"time"`     // version -> ISO8601 timestamp
-	Versions map[string]npmPackageVersion `json:"versions"` // version -> package.json fields
+	Time       map[string]string            `json:"time"`       // version -> ISO8601 timestamp
+	Versions   map[string]npmPackageVersion `json:"versions"`   // version -> package.json fields
+	Repository any                          `json:"repository"` // top-level package repository metadata
 }
 
 type npmPackageVersion struct {
-	License  any                `json:"license"`
-	Licenses []npmLicenseObject `json:"licenses"`
+	License    any                `json:"license"`
+	Licenses   []npmLicenseObject `json:"licenses"`
+	Repository any                `json:"repository"`
 }
 
 type npmLicenseObject struct {
 	Type string `json:"type"`
 }
 
+type scorecardClient interface {
+	Lookup(ctx context.Context, repo domain.SourceRepository) (*domain.ScorecardResult, error)
+}
+
 // NewMetadataEnricher creates a new npm metadata enricher.
-func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger) *MetadataEnricher {
+func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger, scorecards ...scorecardClient) *MetadataEnricher {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultTimeout}
 	} else if httpClient.Timeout == 0 {
 		httpClient.Timeout = defaultTimeout
 	}
+	var scorecardLookup scorecardClient
+	if len(scorecards) > 0 {
+		scorecardLookup = scorecards[0]
+	}
 	return &MetadataEnricher{
 		httpClient: httpClient,
 		registry:   defaultRegistry,
 		logger:     logger,
+		scorecards: scorecardLookup,
 	}
 }
 
@@ -149,6 +162,26 @@ func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactI
 
 	if versionData, ok := pkgData.Versions[artifact.Version]; ok {
 		meta.Licenses = extractVersionLicenses(versionData)
+		sourceRepo, scorecardUnavailableReason := resolveSourceRepository(pkgData, versionData)
+		if sourceRepo != nil {
+			meta.SourceRepository = sourceRepo
+			if e.scorecards != nil {
+				scorecardResult, lookupErr := e.scorecards.Lookup(ctx, *sourceRepo)
+				if lookupErr != nil {
+					e.logger.WarnContext(ctx, "scorecard lookup failed",
+						"repository", sourceRepo.ProjectURI(),
+						"error", lookupErr,
+					)
+					meta.Scorecard = &domain.ScorecardResult{
+						UnavailableReason: fmt.Sprintf("Scorecard data is unavailable for %s", sourceRepo.ProjectURI()),
+					}
+				} else {
+					meta.Scorecard = scorecardResult
+				}
+			}
+		} else if scorecardUnavailableReason != "" {
+			meta.Scorecard = &domain.ScorecardResult{UnavailableReason: scorecardUnavailableReason}
+		}
 	}
 
 	return meta, nil
@@ -233,4 +266,110 @@ func splitLicenseExpression(value string) []string {
 	}
 
 	return result
+}
+
+func resolveSourceRepository(pkg npmPackageResponse, version npmPackageVersion) (*domain.SourceRepository, string) {
+	candidates := []any{version.Repository, pkg.Repository}
+	var sawRepositoryValue bool
+
+	for _, candidate := range candidates {
+		rawValue, ok := repositoryValue(candidate)
+		if !ok {
+			continue
+		}
+		sawRepositoryValue = true
+		repo, err := normalizeGitHubRepository(rawValue)
+		if err == nil {
+			return repo, ""
+		}
+	}
+
+	if sawRepositoryValue {
+		return nil, "npm package does not declare a supported GitHub source repository"
+	}
+
+	return nil, "npm package does not declare a source repository"
+}
+
+func repositoryValue(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		return trimmed, trimmed != ""
+	case map[string]any:
+		if rawURL, ok := typed["url"].(string); ok {
+			trimmed := strings.TrimSpace(rawURL)
+			return trimmed, trimmed != ""
+		}
+	}
+
+	return "", false
+}
+
+func normalizeGitHubRepository(raw string) (*domain.SourceRepository, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, fmt.Errorf("repository is empty")
+	}
+
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "github:"):
+		return parseGitHubRepositoryPath(trimmed[len("github:"):])
+	case strings.HasPrefix(lower, "git@github.com:"):
+		return parseGitHubRepositoryPath(trimmed[len("git@github.com:"):])
+	}
+
+	normalized := strings.TrimPrefix(trimmed, "git+")
+	if strings.HasPrefix(strings.ToLower(normalized), "git://") {
+		normalized = "https://" + normalized[len("git://"):]
+	}
+	if strings.HasPrefix(strings.ToLower(normalized), "ssh://git@github.com/") {
+		return parseGitHubRepositoryPath(normalized[len("ssh://git@github.com/"):])
+	}
+	if looksLikeGitHubShorthand(normalized) {
+		return parseGitHubRepositoryPath(normalized)
+	}
+
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return nil, err
+	}
+	if strings.ToLower(parsed.Hostname()) != "github.com" {
+		return nil, fmt.Errorf("unsupported repository host %q", parsed.Hostname())
+	}
+
+	return parseGitHubRepositoryPath(parsed.Path)
+}
+
+func parseGitHubRepositoryPath(path string) (*domain.SourceRepository, error) {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	trimmed = strings.TrimSuffix(trimmed, ".git")
+	if index := strings.IndexAny(trimmed, "#?"); index >= 0 {
+		trimmed = trimmed[:index]
+	}
+	parts := strings.Split(trimmed, "/")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("repository path %q must include owner and repo", path)
+	}
+
+	owner := strings.TrimSpace(parts[0])
+	repo := strings.TrimSpace(parts[1])
+	if owner == "" || repo == "" {
+		return nil, fmt.Errorf("repository path %q must include owner and repo", path)
+	}
+
+	return &domain.SourceRepository{
+		Host:  "github.com",
+		Owner: owner,
+		Repo:  repo,
+	}, nil
+}
+
+func looksLikeGitHubShorthand(value string) bool {
+	if strings.Contains(value, "://") || strings.Contains(value, "@") {
+		return false
+	}
+	parts := strings.Split(strings.Trim(value, "/"), "/")
+	return len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != ""
 }

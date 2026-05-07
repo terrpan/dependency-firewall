@@ -42,6 +42,7 @@ export const policyTypes = [
   'minimum_age',
   'maximum_age',
   'block_mutable_tag',
+  'scorecard',
   'license',
   'license_allowlist',
   'allowlist',
@@ -74,6 +75,15 @@ export type BlockMutableTagPolicyConfig = {
   dry_run?: boolean
 }
 
+export type ScorecardUnavailableBehavior = 'deny' | 'skip'
+
+export type ScorecardPolicyConfig = {
+  min_score?: number
+  checks?: Record<string, number>
+  unavailable_scorecard_behavior?: ScorecardUnavailableBehavior
+  dry_run?: boolean
+}
+
 export type LicensePolicyConfig = {
   licenses: string[]
   dry_run?: boolean
@@ -98,6 +108,7 @@ export type PolicyConfigByType = {
   minimum_age: MinimumAgePolicyConfig
   maximum_age: MaximumAgePolicyConfig
   block_mutable_tag: BlockMutableTagPolicyConfig
+  scorecard: ScorecardPolicyConfig
   license: LicensePolicyConfig
   license_allowlist: LicenseAllowlistPolicyConfig
   allowlist: NamespaceListPolicyConfig

@@ -57,10 +57,7 @@ export function SearchFilterBar<T extends string>({
 }: SearchFilterBarProps<T>) {
   return (
     <div className="filter-toolbar">
-      <label
-        className={`policy-field filter-search-field${searchFieldClassName ? ` ${searchFieldClassName}` : ''}`}
-        htmlFor={searchInputId}
-      >
+      <label className={`filter-search-field${searchFieldClassName ? ` ${searchFieldClassName}` : ''}`} htmlFor={searchInputId}>
         <span>{searchLabel}</span>
         <input
           id={searchInputId}

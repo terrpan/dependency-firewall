@@ -30,7 +30,7 @@ func NewPolicyHandler(policies *service.PolicyService, logger *slog.Logger) *Pol
 type policyRequest struct {
 	UpstreamID    *string             `json:"upstream_id,omitempty"`
 	Name          string              `json:"name,omitempty" validate:"notblank"`
-	Type          domain.PolicyType   `json:"type,omitempty" validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag license license_allowlist allowlist namespace_allowlist blocklist"`
+	Type          domain.PolicyType   `json:"type,omitempty" validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag scorecard license license_allowlist allowlist namespace_allowlist blocklist"`
 	Action        domain.PolicyAction `json:"action,omitempty" validate:"required,oneof=allow deny"`
 	SchemaVersion int                 `json:"schema_version,omitempty" validate:"required,gte=1"`
 	Config        json.RawMessage     `json:"config,omitempty" validate:"required"`

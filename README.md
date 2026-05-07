@@ -219,7 +219,7 @@ curl -s -X POST http://localhost:8080/api/v1/upstreams \
     "name":"npmjs-public",
     "ecosystem":"npm",
     "base_url":"https://registry.npmjs.org",
-    "capabilities":["publish_time","licenses","vulnerability_lookup"]
+    "capabilities":["publish_time","licenses","vulnerability_lookup","scorecard_lookup"]
   }' | jq .
 
 curl -s -X POST http://localhost:8080/api/v1/upstreams \
@@ -232,6 +232,8 @@ curl -s -X POST http://localhost:8080/api/v1/upstreams \
     "capabilities":["manifest_digest_lookup"]
   }' | jq .
 ```
+
+Enable `scorecard_lookup` on npm upstreams when you want to use the OpenSSF Scorecard policy type.
 
 ## npm example
 

@@ -1,12 +1,17 @@
+import { lazy } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell.tsx'
 import { RouteGuard } from '../features/auth/RouteGuard.tsx'
-import { DashboardPage } from '../pages/DashboardPage.tsx'
-import { EvaluationsPage } from '../pages/EvaluationsPage.tsx'
-import { NotFoundPage } from '../pages/NotFoundPage.tsx'
-import { PoliciesPage } from '../pages/PoliciesPage.tsx'
-import { TenantsPage } from '../pages/TenantsPage.tsx'
-import { UpstreamsPage } from '../pages/UpstreamsPage.tsx'
+import { RouteElement } from './RouteSuspense.tsx'
+
+const DashboardPage = lazy(() => import('../pages/DashboardPage.tsx').then(({ DashboardPage }) => ({ default: DashboardPage })))
+const EvaluationsPage = lazy(() =>
+  import('../pages/EvaluationsPage.tsx').then(({ EvaluationsPage }) => ({ default: EvaluationsPage })),
+)
+const NotFoundPage = lazy(() => import('../pages/NotFoundPage.tsx').then(({ NotFoundPage }) => ({ default: NotFoundPage })))
+const PoliciesPage = lazy(() => import('../pages/PoliciesPage.tsx').then(({ PoliciesPage }) => ({ default: PoliciesPage })))
+const TenantsPage = lazy(() => import('../pages/TenantsPage.tsx').then(({ TenantsPage }) => ({ default: TenantsPage })))
+const UpstreamsPage = lazy(() => import('../pages/UpstreamsPage.tsx').then(({ UpstreamsPage }) => ({ default: UpstreamsPage })))
 
 export const router = createBrowserRouter([
   {
@@ -19,27 +24,27 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <DashboardPage />,
+        element: <RouteElement Page={DashboardPage} />,
       },
       {
         path: 'tenants',
-        element: <TenantsPage />,
+        element: <RouteElement Page={TenantsPage} />,
       },
       {
         path: 'upstreams',
-        element: <UpstreamsPage />,
+        element: <RouteElement Page={UpstreamsPage} />,
       },
       {
         path: 'policies',
-        element: <PoliciesPage />,
+        element: <RouteElement Page={PoliciesPage} />,
       },
       {
         path: 'evaluations',
-        element: <EvaluationsPage />,
+        element: <RouteElement Page={EvaluationsPage} />,
       },
       {
         path: '*',
-        element: <NotFoundPage />,
+        element: <RouteElement Page={NotFoundPage} />,
       },
     ],
   },
