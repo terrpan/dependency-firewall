@@ -1,4 +1,3 @@
-// servers.go owns HTTP/gRPC server construction, JSON codec wiring, and graceful shutdown.
 package bootstrap
 
 import (

@@ -25,6 +25,13 @@ var ociAcceptHeaders = strings.Join([]string{
 
 var bearerChallengeParamRE = regexp.MustCompile(`([A-Za-z]+)="([^"]*)"`)
 
+var forwardedResponseHeaders = [...]string{
+	"Docker-Content-Digest",
+	"Content-Type",
+	"Content-Length",
+	"ETag",
+}
+
 // OCIClient implements port.UpstreamClient for OCI-compatible registries.
 type OCIClient struct {
 	httpClient *http.Client
@@ -188,14 +195,8 @@ func (c *OCIClient) resolveTagGet(ctx context.Context, url string) (string, erro
 
 // extractHeaders copies relevant response headers into a map.
 func extractHeaders(resp *http.Response) map[string]string {
-	interesting := []string{
-		"Docker-Content-Digest",
-		"Content-Type",
-		"Content-Length",
-		"ETag",
-	}
-	headers := make(map[string]string, len(interesting))
-	for _, h := range interesting {
+	headers := make(map[string]string, len(forwardedResponseHeaders))
+	for _, h := range forwardedResponseHeaders {
 		if v := resp.Header.Get(h); v != "" {
 			headers[h] = v
 		}

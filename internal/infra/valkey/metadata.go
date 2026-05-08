@@ -23,11 +23,11 @@ func NewMetadataCache(client valkeygo.Client) *MetadataCache {
 }
 
 func metadataGenerationKey(tenantID string) string {
-	return fmt.Sprintf("metadata-generation:%s", tenantID)
+	return "metadata-generation:" + tenantID
 }
 
 func metadataKey(tenantID string, generation int64, artifact domain.ArtifactIdentity) string {
-	return fmt.Sprintf("metadata:%s:%d:%s", tenantID, generation, artifact.CacheKey())
+	return "metadata:" + tenantID + ":" + strconv.FormatInt(generation, 10) + ":" + artifact.CacheKey()
 }
 
 // Get retrieves cached artifact metadata. Returns domain.ErrCacheMiss if not found.

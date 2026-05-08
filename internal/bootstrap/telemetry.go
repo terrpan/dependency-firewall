@@ -1,4 +1,3 @@
-// telemetry.go starts and stops OpenTelemetry providers for each runtime mode.
 package bootstrap
 
 import (

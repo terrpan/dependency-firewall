@@ -3,9 +3,7 @@ package oci
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -411,62 +409,6 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 	streamResponse(w, resp)
 }
 
-// streamResponse copies upstream response headers and body to the client.
-func streamResponse(w http.ResponseWriter, resp *port.UpstreamResponse) {
-	for k, v := range resp.Headers {
-		w.Header().Set(k, v)
-	}
-	if resp.ContentType != "" {
-		w.Header().Set("Content-Type", resp.ContentType)
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
-}
-
-// parseManifestPath extracts repository and reference from a path like
-// "library/nginx/manifests/latest".
-func parseManifestPath(path string) (repo, reference string, ok bool) {
-	const marker = "/manifests/"
-	idx := strings.LastIndex(path, marker)
-	if idx < 0 {
-		return "", "", false
-	}
-	repo = path[:idx]
-	reference = path[idx+len(marker):]
-	if repo == "" || reference == "" {
-		return "", "", false
-	}
-	return repo, reference, true
-}
-
-// parseBlobPath extracts repository and digest from a path like
-// "library/nginx/blobs/sha256:abc123".
-func parseBlobPath(path string) (repo, digest string, ok bool) {
-	const marker = "/blobs/"
-	idx := strings.LastIndex(path, marker)
-	if idx < 0 {
-		return "", "", false
-	}
-	repo = path[:idx]
-	digest = path[idx+len(marker):]
-	if repo == "" || digest == "" {
-		return "", "", false
-	}
-	return repo, digest, true
-}
-
-// splitRepo splits a repository path into namespace and name.
-// For "library/nginx" -> ("library", "nginx").
-// For "nginx" -> ("", "nginx").
-// For "a/b/c" -> ("a/b", "c").
-func splitRepo(repo string) (namespace, name string) {
-	idx := strings.LastIndex(repo, "/")
-	if idx < 0 {
-		return "", repo
-	}
-	return repo[:idx], repo[idx+1:]
-}
-
 func (h *RegistryHandler) recordAudit(ctx context.Context, event domain.AuditEvent) error {
 	if h.audit == nil {
 		return nil
@@ -492,29 +434,4 @@ func (h *RegistryHandler) resolveUpstream(ctx context.Context, tenantID string) 
 	}
 
 	return h.upstreams.GetByEcosystem(ctx, tenantID, domain.EcosystemOCI)
-}
-
-// ociErrorResponse is the OCI-spec error envelope.
-type ociErrorResponse struct {
-	Errors []ociError `json:"errors"`
-}
-
-type ociError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Detail  any    `json:"detail"`
-}
-
-// writeOCIError writes an OCI-spec error response.
-func writeOCIError(w http.ResponseWriter, r *http.Request, code string, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
-	w.Header().Set("X-Dependency-Firewall-Reason", message)
-	w.WriteHeader(status)
-	if r.Method == http.MethodHead {
-		return
-	}
-	_ = json.NewEncoder(w).Encode(ociErrorResponse{
-		Errors: []ociError{{Code: code, Message: message, Detail: map[string]any{}}},
-	})
 }

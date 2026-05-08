@@ -1,11 +1,9 @@
-// dependencies.go constructs and closes repositories, caches, clients, and core services.
 package bootstrap
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -104,13 +102,13 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		parseAuditDetailLevel(cfg.Audit.DetailLevel),
 	)
 
-	osvEnricher := osv.NewClient(telemetry.WrapHTTPClient(&http.Client{}), logger)
-	scorecardClient := scorecard.NewClient(telemetry.WrapHTTPClient(&http.Client{}), logger)
-	npmEnricher := npm.NewMetadataEnricher(telemetry.WrapHTTPClient(&http.Client{}), logger, scorecardClient)
+	osvEnricher := osv.NewClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger)
+	scorecardClient := scorecard.NewClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger)
+	npmEnricher := npm.NewMetadataEnricher(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger, scorecardClient)
 	deps.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
 	deps.enrichmentService = service.NewEnrichmentService(deps.enricher, deps.metadataCache, logger, deps.auditService)
 
-	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOCIHTTPClient()))
+	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)))
 	deps.ociClient = baseOCIClient
 	if cfg.OCICache.Enabled {
 		artifactCache, err := newOCIArtifactCache(cfg.OCICache)
@@ -120,7 +118,7 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		}
 		deps.ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
 	}
-	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(&http.Client{Timeout: 30 * time.Second}))
+	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(30 * time.Second)))
 
 	return deps, nil
 }

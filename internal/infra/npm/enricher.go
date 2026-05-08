@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -122,13 +121,8 @@ func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactI
 		return nil, fmt.Errorf("%w: npm registry returned status %d", domain.ErrEnrichmentFailed, resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("%w: reading response: %v", domain.ErrEnrichmentFailed, err)
-	}
-
 	var pkgData npmPackageResponse
-	if err := json.Unmarshal(body, &pkgData); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&pkgData); err != nil {
 		return nil, fmt.Errorf("%w: decoding response: %v", domain.ErrEnrichmentFailed, err)
 	}
 

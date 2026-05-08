@@ -1,4 +1,3 @@
-// modes.go contains the concrete control-plane, proxy, and all-in-one runtime modes.
 package bootstrap
 
 import (

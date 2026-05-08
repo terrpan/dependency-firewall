@@ -14,15 +14,15 @@ import (
 )
 
 type spyPolicyServiceRepo struct {
-	createCalls  int
-	updateCalls  int
-	deleteCalls  int
-	createErrAt  int
-	deleteErr    error
+	createCalls     int
+	updateCalls     int
+	deleteCalls     int
+	createErrAt     int
+	deleteErr       error
 	lastDeleteForce bool
-	getPolicy    *domain.Policy
-	listPolicies []domain.Policy
-	versions     map[string][]domain.PolicyVersion
+	getPolicy       *domain.Policy
+	listPolicies    []domain.Policy
+	versions        map[string][]domain.PolicyVersion
 }
 
 func intPtr(v int) *int             { return &v }

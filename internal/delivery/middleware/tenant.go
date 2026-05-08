@@ -172,22 +172,30 @@ func tenantAndUpstreamIDFromHost(host string) (string, string) {
 		return "", ""
 	}
 
-	labels := strings.Split(host, ".")
-	if len(labels) < 2 || labels[0] == "" {
+	firstLabel, remainingLabels, hasRemainingLabels := strings.Cut(host, ".")
+	if !hasRemainingLabels || firstLabel == "" {
 		return "", ""
 	}
 
-	if strings.HasPrefix(labels[0], "u-") && len(labels) >= 3 && labels[1] != "" {
-		return labels[1], strings.TrimPrefix(labels[0], "u-")
+	if upstreamID, ok := strings.CutPrefix(firstLabel, "u-"); ok {
+		tenantLabel, _, hasFirewallHost := strings.Cut(remainingLabels, ".")
+		if hasFirewallHost && tenantLabel != "" {
+			return tenantLabel, upstreamID
+		}
+		return "", ""
 	}
 
-	return labels[0], ""
+	return firstLabel, ""
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
 }
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+	_ = json.NewEncoder(w).Encode(errorResponse{Error: message})
 }
 
 func annotateSpan(ctx context.Context, attrs ...attribute.KeyValue) {

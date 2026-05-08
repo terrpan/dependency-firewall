@@ -18,7 +18,7 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig, traceCfg config.SQL
 		return nil, fmt.Errorf("parsing database DSN: %w", err)
 	}
 
-	tracingOptions := []otelpgx.Option{}
+	tracingOptions := make([]otelpgx.Option, 0, 2)
 	if traceCfg.TrimSQLInSpanName {
 		tracingOptions = append(tracingOptions, otelpgx.WithTrimSQLInSpanName())
 	}
@@ -26,15 +26,10 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig, traceCfg config.SQL
 		tracingOptions = append(tracingOptions, otelpgx.WithDisableSQLStatementInAttributes())
 	}
 
-	// poolCfg.ConnConfig.Tracer = otelpgx.NewTracer(tracingOptions...)
-
 	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
 	poolCfg.MinConns = int32(cfg.MaxIdleConns)
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
 	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer(tracingOptions...)
-		// otelpgx.WithTrimSQLInSpanName(),
-		// otelpgx.WithDisableSQLStatementInAttributes(),
-	// )
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

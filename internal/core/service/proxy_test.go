@@ -436,8 +436,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		assert.Equal(t, "ghcr.io/team", upstreamClient.lastArtifact.Namespace)
 		assert.Equal(t, "my-app", upstreamClient.lastArtifact.Name)
 		assert.Equal(t, "latest", upstreamClient.lastArtifact.Version)
-		assert.Equal(t, 1, enricher.calls)
-		assert.Equal(t, "sha256:deadbeef", enricher.lastArtifact.Digest)
+		assert.Zero(t, enricher.calls)
 		assert.Zero(t, metadataCache.setCalls)
 		assert.Equal(t, 1, decisionCache.setCalls)
 		assert.Equal(t, immutableDecisionTTL, decisionCache.lastTTL)
@@ -768,5 +767,156 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		assert.Contains(t, decision.Reasons[0].Message, "deprecated stored policy config")
 		assert.Equal(t, 1, decisionRepo.recordCalls)
 		assert.Equal(t, 1, decisionCache.setCalls)
+	})
+
+	t.Run("skips enrichment when no policies can evaluate", func(t *testing.T) {
+		t.Run("empty policy set", func(t *testing.T) {
+			policyRepo := &spyPolicyRepository{}
+			decisionRepo := &spyDecisionRepository{}
+			decisionCache := newSpyDecisionCache()
+			metadataCache := newSpyProxyMetadataCache()
+			enricher := &spyProxyEnricher{}
+
+			enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			service := NewAccessService(
+				policyRepo,
+				decisionRepo,
+				decisionCache,
+				enrichmentService,
+				policy.NewEvaluator(),
+				&spyUpstreamClient{},
+				&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
+
+			decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "safe-package",
+					Version:   "1.0.0",
+				},
+				Timestamp: time.Now(),
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, decision)
+			assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+			assert.Equal(t, "no matching policy", decision.Reason)
+			assert.Zero(t, enricher.calls)
+			assert.Zero(t, metadataCache.setCalls)
+			assert.Equal(t, 1, decisionCache.setCalls)
+			assert.Equal(t, 1, decisionRepo.recordCalls)
+		})
+
+		t.Run("disabled effective policies", func(t *testing.T) {
+			policyRepo := &spyPolicyRepository{
+				policies: []domain.Policy{
+					{
+						ID:       "p-disabled",
+						TenantID: "tenant-1",
+						Name:     "disabled-license-policy",
+						Type:     domain.PolicyTypeLicense,
+						Action:   domain.PolicyActionDeny,
+						Config:   &domain.LicensePolicyConfig{Licenses: []string{"GPL-3.0-only"}},
+						Priority: 10,
+						Enabled:  false,
+					},
+				},
+			}
+			decisionRepo := &spyDecisionRepository{}
+			decisionCache := newSpyDecisionCache()
+			metadataCache := newSpyProxyMetadataCache()
+			enricher := &spyProxyEnricher{
+				result: &domain.ArtifactMetadata{
+					Licenses: []string{"GPL-3.0-only"},
+				},
+			}
+
+			enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			service := NewAccessService(
+				policyRepo,
+				decisionRepo,
+				decisionCache,
+				enrichmentService,
+				policy.NewEvaluator(),
+				&spyUpstreamClient{},
+				&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
+
+			decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "copyleft-package",
+					Version:   "1.0.0",
+				},
+				Timestamp: time.Now(),
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, decision)
+			assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+			assert.Equal(t, "no matching policy", decision.Reason)
+			assert.NotEmpty(t, decision.PolicyHash)
+			assert.Zero(t, enricher.calls)
+			assert.Zero(t, metadataCache.setCalls)
+			assert.Equal(t, 1, decisionCache.setCalls)
+			assert.Equal(t, 1, decisionRepo.recordCalls)
+		})
+	})
+
+	t.Run("skips enrichment for artifact-only policy types", func(t *testing.T) {
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:       "p-block-namespace",
+					TenantID: "tenant-1",
+					Name:     "block-internal-namespace",
+					Type:     domain.PolicyTypeBlocklist,
+					Action:   domain.PolicyActionDeny,
+					Config:   &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}},
+					Priority: 10,
+					Enabled:  true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := newSpyDecisionCache()
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			&spyUpstreamClient{},
+			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
+
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Namespace: "internal",
+				Name:      "private-package",
+				Version:   "1.0.0",
+			},
+			Timestamp: time.Now(),
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionDeny, decision.Outcome)
+		assert.Contains(t, decision.Reason, `namespace "internal" is blocked`)
+		assert.Zero(t, enricher.calls)
+		assert.Zero(t, metadataCache.setCalls)
+		assert.Equal(t, 1, decisionCache.setCalls)
+		assert.Equal(t, 1, decisionRepo.recordCalls)
 	})
 }

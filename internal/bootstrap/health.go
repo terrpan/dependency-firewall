@@ -1,4 +1,3 @@
-// health.go adapts database, cache, and remote proxy checks to health service interfaces.
 package bootstrap
 
 import (

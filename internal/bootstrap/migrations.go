@@ -1,4 +1,3 @@
-// migrations.go runs embedded PostgreSQL migrations during control-plane startup.
 package bootstrap
 
 import (

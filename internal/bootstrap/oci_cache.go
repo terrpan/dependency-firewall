@@ -1,31 +1,13 @@
-// oci_cache.go configures OCI-specific HTTP and artifact cache infrastructure.
 package bootstrap
 
 import (
 	"fmt"
-	"net"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/infra/ocicache"
 )
-
-func newOCIHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.ResponseHeaderTimeout = 30 * time.Second
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.TLSHandshakeTimeout = 10 * time.Second
-	transport.ExpectContinueTimeout = time.Second
-	transport.DialContext = (&net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}).DialContext
-
-	return &http.Client{Transport: transport}
-}
 
 func newOCIArtifactCache(cfg config.OCICacheConfig) (port.OCIArtifactCache, error) {
 	switch strings.ToLower(strings.TrimSpace(cfg.Backend)) {

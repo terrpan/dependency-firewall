@@ -23,11 +23,11 @@ func NewDecisionCache(client valkeygo.Client) *DecisionCache {
 }
 
 func decisionGenerationKey(tenantID string) string {
-	return fmt.Sprintf("decision-generation:%s", tenantID)
+	return "decision-generation:" + tenantID
 }
 
 func decisionKey(tenantID string, generation int64, artifact domain.ArtifactIdentity) string {
-	return fmt.Sprintf("decision:%s:%d:%s", tenantID, generation, artifact.CacheKey())
+	return "decision:" + tenantID + ":" + strconv.FormatInt(generation, 10) + ":" + artifact.CacheKey()
 }
 
 // Get retrieves a cached decision. Returns domain.ErrCacheMiss if not found.

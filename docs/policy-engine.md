@@ -1,6 +1,6 @@
 # Policy Engine
 
-Policies control which artifacts tenants can install through the proxy. Every policy belongs to a single tenant and is evaluated at request time against enriched artifact metadata.
+Policies control which artifacts tenants can install through the proxy. Every policy belongs to a single tenant and is evaluated at request time against the artifact identity plus enriched artifact metadata when the matched enabled policy types require it.
 
 ## Evaluation rules
 
@@ -356,13 +356,16 @@ Some policy types depend on metadata from enrichment sources:
 | `minimum_age` | `PublishedAt` | npm registry |
 | `maximum_age` | `PublishedAt` | npm registry |
 | `block_mutable_tag` | `IsMutableTag` | OCI proxy |
+| `scorecard` | `Scorecard` and `SourceRepository` | npm registry + hosted OpenSSF Scorecard API |
 | `license` | `Licenses` | npm registry |
 | `license_allowlist` | `Licenses` | npm registry |
 | `allowlist` | namespace (from artifact identity) | none |
 | `namespace_allowlist` | namespace (from artifact identity) | none |
 | `blocklist` | namespace (from artifact identity) | none |
 
-If enrichment fails or metadata is unavailable, age, CVSS, and license conditions **skip** (no match), meaning the artifact is not blocked by that rule. Allowlist, namespace allowlist, and blocklist conditions work without enrichment.
+The proxy loads the effective policy set before enrichment. If no enabled policy for the matched upstream needs external metadata, the request skips metadata-cache and external enrichment work entirely.
+
+If enrichment fails or metadata is unavailable, age, CVSS, and license conditions **skip** (no match), meaning the artifact is not blocked by that rule. Scorecard behavior follows `unavailable_scorecard_behavior`. Allowlist, namespace allowlist, blocklist, and mutable-tag policies work without external enrichment.
 
 ## Deferred goal: dependency-context selectors
 
@@ -547,11 +550,13 @@ Request arrives
   → artifact identity normalized
   → decision cache checked (Valkey)
   → if cache HIT → return cached decision
-  → metadata cache checked (Valkey)
-  → if metadata cache MISS → run enrichers (OSV, npm)
-  → cache enriched metadata (30min TTL)
   → load tenant policies from PostgreSQL
+  → filter policies by upstream scope
   → compute canonical policy-set SHA-256
+  → if enabled policies need metadata:
+      → metadata cache checked (Valkey)
+      → if metadata cache MISS → run enrichers (OSV, npm, Scorecard as needed)
+      → cache enriched metadata (30min TTL)
   → evaluate policies in priority order
   → cache decision (5min mutable, 1hr immutable)
   → record decision with policy_hash

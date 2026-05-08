@@ -1,6 +1,8 @@
 package service
 
 import (
+	"errors"
+
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -46,4 +48,57 @@ func recordSpanError(span trace.Span, err error) {
 	}
 	span.RecordError(err)
 	span.SetStatus(codes.Error, err.Error())
+}
+
+func recordSpanErrorIfUnexpected(span trace.Span, err error) {
+	if err == nil || isExpectedSpanOutcome(err) {
+		return
+	}
+	recordSpanError(span, err)
+}
+
+func isExpectedSpanOutcome(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch {
+	case errors.Is(err, domain.ErrCacheMiss):
+		return true
+	case errors.Is(err, domain.ErrPolicyViolation):
+		return true
+	case errors.Is(err, domain.ErrArtifactNotFound):
+		return true
+	case errors.Is(err, domain.ErrTenantNotFound):
+		return true
+	case errors.Is(err, domain.ErrPolicyNotFound):
+		return true
+	case errors.Is(err, domain.ErrUpstreamNotFound):
+		return true
+	case errors.Is(err, domain.ErrPolicyVersionNotFound):
+		return true
+	case errors.Is(err, domain.ErrTenantNameConflict):
+		return true
+	case errors.Is(err, domain.ErrPolicyNameConflict):
+		return true
+	case errors.Is(err, domain.ErrUpstreamNameConflict):
+		return true
+	case errors.Is(err, domain.ErrUpstreamRegistryConflict):
+		return true
+	case errors.Is(err, domain.ErrPolicyDeleteEnabled):
+		return true
+	case errors.Is(err, domain.ErrPolicyInUse):
+		return true
+	case errors.Is(err, domain.ErrUpstreamInUse):
+		return true
+	case errors.Is(err, domain.ErrInvalidPolicy):
+		return true
+	case errors.Is(err, domain.ErrPolicyUpstreamIncompatible):
+		return true
+	case errors.Is(err, domain.ErrUnsupportedUpstreamCapability):
+		return true
+	case errors.Is(err, domain.ErrUpstreamPolicyConflict):
+		return true
+	default:
+		return false
+	}
 }

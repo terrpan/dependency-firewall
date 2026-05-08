@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -119,13 +118,8 @@ func (c *Client) Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (
 		return nil, fmt.Errorf("%w: OSV API returned status %d", domain.ErrEnrichmentFailed, resp.StatusCode)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("%w: reading response: %v", domain.ErrEnrichmentFailed, err)
-	}
-
 	var result queryResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("%w: decoding response: %v", domain.ErrEnrichmentFailed, err)
 	}
 

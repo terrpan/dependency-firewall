@@ -36,7 +36,7 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 		return enabled[i].Name < enabled[j].Name
 	})
 
-	var reasons []domain.EvaluationReason
+	reasons := make([]domain.EvaluationReason, 0, len(enabled))
 	var warnings []string
 	var firstDenyReason string
 	hasDeny := false

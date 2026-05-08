@@ -131,7 +131,8 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		if upstream.ID == "" {
 			up, upErr := s.upstreamRepo.GetByEcosystem(ctx, req.TenantID, domain.EcosystemOCI)
 			if upErr != nil {
-				recordSpanError(resolveSpan, upErr)
+				recordSpanErrorIfUnexpected(resolveSpan, upErr)
+				resolveSpan.SetAttributes(attribute.Bool("reference_resolution.fallback_to_tag", true))
 				s.logger.Debug("no OCI upstream for tag resolution, continuing with tag",
 					"error", upErr,
 					"tenant_id", req.TenantID,
@@ -141,13 +142,18 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 			}
 		}
 		if upstream.ID == "" {
+			resolveSpan.SetAttributes(
+				attribute.Bool("reference_resolution.skipped", true),
+				attribute.Bool("reference_resolution.fallback_to_tag", true),
+			)
 			s.logger.Debug("no OCI upstream for tag resolution, continuing with tag",
 				"tenant_id", req.TenantID,
 			)
 		} else {
 			digest, resolveErr := s.upstreamClient.ResolveReference(resolveCtx, upstream, req.Artifact)
 			if resolveErr != nil {
-				recordSpanError(resolveSpan, resolveErr)
+				recordSpanErrorIfUnexpected(resolveSpan, resolveErr)
+				resolveSpan.SetAttributes(attribute.Bool("reference_resolution.fallback_to_tag", true))
 				_ = s.recordAudit(ctx, domain.AuditEvent{
 					TenantID:      req.TenantID,
 					CorrelationID: req.RequestID,
@@ -217,8 +223,9 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		return cached, nil
 	}
 	cacheSpan.SetAttributes(attribute.Bool("cache.hit", false))
-	if !errors.Is(err, domain.ErrCacheMiss) {
-		recordSpanError(cacheSpan, err)
+	recordSpanErrorIfUnexpected(cacheSpan, err)
+	if errors.Is(err, domain.ErrCacheMiss) {
+		cacheSpan.AddEvent("cache.miss")
 	}
 	cacheSpan.End()
 	if !errors.Is(err, domain.ErrCacheMiss) {
@@ -251,54 +258,8 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		return nil, auditErr
 	}
 
-	// 3. Load enrichment metadata through the dedicated enrichment workflow.
-	if err := s.recordAudit(ctx, domain.AuditEvent{
-		TenantID:      req.TenantID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventEnrichmentStarted,
-		Source:        "core/access",
-		UpstreamID:    req.Upstream.ID,
-		Artifact:      req.Artifact,
-		Message:       "artifact enrichment started",
-	}); err != nil {
-		return nil, err
-	}
-	enrichCtx, enrichSpan := tracer.Start(ctx, "access.enrich_artifact")
-	metadata, err := s.enrichment.EnrichWithCorrelation(enrichCtx, req.TenantID, req.RequestID, req.Artifact)
-	if err != nil {
-		recordSpanError(enrichSpan, err)
-		enrichSpan.End()
-		recordSpanError(span, err)
-		_ = s.recordAudit(ctx, domain.AuditEvent{
-			TenantID:      req.TenantID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventError,
-			Source:        "core/access",
-			UpstreamID:    req.Upstream.ID,
-			Artifact:      req.Artifact,
-			Message:       "artifact enrichment failed",
-			Payload: map[string]any{
-				"stage": "enrichment",
-				"error": err.Error(),
-			},
-		})
-		return nil, fmt.Errorf("enriching artifact: %w", err)
-	}
-	enrichSpan.SetAttributes(attribute.Bool("metadata.available", metadata != nil))
-	enrichSpan.End()
-
-	// 4. Set the metadata on the access request.
-	req.Metadata = metadata
-
-	// 4b. Propagate mutable-tag flag so the block_mutable_tag condition can detect it.
-	if wasMutableTag {
-		if req.Metadata == nil {
-			req.Metadata = &domain.ArtifactMetadata{}
-		}
-		req.Metadata.IsMutableTag = true
-	}
-
-	// 5. Load tenant's policies.
+	// 3. Load tenant policies before enrichment so default-allow traffic does
+	// not pay for metadata lookups when no enabled policy can inspect metadata.
 	policiesCtx, policiesSpan := tracer.Start(ctx, "access.load_policies")
 	policies, err := s.policies.ListByTenant(policiesCtx, req.TenantID)
 	if err != nil {
@@ -352,6 +313,19 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	}); err != nil {
 		return nil, err
 	}
+
+	var metadata *domain.ArtifactMetadata
+	if needsEnrichment(effectivePolicies) {
+		metadata, err = s.enrichArtifact(ctx, req)
+		if err != nil {
+			recordSpanError(span, err)
+			return nil, err
+		}
+		req.Metadata = metadata
+	}
+
+	// 4b. Propagate mutable-tag flag so the block_mutable_tag condition can detect it.
+	applyMutableTagMetadata(&req, wasMutableTag)
 
 	// 6. Run policy evaluator.
 	_, evaluateSpan := tracer.Start(ctx, "access.evaluate_policies")
@@ -486,122 +460,4 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 // repository identity (tenant + ecosystem + namespace + name).
 func (s *AccessService) HasRecentAllow(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (bool, error) {
 	return s.decisions.HasRecentAllow(ctx, tenantID, artifact.Ecosystem, artifact.Namespace, artifact.Name)
-}
-
-func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.AccessRequest, validationErr error) *domain.Decision {
-	span := trace.SpanFromContext(ctx)
-	recordSpanError(span, validationErr)
-	_ = s.recordAudit(ctx, domain.AuditEvent{
-		TenantID:      req.TenantID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventError,
-		Source:        "core/access",
-		UpstreamID:    req.Upstream.ID,
-		Artifact:      req.Artifact,
-		Message:       "invalid policy set",
-		Payload: map[string]any{
-			"stage": "validate_policies",
-			"error": validationErr.Error(),
-		},
-	})
-	s.logger.ErrorContext(ctx, "invalid policy set, denying request",
-		"error", validationErr,
-		"tenant_id", req.TenantID,
-		"artifact", req.Artifact.CacheKey(),
-	)
-
-	decision := domain.Decision{
-		TenantID: req.TenantID,
-		Artifact: req.Artifact,
-		Outcome:  domain.DecisionDeny,
-		Reason:   "invalid policy configuration",
-		Reasons: []domain.EvaluationReason{
-			{
-				Category: domain.ReasonCategoryEvaluationError,
-				Action:   domain.PolicyActionDeny,
-				Message:  validationErr.Error(),
-			},
-		},
-		EvaluatedAt: time.Now(),
-	}
-
-	ttl := immutableDecisionTTL
-	if req.Artifact.IsMutableReference() {
-		ttl = mutableDecisionTTL
-	}
-	if cacheErr := s.decisionCache.Set(ctx, &decision, ttl); cacheErr != nil {
-		s.logger.WarnContext(ctx, "failed to cache invalid-policy decision",
-			"error", cacheErr,
-			"tenant_id", req.TenantID,
-		)
-	}
-	if recordErr := s.decisions.Record(ctx, &decision); recordErr != nil {
-		_ = s.recordAudit(ctx, domain.AuditEvent{
-			TenantID:      req.TenantID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventError,
-			Source:        "core/access",
-			UpstreamID:    req.Upstream.ID,
-			Outcome:       decision.Outcome,
-			Artifact:      decision.Artifact,
-			Message:       "invalid-policy decision persistence failed",
-			Payload: map[string]any{
-				"stage": "persist_invalid_policy_decision",
-				"error": recordErr.Error(),
-			},
-		})
-		s.logger.ErrorContext(ctx, "failed to record invalid-policy decision",
-			"error", recordErr,
-			"tenant_id", req.TenantID,
-			"artifact", req.Artifact.CacheKey(),
-		)
-	}
-
-	return &decision
-}
-
-func filterPoliciesForUpstream(policies []domain.Policy, upstreamID string) []domain.Policy {
-	if upstreamID == "" {
-		return policies
-	}
-
-	filtered := make([]domain.Policy, 0, len(policies))
-	for _, policyDef := range policies {
-		if policyDef.UpstreamID != "" && policyDef.UpstreamID != upstreamID {
-			continue
-		}
-		filtered = append(filtered, policyDef)
-	}
-	return filtered
-}
-
-func (s *AccessService) recordAudit(ctx context.Context, event domain.AuditEvent) error {
-	if s.audit == nil {
-		return nil
-	}
-	return s.audit.Record(ctx, event)
-}
-
-func (s *AccessService) metadataSummary(metadata *domain.ArtifactMetadata) map[string]any {
-	if metadata == nil {
-		return map[string]any{"available": false}
-	}
-
-	summary := map[string]any{
-		"available":            true,
-		"license_count":        len(metadata.Licenses),
-		"vulnerability_count":  len(metadata.Vulnerabilities),
-		"mutable_tag_detected": metadata.IsMutableTag,
-	}
-	if metadata.PublishedAt != nil {
-		summary["published_at"] = metadata.PublishedAt.UTC().Format(time.RFC3339)
-	}
-	if metadata.MaxCVSS != nil {
-		summary["max_cvss"] = *metadata.MaxCVSS
-	}
-	if s.audit != nil && s.audit.DetailLevel() == domain.AuditDetailLevelFull {
-		summary["licenses"] = append([]string(nil), metadata.Licenses...)
-		summary["vulnerabilities"] = append([]domain.Vulnerability(nil), metadata.Vulnerabilities...)
-	}
-	return summary
 }

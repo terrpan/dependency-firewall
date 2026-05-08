@@ -1,4 +1,3 @@
-// runtime.go contains the public runtime entrypoint and mode dispatch.
 package bootstrap
 
 import (

@@ -237,13 +237,15 @@ sequenceDiagram
         dcache-->>access: cached decision
         access->>audit: record cache hit
     else decision cache miss
-        access->>enrich: load metadata
-        enrich-->>access: metadata
-        access->>audit: record enrichment result
         access->>bundle: load tenant bundle
         bundle-->>access: policies + upstreams
         access->>access: filter policies by upstream scope
         access->>access: compute policy-set SHA-256
+        opt enabled policies require external metadata
+            access->>enrich: load metadata
+            enrich-->>access: metadata
+            access->>audit: record enrichment result
+        end
         access->>access: evaluate policies
         access->>dcache: store decision
         access->>ingest: record decision with policy_hash
@@ -302,7 +304,7 @@ sequenceDiagram
 1. Request enters delivery layer.
 2. Delivery resolves tenant and normalizes the request.
 3. Proxy refreshes the tenant bundle on demand when its cached copy is stale.
-4. Core evaluates access using cache, enrichment, and policy.
+4. Core evaluates access using the decision cache, effective policies, and enrichment only when a matched enabled policy needs metadata.
 5. Proxy persists durable decision and audit records through the control-plane ingestion boundary.
 6. If denied, delivery renders a protocol-specific error.
 7. If allowed, OCI delivery checks the tenant-aware artifact cache by digest before going upstream.

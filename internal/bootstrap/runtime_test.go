@@ -1,4 +1,3 @@
-// runtime_test.go covers bootstrap-level runtime adapters that are not owned by lower layers.
 package bootstrap
 
 import (

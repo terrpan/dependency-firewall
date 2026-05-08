@@ -1,4 +1,3 @@
-// routes.go wires delivery handlers and middleware onto HTTP route trees.
 package bootstrap
 
 import (

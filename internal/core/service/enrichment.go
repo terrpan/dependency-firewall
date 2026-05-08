@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -75,7 +76,10 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	cacheCtx, cacheSpan := tracer.Start(ctx, "enrichment.metadata_cache_lookup")
 	cached, err := s.metadataCache.Get(cacheCtx, tenantID, artifact)
 	if err != nil {
-		recordSpanError(cacheSpan, err)
+		recordSpanErrorIfUnexpected(cacheSpan, err)
+		if errors.Is(err, domain.ErrCacheMiss) {
+			cacheSpan.AddEvent("cache.miss")
+		}
 	}
 	if err == nil && cached != nil {
 		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
