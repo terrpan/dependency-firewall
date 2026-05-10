@@ -45,7 +45,7 @@ flowchart LR
         deliveryAPI --> core
         controlplane --> postgres[(PostgreSQL)]
         core --> valkey[(Valkey)]
-        ociProxy --> ociCache[(tenant-aware OCI artifact cache)]
+        ociProxy --> ociCache[(tenant/upstream-aware OCI artifact cache)]
         core --> osv[OSV API]
         core --> scorecard[Scorecard API]
         deliveryProxy --> ingest
@@ -65,6 +65,8 @@ flowchart LR
 - OCI delivery should support both direct registry-hostname usage in hosted deployments and optional Docker mirror usage for transparent local development
 - bundle gRPC delivery is control-plane only and serves proxy-ready tenant bundles
 - ingest gRPC delivery is control-plane only and persists proxy-emitted decisions and audit events
+- bundle and ingest gRPC use mTLS in split control-plane/proxy mode
+- control-plane gRPC authorizes proxy certificate identities against tenant IDs before serving bundles or accepting ingest writes
 - protocol-specific response rendering
 - control-plane request DTO parsing and response DTO rendering
 - Huma may be used on control-plane routes for OpenAPI/docs generation and typed request/response modeling
@@ -87,8 +89,9 @@ flowchart LR
 
 ### Infrastructure
 - PostgreSQL repositories
+- encrypted upstream auth secret storage for OCI registry credentials
 - Valkey cache implementations
-- tenant-aware OCI artifact cache implementations
+- tenant and upstream-aware OCI artifact cache implementations
 - OSV and Scorecard-backed enrichers
 - upstream registry clients
 - OpenTelemetry exporters and transport instrumentation
@@ -123,7 +126,7 @@ flowchart TB
         valkeyCache[Valkey caches]
         upstreamClients[upstream clients]
         cachedOCI[cache-backed OCI client]
-        ociCache[tenant-aware OCI artifact cache]
+        ociCache[tenant/upstream-aware OCI artifact cache]
         ociStorage[disk backend today / future S3 or GCS]
         enrichers[OSV + npm/Scorecard enrichers]
         grpcClients[gRPC bundle + ingest clients]
@@ -168,6 +171,33 @@ flowchart TB
 - infrastructure depends on core ports and domain
 - core depends on neither delivery nor infrastructure
 
+## Split-mode control-plane security
+
+Split mode treats the proxy/control-plane gRPC connection as a tenant data boundary. mTLS authenticates both processes, then the control plane authorizes the proxy certificate identity for the requested tenant before serving bundles or accepting ingest writes.
+
+```mermaid
+flowchart LR
+    proxy[Proxy runtime]
+    cert[Proxy client certificate identity]
+    tls[mTLS transport]
+    authz[bundle.tls.authorized_clients]
+    bundle[Bundle service]
+    ingest[Ingest service]
+    tenantA[Tenant A runtime data]
+    tenantB[Tenant B runtime data]
+
+    proxy --> cert
+    cert --> tls
+    tls --> authz
+    authz -->|allowed tenant_id| bundle
+    authz -->|allowed tenant_id| ingest
+    bundle --> tenantA
+    ingest --> tenantA
+    authz -.->|deny cross-tenant request| tenantB
+```
+
+The authorization decision uses the decoded RPC request's `tenant_id`: bundle requests use the requested tenant, and ingest requests use the tenant embedded in the decision or audit payload. Delivery packages own extraction from their wire request types; the shared gRPC infrastructure only enforces the configured identity-to-tenant map.
+
 ## Control-plane Huma boundary
 
 ### In scope
@@ -209,7 +239,7 @@ Huma is a delivery-layer tool. It must not move policy logic, tenant workflows, 
 - core policy config must use typed structs per policy type, not `map[string]any`
 - approved-license policies must keep missing license metadata behavior explicit; `license_allowlist` schema v1 is fail-closed and schema v2 makes unlicensed vs unavailable-metadata handling configurable
 - shared ports in core must avoid ecosystem-specific names such as manifest, blob, or tag unless the port is OCI-only
-- OCI artifact cache ports may be OCI-specific, but cache ownership, lookup, and lifecycle must remain tenant-aware across the full app lifecycle
+- OCI artifact cache ports may be OCI-specific, but cache ownership, lookup, and lifecycle must remain scoped by `tenant_id` and `upstream_id` across the full app lifecycle
 
 ## Data-plane evaluation flow
 
@@ -259,14 +289,14 @@ sequenceDiagram
     else allow
         access-->>delivery: allow decision
         delivery->>audit: record allowed response
-        delivery->>ocicache: lookup tenant-scoped digest entry
+        delivery->>ocicache: lookup tenant + upstream scoped digest entry
         alt cache hit
             ocicache-->>delivery: cached response stream
         else cache miss
             delivery->>audit: record upstream fetch
             delivery->>upstream: fetch metadata/content
             upstream-->>delivery: upstream response stream
-            delivery->>ocicache: opportunistic tenant-scoped cache fill
+            delivery->>ocicache: opportunistic tenant + upstream scoped cache fill
         end
         delivery-->>client: registry-compatible response
     end
@@ -307,7 +337,7 @@ sequenceDiagram
 4. Core evaluates access using the decision cache, effective policies, and enrichment only when a matched enabled policy needs metadata.
 5. Proxy persists durable decision and audit records through the control-plane ingestion boundary.
 6. If denied, delivery renders a protocol-specific error.
-7. If allowed, OCI delivery checks the tenant-aware artifact cache by digest before going upstream.
+7. If allowed, OCI delivery checks the tenant and upstream-aware artifact cache by digest before going upstream.
 8. On OCI cache miss, delivery streams content from upstream while opportunistically filling the cache.
 
 ## Audit logging rules

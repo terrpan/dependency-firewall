@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/delivery/bundlegrpc"
 	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
@@ -18,8 +19,8 @@ type GRPCClient struct {
 
 // NewGRPCClient creates a new GRPCClient.
 
-func NewGRPCClient(_ context.Context, address string) (*GRPCClient, error) {
-	conn, err := controlplanegrpc.NewClientConn(address)
+func NewGRPCClient(_ context.Context, address string, configs ...config.BundleTLSConfig) (*GRPCClient, error) {
+	conn, err := controlplanegrpc.NewClientConn(address, configs...)
 	if err != nil {
 		return nil, fmt.Errorf("creating bundle service client: %w", err)
 	}

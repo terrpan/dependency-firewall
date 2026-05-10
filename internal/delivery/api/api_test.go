@@ -398,11 +398,17 @@ func (m *mockUpstreamRepo) Update(_ context.Context, u *domain.Upstream) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	k := m.key(u.TenantID, u.ID)
-	if _, ok := m.upstreams[k]; !ok {
+	existing, ok := m.upstreams[k]
+	if !ok {
 		return domain.ErrUpstreamNotFound
 	}
 	if err := m.validateUpstreamLocked(u); err != nil {
 		return err
+	}
+	if u.Auth == nil {
+		u.Auth = existing.Auth
+	} else if !u.Auth.Configured() {
+		u.Auth = nil
 	}
 	m.upstreams[k] = u
 	return nil
@@ -667,6 +673,21 @@ func decodeJSON[T any](t *testing.T, resp *http.Response) T {
 	return v
 }
 
+func readBody(t *testing.T, resp *http.Response) []byte {
+	t.Helper()
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return body
+}
+
+func decodeJSONBytes[T any](t *testing.T, body []byte) T {
+	t.Helper()
+	var v T
+	require.NoError(t, json.Unmarshal(body, &v))
+	return v
+}
+
 func decodeBodyString(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	defer resp.Body.Close()
@@ -773,6 +794,7 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assert.Contains(t, paths, "/api/v1/policy-types")
 	assert.Contains(t, paths, "/api/v1/policies/import")
 	assert.Contains(t, paths, "/api/v1/evaluations")
+	assert.Contains(t, paths, "/api/v1/audit/events")
 	assert.Contains(t, paths, "/api/v1/cache/decisions")
 	assert.Contains(t, paths, "/api/v1/cache/metadata")
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies"]), `"422"`)
@@ -786,8 +808,48 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policy-types"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/policies/import"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/evaluations"]), `"422"`)
+	assert.NotContains(t, encodeJSON(t, paths["/api/v1/audit/events"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/cache/decisions"]), `"422"`)
 	assert.NotContains(t, encodeJSON(t, paths["/api/v1/cache/metadata"]), `"422"`)
+	for _, route := range []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/tenants", "get"},
+		{"/api/v1/tenants/{id}", "get"},
+		{"/api/v1/upstreams", "get"},
+		{"/api/v1/upstreams/{id}", "get"},
+		{"/api/v1/policies", "get"},
+		{"/api/v1/policies/{id}", "get"},
+		{"/api/v1/policies/{id}/versions", "get"},
+		{"/api/v1/policy-types", "get"},
+		{"/api/v1/evaluations", "get"},
+		{"/api/v1/audit/events", "get"},
+	} {
+		assertOpenAPIResponseStatus(t, paths, route.path, route.method, statusClientClosedRequest)
+		assertOpenAPIResponseStatus(t, paths, route.path, route.method, http.StatusGatewayTimeout)
+	}
+	for _, route := range []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/tenants", "post"},
+		{"/api/v1/tenants/{id}", "put"},
+		{"/api/v1/tenants/{id}", "delete"},
+		{"/api/v1/upstreams", "post"},
+		{"/api/v1/upstreams/{id}", "put"},
+		{"/api/v1/upstreams/{id}", "delete"},
+		{"/api/v1/policies", "post"},
+		{"/api/v1/policies/{id}", "put"},
+		{"/api/v1/policies/{id}", "delete"},
+		{"/api/v1/policies/{id}/rollback", "post"},
+		{"/api/v1/policies/import", "post"},
+		{"/api/v1/cache/decisions", "delete"},
+		{"/api/v1/cache/metadata", "delete"},
+	} {
+		assertOpenAPIResponseStatus(t, paths, route.path, route.method, statusClientClosedRequest)
+		assertOpenAPIResponseStatusAbsent(t, paths, route.path, route.method, http.StatusGatewayTimeout)
+	}
 	assertOpenAPIDescription(t, paths, "/healthz", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/tenants", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/tenants", "post")
@@ -809,6 +871,7 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assertOpenAPIDescription(t, paths, "/api/v1/policy-types", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/policies/import", "post")
 	assertOpenAPIDescription(t, paths, "/api/v1/evaluations", "get")
+	assertOpenAPIDescription(t, paths, "/api/v1/audit/events", "get")
 	assertOpenAPIDescription(t, paths, "/api/v1/cache/decisions", "delete")
 	assertOpenAPIDescription(t, paths, "/api/v1/cache/metadata", "delete")
 	assertOpenAPIRequestBodyContentTypes(t, paths, "/api/v1/policies", "post", "application/json")
@@ -830,25 +893,28 @@ func Test_ControlPlaneDocsAndOpenAPI(t *testing.T) {
 	assert.Contains(t, body, controlPlaneOpenAPIPath+".yaml")
 }
 
+func Test_ControlPlaneReadDeadlineExceededReturnsGatewayTimeout(t *testing.T) {
+	srv, _, policyRepo, _, _, _ := setupTestServer(t)
+	policyRepo.listErr = context.DeadlineExceeded
+
+	resp := doJSON(t, http.MethodGet, srv.URL+"/api/v1/policies", nil, map[string]string{"X-Tenant-ID": "tenant-1"})
+
+	assert.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+	body := decodeJSON[map[string]string](t, resp)
+	assert.Equal(t, "request timed out", body["error"])
+}
+
 func assertOpenAPIDescription(t *testing.T, paths map[string]any, path, method string) {
 	t.Helper()
 
-	pathItem, ok := paths[path].(map[string]any)
-	require.Truef(t, ok, "path %s missing or invalid", path)
-
-	operation, ok := pathItem[method].(map[string]any)
-	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+	operation := openAPIOperation(t, paths, path, method)
 	assert.NotEmptyf(t, operation["description"], "description missing for %s %s", method, path)
 }
 
 func assertOpenAPIRequestBodyContentTypes(t *testing.T, paths map[string]any, path, method string, contentTypes ...string) {
 	t.Helper()
 
-	pathItem, ok := paths[path].(map[string]any)
-	require.Truef(t, ok, "path %s missing or invalid", path)
-
-	operation, ok := pathItem[method].(map[string]any)
-	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+	operation := openAPIOperation(t, paths, path, method)
 
 	requestBody, ok := operation["requestBody"].(map[string]any)
 	require.Truef(t, ok, "requestBody missing for %s %s", method, path)
@@ -864,11 +930,7 @@ func assertOpenAPIRequestBodyContentTypes(t *testing.T, paths map[string]any, pa
 func assertOpenAPIParameterAbsent(t *testing.T, paths map[string]any, path, method, location, name string) {
 	t.Helper()
 
-	pathItem, ok := paths[path].(map[string]any)
-	require.Truef(t, ok, "path %s missing or invalid", path)
-
-	operation, ok := pathItem[method].(map[string]any)
-	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+	operation := openAPIOperation(t, paths, path, method)
 
 	parameters, ok := operation["parameters"].([]any)
 	if !ok {
@@ -887,6 +949,40 @@ func assertOpenAPIParameterAbsent(t *testing.T, paths map[string]any, path, meth
 			path,
 		)
 	}
+}
+
+func assertOpenAPIResponseStatus(t *testing.T, paths map[string]any, path, method string, status int) {
+	t.Helper()
+
+	responses := openAPIResponses(t, paths, path, method)
+	assert.Containsf(t, responses, fmt.Sprintf("%d", status), "response %d missing for %s %s", status, method, path)
+}
+
+func assertOpenAPIResponseStatusAbsent(t *testing.T, paths map[string]any, path, method string, status int) {
+	t.Helper()
+
+	responses := openAPIResponses(t, paths, path, method)
+	assert.NotContainsf(t, responses, fmt.Sprintf("%d", status), "response %d should not be registered for %s %s", status, method, path)
+}
+
+func openAPIResponses(t *testing.T, paths map[string]any, path, method string) map[string]any {
+	t.Helper()
+
+	operation := openAPIOperation(t, paths, path, method)
+	responses, ok := operation["responses"].(map[string]any)
+	require.Truef(t, ok, "responses missing for %s %s", method, path)
+	return responses
+}
+
+func openAPIOperation(t *testing.T, paths map[string]any, path, method string) map[string]any {
+	t.Helper()
+
+	pathItem, ok := paths[path].(map[string]any)
+	require.Truef(t, ok, "path %s missing or invalid", path)
+
+	operation, ok := pathItem[method].(map[string]any)
+	require.Truef(t, ok, "operation %s %s missing or invalid", method, path)
+	return operation
 }
 
 func Test_PolicyCRUD(t *testing.T) {
@@ -1673,6 +1769,104 @@ func Test_UpstreamCRUD(t *testing.T) {
 	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/upstreams/"+created.ID, nil, headers)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
+}
+
+func Test_UpstreamAuthMetadataDoesNotExposeSecrets(t *testing.T) {
+	srv, _, _, upstreamRepo, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	body := map[string]any{
+		"name":      "private-ghcr",
+		"ecosystem": "oci",
+		"base_url":  "https://ghcr.io",
+		"auth": map[string]any{
+			"type":     "basic",
+			"username": "robot",
+			"password": "super-secret",
+		},
+	}
+	resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", body, headers)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	raw := readBody(t, resp)
+	assert.NotContains(t, string(raw), "super-secret")
+
+	created := decodeJSONBytes[UpstreamResponse](t, raw)
+	assert.Equal(t, "basic", created.Auth.Type)
+	assert.True(t, created.Auth.Configured)
+	assert.Equal(t, "robot", created.Auth.Username)
+
+	stored, err := upstreamRepo.GetByID(context.Background(), "tenant-1", created.ID)
+	require.NoError(t, err)
+	require.NotNil(t, stored.Auth)
+	assert.Equal(t, "super-secret", stored.Auth.Secret)
+
+	updateBody := map[string]any{
+		"name":      "private-ghcr-renamed",
+		"ecosystem": "oci",
+		"base_url":  "https://ghcr.io",
+	}
+	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/upstreams/"+created.ID, updateBody, headers)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	updated := decodeJSON[UpstreamResponse](t, resp)
+	assert.True(t, updated.Auth.Configured)
+	assert.Equal(t, "basic", updated.Auth.Type)
+
+	stored, err = upstreamRepo.GetByID(context.Background(), "tenant-1", created.ID)
+	require.NoError(t, err)
+	require.NotNil(t, stored.Auth)
+	assert.Equal(t, "super-secret", stored.Auth.Secret)
+
+	updateBody["auth"] = map[string]any{"type": "none"}
+	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/upstreams/"+created.ID, updateBody, headers)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	stored, err = upstreamRepo.GetByID(context.Background(), "tenant-1", created.ID)
+	require.NoError(t, err)
+	assert.Nil(t, stored.Auth)
+}
+
+func Test_UpstreamAuthValidation(t *testing.T) {
+	srv, _, _, _, _, _ := setupTestServer(t)
+	headers := map[string]string{"X-Tenant-ID": "tenant-1"}
+
+	tests := map[string]map[string]any{
+		"npm auth unsupported": {
+			"name":      "npm-private",
+			"ecosystem": "npm",
+			"base_url":  "https://registry.npmjs.org",
+			"auth": map[string]any{
+				"type":     "basic",
+				"username": "robot",
+				"password": "secret",
+			},
+		},
+		"basic password required": {
+			"name":      "oci-private",
+			"ecosystem": "oci",
+			"base_url":  "https://registry.example.com",
+			"auth": map[string]any{
+				"type":     "basic",
+				"username": "robot",
+			},
+		},
+		"bearer token required": {
+			"name":      "oci-private",
+			"ecosystem": "oci",
+			"base_url":  "https://registry.example.com",
+			"auth": map[string]any{
+				"type": "bearer_token",
+			},
+		},
+	}
+
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			resp := doJSON(t, http.MethodPost, srv.URL+"/api/v1/upstreams", body, headers)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			resp.Body.Close()
+		})
+	}
 }
 
 func Test_UpstreamAllowsMultipleRegistriesPerEcosystem(t *testing.T) {

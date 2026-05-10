@@ -14,33 +14,37 @@ import (
 )
 
 type stubOCIArtifactCache struct {
-	getResp         *port.UpstreamResponse
-	getErr          error
-	getCalls        int
-	lastGetTenantID string
-	lastGetKind     port.OCIArtifactKind
-	lastGetDigest   string
+	getResp           *port.UpstreamResponse
+	getErr            error
+	getCalls          int
+	lastGetTenantID   string
+	lastGetUpstreamID string
+	lastGetKind       port.OCIArtifactKind
+	lastGetDigest     string
 
-	startWriteCalls int
-	lastWriteTenant string
-	lastWriteKind   port.OCIArtifactKind
-	lastWriteDigest string
-	lastDescriptor  port.OCIArtifactDescriptor
-	writer          *stubOCIArtifactWriter
-	startWriteErr   error
+	startWriteCalls   int
+	lastWriteTenant   string
+	lastWriteUpstream string
+	lastWriteKind     port.OCIArtifactKind
+	lastWriteDigest   string
+	lastDescriptor    port.OCIArtifactDescriptor
+	writer            *stubOCIArtifactWriter
+	startWriteErr     error
 }
 
-func (s *stubOCIArtifactCache) Get(_ context.Context, tenantID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
+func (s *stubOCIArtifactCache) Get(_ context.Context, tenantID, upstreamID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
 	s.getCalls++
 	s.lastGetTenantID = tenantID
+	s.lastGetUpstreamID = upstreamID
 	s.lastGetKind = kind
 	s.lastGetDigest = digest
 	return s.getResp, s.getErr
 }
 
-func (s *stubOCIArtifactCache) StartWrite(_ context.Context, tenantID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
+func (s *stubOCIArtifactCache) StartWrite(_ context.Context, tenantID, upstreamID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
 	s.startWriteCalls++
 	s.lastWriteTenant = tenantID
+	s.lastWriteUpstream = upstreamID
 	s.lastWriteKind = kind
 	s.lastWriteDigest = digest
 	s.lastDescriptor = descriptor
@@ -105,7 +109,7 @@ func TestCachedOCIClientFetchContent_CacheHitBypassesDelegate(t *testing.T) {
 	delegate := &stubUpstreamClient{}
 	client := NewCachedOCIClient(delegate, cache, nil)
 
-	resp, err := client.FetchContent(context.Background(), domain.Upstream{TenantID: "tenant-1"}, "sha256:abc")
+	resp, err := client.FetchContent(context.Background(), domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"}, "sha256:abc")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -113,6 +117,8 @@ func TestCachedOCIClientFetchContent_CacheHitBypassesDelegate(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, cache.getCalls)
+	assert.Equal(t, "tenant-1", cache.lastGetTenantID)
+	assert.Equal(t, "upstream-1", cache.lastGetUpstreamID)
 	assert.Equal(t, 0, delegate.contentCalls)
 	assert.Equal(t, "cached", string(body))
 }
@@ -129,7 +135,7 @@ func TestCachedOCIClientFetchContent_CacheMissStreamsAndCommits(t *testing.T) {
 	}
 	client := NewCachedOCIClient(delegate, cache, nil)
 
-	resp, err := client.FetchContent(context.Background(), domain.Upstream{TenantID: "tenant-1"}, "sha256:abc")
+	resp, err := client.FetchContent(context.Background(), domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"}, "sha256:abc")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -143,7 +149,36 @@ func TestCachedOCIClientFetchContent_CacheMissStreamsAndCommits(t *testing.T) {
 	assert.Equal(t, 0, cache.writer.abortCalls)
 	assert.Equal(t, "blob", cache.writer.buf.String())
 	assert.Equal(t, "tenant-1", cache.lastWriteTenant)
+	assert.Equal(t, "upstream-1", cache.lastWriteUpstream)
 	assert.Equal(t, port.OCIArtifactBlob, cache.lastWriteKind)
+}
+
+func TestCachedOCIClientFetchContent_MissingUpstreamIDBypassesCache(t *testing.T) {
+	cache := &stubOCIArtifactCache{
+		getResp: &port.UpstreamResponse{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewReader([]byte("cached"))),
+		},
+	}
+	delegate := &stubUpstreamClient{
+		contentResp: &port.UpstreamResponse{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewReader([]byte("delegate"))),
+		},
+	}
+	client := NewCachedOCIClient(delegate, cache, nil)
+
+	resp, err := client.FetchContent(context.Background(), domain.Upstream{TenantID: "tenant-1"}, "sha256:abc")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, cache.getCalls)
+	assert.Equal(t, 0, cache.startWriteCalls)
+	assert.Equal(t, 1, delegate.contentCalls)
+	assert.Equal(t, "delegate", string(body))
 }
 
 func TestCachedOCIClientFetchMetadata_OnlyCachesWhenDigestPresent(t *testing.T) {
@@ -156,7 +191,7 @@ func TestCachedOCIClientFetchMetadata_OnlyCachesWhenDigestPresent(t *testing.T) 
 		},
 	}
 	client := NewCachedOCIClient(delegate, cache, nil)
-	upstream := domain.Upstream{TenantID: "tenant-1"}
+	upstream := domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"}
 
 	resp, err := client.FetchMetadata(context.Background(), upstream, domain.ArtifactIdentity{
 		Ecosystem: domain.EcosystemOCI,
@@ -183,7 +218,11 @@ func TestCachedOCIClientFetchMetadata_OnlyCachesWhenDigestPresent(t *testing.T) 
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, cache.getCalls)
+	assert.Equal(t, "tenant-1", cache.lastGetTenantID)
+	assert.Equal(t, "upstream-1", cache.lastGetUpstreamID)
 	assert.Equal(t, 1, cache.startWriteCalls)
+	assert.Equal(t, "tenant-1", cache.lastWriteTenant)
+	assert.Equal(t, "upstream-1", cache.lastWriteUpstream)
 	assert.Equal(t, port.OCIArtifactManifest, cache.lastWriteKind)
 	assert.Equal(t, "sha256:abc", cache.lastWriteDigest)
 }

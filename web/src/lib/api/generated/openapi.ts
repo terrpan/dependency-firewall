@@ -384,6 +384,8 @@ export interface components {
             name: string;
         };
         CreateUpstreamRequest: {
+            /** @description Optional server-side upstream authentication settings */
+            auth?: components["schemas"]["UpstreamAuthRequest"];
             /** @description Upstream base URL */
             base_url?: string;
             /** @description Capability profile used for policy compatibility checks */
@@ -518,7 +520,28 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        UpstreamAuthRequest: {
+            /** @description Password or PAT for basic authentication */
+            password?: string;
+            /** @description Static bearer token */
+            token?: string;
+            /**
+             * @description Upstream authentication type
+             * @enum {string}
+             */
+            type?: "none" | "basic" | "bearer_token";
+            /** @description Username for basic/PAT authentication */
+            username?: string;
+        };
+        UpstreamAuthResponse: {
+            configured: boolean;
+            type: string;
+            /** Format: date-time */
+            updated_at?: string;
+            username?: string;
+        };
         UpstreamResponse: {
+            auth: components["schemas"]["UpstreamAuthResponse"];
             base_url: string;
             capabilities: string[] | null;
             /** Format: date-time */
@@ -590,8 +613,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -624,6 +664,14 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -665,6 +713,14 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -720,8 +776,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -770,8 +843,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -817,6 +907,14 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -891,6 +989,14 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -953,8 +1059,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1019,6 +1142,14 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -1075,6 +1206,14 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1148,6 +1287,14 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -1210,8 +1357,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1239,8 +1403,25 @@ export interface operations {
                     "application/json": components["schemas"]["PolicyTypeResponse"][] | null;
                 };
             };
-            /** @description Error */
-            default: {
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1268,8 +1449,25 @@ export interface operations {
                     "application/json": components["schemas"]["TenantResponse"][] | null;
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1319,6 +1517,14 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -1360,8 +1566,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1423,6 +1646,14 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -1455,6 +1686,14 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1503,8 +1742,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1550,6 +1806,14 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1610,8 +1874,25 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1676,6 +1957,14 @@ export interface operations {
                     "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -1720,6 +2009,14 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
                 headers: {
                     [name: string]: unknown;
                 };

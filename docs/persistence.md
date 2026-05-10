@@ -28,6 +28,8 @@ PostgreSQL is the system of record.
 - operational tables are indexed by tenant_id and timestamp
 - upstreams are unique by `tenant_id + ecosystem + base_url`
 - upstreams persist a `capabilities` profile so policy compatibility checks are stable across API, UI, and evaluation workflows
+- OCI upstreams may persist server-side auth metadata plus encrypted Basic/PAT or bearer-token secrets; API responses expose only auth status and safe metadata
+- upstream auth secrets are encrypted with the configured `secrets.upstream_auth_key`; runtimes fail closed when encrypted auth is needed but the key is unavailable
 - when a new capability is added to an ecosystem default set, legacy upstream rows that still match the previous default profile may be backfilled to the new default so existing tenants can use newly introduced compatible policy types
 - policies may reference one upstream through `upstream_id`
 - `policies.upstream_id` and `policy_versions.upstream_id` are nullable only for legacy tenant-wide rules
@@ -42,6 +44,42 @@ PostgreSQL is the system of record.
 - audit queries must stay tenant-scoped and should support correlation lookups by request ID and artifact identity fields
 - durable audit persistence is expected to support incident response; sink-failure behavior is configurable and defaults to fail-closed
 - proxy-side durable writes arrive through the control-plane ingestion service before they reach `decisions` and `audit_events`
+
+### Upstream auth secret lifecycle
+
+```mermaid
+sequenceDiagram
+    participant ui as UI / automation
+    participant api as control-plane API
+    participant service as UpstreamService
+    participant repo as PostgreSQL upstream repository
+    participant crypto as AES-GCM secret codec
+    participant db as PostgreSQL upstreams
+    participant bundle as BundleService
+    participant proxy as Authorized proxy
+    participant registry as OCI registry
+
+    ui->>api: create/update OCI upstream auth
+    api->>service: validate auth type and ecosystem
+    service->>repo: persist upstream auth
+    repo->>crypto: encrypt password/PAT/token with secrets.upstream_auth_key
+    crypto-->>repo: authenticated ciphertext envelope
+    repo->>db: store auth_type, safe metadata, encrypted secret
+    api-->>ui: response with auth status only
+
+    proxy->>bundle: GetTenantBundle over authorized mTLS
+    bundle->>repo: load tenant upstreams
+    repo->>crypto: decrypt configured auth
+    crypto-->>repo: usable secret in memory
+    bundle-->>proxy: bundle for authorized tenant
+    proxy->>registry: upstream request using server-side auth
+```
+
+Secret rules:
+- plaintext credentials only exist in request memory, repository decrypt/encrypt memory, proxy bundle memory, and outbound registry requests
+- PostgreSQL stores encrypted secret envelopes, not plaintext credentials
+- control-plane API responses and UI details never include password, PAT, or bearer token values
+- split-mode bundles can include usable auth only after mTLS peer verification and tenant authorization
 
 ### audit_events
 
@@ -78,3 +116,4 @@ Valkey is used for:
 - keys must include tenant and normalized artifact identity
 - long-lived decisions should prefer immutable identities such as digests
 - TTL should vary by reason type and freshness of the artifact
+- OCI artifact cache keys must include `tenant_id`, `upstream_id`, artifact kind, and immutable digest; do not reuse cached OCI content across upstreams even when digests match

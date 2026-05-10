@@ -52,6 +52,11 @@ func TestIsExpectedSpanOutcome(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "context canceled",
+			err:  context.Canceled,
+			want: true,
+		},
+		{
 			name: "wrapped artifact not found",
 			err:  fmt.Errorf("resolving artifact: %w", domain.ErrArtifactNotFound),
 			want: true,

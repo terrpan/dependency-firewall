@@ -36,7 +36,7 @@ func (h *EvaluationHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List evaluations",
 		Description: "Lists recorded evaluation decisions for the tenant. Supports limit and offset query parameters for pagination.",
 		Tags:        []string{"evaluations"},
-		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusInternalServerError),
 	}, h.listHuma)
 	removeValidationResponse(api, "/api/v1/evaluations", http.MethodGet)
 }
@@ -59,10 +59,12 @@ func (h *EvaluationHandler) listHuma(ctx context.Context, input *evaluationListI
 	}
 
 	limit, offset := parseEvaluationPagination(input.Limit, input.Offset)
+	ctx, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	decisions, err := h.evaluations.ListByTenant(ctx, tenantID, limit, offset, strings.TrimSpace(input.Search))
 	if err != nil {
-		h.logger.Error("listing evaluations", "error", err)
-		return nil, huma.Error500InternalServerError("failed to list evaluations")
+		return nil, humaInternalError(ctx, h.logger, "listing evaluations", err, "failed to list evaluations", "tenant_id", tenantID)
 	}
 
 	return &evaluationListOutput{Body: toDecisionsResponse(decisions)}, nil

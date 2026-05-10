@@ -33,7 +33,7 @@ func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
 		Description:   "Creates a tenant record used to scope control-plane resources and proxy policy decisions.",
 		DefaultStatus: http.StatusCreated,
 		Tags:          []string{"tenants"},
-		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+		Errors:        controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError),
 	}, h.create)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-tenants",
@@ -42,7 +42,7 @@ func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List tenants",
 		Description: "Lists all configured tenants managed by the control plane.",
 		Tags:        []string{"tenants"},
-		Errors:      []int{http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusInternalServerError),
 	}, h.list)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-tenant",
@@ -51,7 +51,7 @@ func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Get a tenant by ID",
 		Description: "Returns one tenant record by its identifier.",
 		Tags:        []string{"tenants"},
-		Errors:      []int{http.StatusNotFound, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusNotFound, http.StatusInternalServerError),
 	}, h.get)
 	huma.Register(api, huma.Operation{
 		OperationID: "update-tenant",
@@ -60,7 +60,7 @@ func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Update a tenant",
 		Description: "Updates the mutable fields of an existing tenant record.",
 		Tags:        []string{"tenants"},
-		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.update)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-tenant",
@@ -70,7 +70,7 @@ func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
 		Description:   "Deletes a tenant record by ID.",
 		DefaultStatus: http.StatusNoContent,
 		Tags:          []string{"tenants"},
-		Errors:        []int{http.StatusNotFound, http.StatusInternalServerError},
+		Errors:        controlPlaneErrors(http.StatusNotFound, http.StatusInternalServerError),
 	}, h.delete)
 	removeValidationResponse(api, "/api/v1/tenants", http.MethodGet, http.MethodPost)
 	removeValidationResponse(api, "/api/v1/tenants/{id}", http.MethodGet, http.MethodPut, http.MethodDelete)
@@ -110,22 +110,26 @@ func (h *TenantHandler) create(ctx context.Context, input *createTenantInput) (*
 }
 
 func (h *TenantHandler) list(ctx context.Context, _ *struct{}) (*tenantListOutput, error) {
+	ctx, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	tenants, err := h.tenants.List(ctx)
 	if err != nil {
-		h.logger.Error("listing tenants", "error", err)
-		return nil, huma.Error500InternalServerError("failed to list tenants")
+		return nil, humaInternalError(ctx, h.logger, "listing tenants", err, "failed to list tenants")
 	}
 	return &tenantListOutput{Body: toTenantsResponse(tenants)}, nil
 }
 
 func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantOutput, error) {
+	ctx, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	tenant, err := h.tenants.GetByID(ctx, input.ID)
 	if err != nil {
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			return nil, huma.Error404NotFound("tenant not found")
 		}
-		h.logger.Error("getting tenant", "error", err)
-		return nil, huma.Error500InternalServerError("failed to get tenant")
+		return nil, humaInternalError(ctx, h.logger, "getting tenant", err, "failed to get tenant", "tenant_id", input.ID)
 	}
 	return &tenantOutput{Body: toTenantResponse(tenant)}, nil
 }
@@ -143,8 +147,7 @@ func (h *TenantHandler) delete(ctx context.Context, input *tenantIDInput) (*stru
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			return nil, huma.Error404NotFound("tenant not found")
 		}
-		h.logger.Error("deleting tenant", "error", err)
-		return nil, huma.Error500InternalServerError("failed to delete tenant")
+		return nil, humaInternalError(ctx, h.logger, "deleting tenant", err, "failed to delete tenant", "tenant_id", input.ID)
 	}
 	return nil, nil
 }
@@ -159,8 +162,7 @@ func (h *TenantHandler) createTenant(ctx context.Context, req createTenantReques
 		if errors.Is(err, domain.ErrTenantNameConflict) {
 			return nil, huma.Error409Conflict("tenant name already exists")
 		}
-		h.logger.Error("creating tenant", "error", err)
-		return nil, huma.Error500InternalServerError("failed to create tenant")
+		return nil, humaInternalError(ctx, h.logger, "creating tenant", err, "failed to create tenant", "tenant_name", req.Name)
 	}
 	return toTenantResponse(tenant), nil
 }
@@ -178,8 +180,7 @@ func (h *TenantHandler) updateTenant(ctx context.Context, id string, req createT
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			return nil, huma.Error404NotFound("tenant not found")
 		}
-		h.logger.Error("updating tenant", "error", err)
-		return nil, huma.Error500InternalServerError("failed to update tenant")
+		return nil, humaInternalError(ctx, h.logger, "updating tenant", err, "failed to update tenant", "tenant_id", id)
 	}
 	return toTenantResponse(tenant), nil
 }

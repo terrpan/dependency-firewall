@@ -1,6 +1,9 @@
 package config
 
 import (
+	"encoding/base64"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -141,6 +144,7 @@ func TestConfigValidate(t *testing.T) {
 		cfg := validConfig()
 		cfg.Runtime.Mode = RuntimeModeProxy
 		cfg.Database = DatabaseConfig{}
+		cfg.Bundle.TLS = validProxyTLSConfig()
 
 		require.NoError(t, cfg.Validate())
 	})
@@ -154,6 +158,126 @@ func TestConfigValidate(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "database.dsn")
 	})
+
+	t.Run("upstream auth key must be base64 encoded 32 byte key", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Secrets.UpstreamAuthKey = base64.StdEncoding.EncodeToString([]byte("short"))
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "secrets.upstream_auth_key")
+	})
+
+	t.Run("mtls bundle mode requires certificate files", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Bundle.TLS.Mode = "mtls"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.tls.ca_file")
+	})
+
+	t.Run("mtls bundle mode accepts certificate files", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Bundle.TLS = validProxyTLSConfig()
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("proxy mode requires mtls bundle mode", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeProxy
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.tls.mode")
+	})
+
+	t.Run("control-plane mtls requires authorized clients", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeControlPlane
+		cfg.Bundle.TLS = validProxyTLSConfig()
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.tls.authorized_clients")
+	})
+
+	t.Run("control-plane mtls accepts authorized clients", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeControlPlane
+		cfg.Bundle.TLS = validControlPlaneTLSConfig()
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("control-plane insecure bundle mode requires explicit override", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeControlPlane
+		cfg.Bundle.TLS.Mode = "insecure"
+		cfg.Bundle.TLS.AllowInsecureControlPlane = false
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.tls.allow_insecure_control_plane")
+	})
+
+	t.Run("control-plane insecure bundle mode accepts explicit override", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeControlPlane
+		cfg.Bundle.TLS.Mode = "insecure"
+		cfg.Bundle.TLS.AllowInsecureControlPlane = true
+
+		require.NoError(t, cfg.Validate())
+	})
+}
+
+func TestLoadWithOptions_AppliesEnvironmentOverrides(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+runtime:
+  mode: all-in-one
+telemetry:
+  enabled: false
+  endpoint: "http://file-collector:4317"
+  protocol: grpc
+  insecure: true
+server:
+  port: 8080
+`), 0o600))
+
+	t.Setenv("FIREWALL_TELEMETRY_ENABLED", "true")
+	t.Setenv("FIREWALL_TELEMETRY_ENDPOINT", "http://otel-collector:4317")
+	t.Setenv("FIREWALL_TELEMETRY_INSECURE", "false")
+	t.Setenv("FIREWALL_SERVER_PORT", "18080")
+	t.Setenv("FIREWALL_BUNDLE_TLS_ALLOW_INSECURE_CONTROL_PLANE", "true")
+
+	cfg, err := LoadWithOptions(LoadOptions{ConfigPath: configPath})
+	require.NoError(t, err)
+
+	assert.True(t, cfg.Telemetry.Enabled)
+	assert.Equal(t, "http://otel-collector:4317", cfg.Telemetry.Endpoint)
+	assert.False(t, cfg.Telemetry.Insecure)
+	assert.Equal(t, 18080, cfg.Server.Port)
+	assert.True(t, cfg.Bundle.TLS.AllowInsecureControlPlane)
+}
+
+func validProxyTLSConfig() BundleTLSConfig {
+	return BundleTLSConfig{
+		Mode:     "mtls",
+		CAFile:   "ca.pem",
+		CertFile: "cert.pem",
+		KeyFile:  "key.pem",
+	}
+}
+
+func validControlPlaneTLSConfig() BundleTLSConfig {
+	cfg := validProxyTLSConfig()
+	cfg.AuthorizedClients = []BundleTLSAuthorizedClient{{
+		Identity:  "spiffe://dependency-firewall/proxy/default",
+		TenantIDs: []string{"tenant-1"},
+	}}
+	return cfg
 }
 
 func validConfig() *Config {
@@ -205,6 +329,9 @@ func validConfig() *Config {
 			ListenAddr:       ":9090",
 			ControlPlaneAddr: "127.0.0.1:9090",
 			RefreshInterval:  30 * time.Second,
+			TLS: BundleTLSConfig{
+				Mode: "insecure",
+			},
 		},
 	}
 }

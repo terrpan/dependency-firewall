@@ -139,6 +139,65 @@ func TestBundleServiceRevisionChangesWhenTenantRuntimeChanges(t *testing.T) {
 	assert.NotEqual(t, first.Revision, second.Revision)
 }
 
+func TestBundleServiceRejectsAuthenticatedUpstreamsWhenAuthDisabled(t *testing.T) {
+	t.Parallel()
+
+	service := NewBundleService(
+		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
+		stubBundlePolicyRepo{},
+		stubBundleUpstreamRepo{
+			upstreams: []domain.Upstream{{
+				ID:        "upstream-1",
+				TenantID:  "tenant-1",
+				Name:      "private-oci",
+				Ecosystem: domain.EcosystemOCI,
+				Auth: &domain.UpstreamAuth{
+					Type:   domain.UpstreamAuthBearerToken,
+					Secret: "registry-token",
+				},
+			}},
+		},
+		WithBundleUpstreamAuth(false),
+	)
+
+	_, err := service.GetTenantBundle(context.Background(), "tenant-1")
+	require.ErrorIs(t, err, domain.ErrUpstreamAuthTransportInsecure)
+}
+
+func TestBundleServiceRevisionChangesWhenUpstreamAuthChanges(t *testing.T) {
+	t.Parallel()
+
+	upstreams := []domain.Upstream{{
+		ID:        "upstream-1",
+		TenantID:  "tenant-1",
+		Name:      "private-oci",
+		Ecosystem: domain.EcosystemOCI,
+		Auth: &domain.UpstreamAuth{
+			Type:   domain.UpstreamAuthBearerToken,
+			Secret: "first-token",
+		},
+	}}
+	service := NewBundleService(
+		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
+		stubBundlePolicyRepo{},
+		stubBundleUpstreamRepo{upstreams: upstreams},
+	)
+
+	first, err := service.GetTenantBundle(context.Background(), "tenant-1")
+	require.NoError(t, err)
+
+	upstreams[0].Auth.Secret = "second-token"
+	service = NewBundleService(
+		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
+		stubBundlePolicyRepo{},
+		stubBundleUpstreamRepo{upstreams: upstreams},
+	)
+	second, err := service.GetTenantBundle(context.Background(), "tenant-1")
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first.Revision, second.Revision)
+}
+
 type stubBundleProvider struct {
 	bundles []*domain.TenantBundle
 	err     error

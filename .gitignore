@@ -4,3 +4,5 @@ package-lock.json
 !web/package-lock.json
 examples/npm/package.json
 examples/npm/.npmrc
+examples/mtls/certs/
+examples/mtls/data/

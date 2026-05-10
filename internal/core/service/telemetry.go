@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -62,6 +63,8 @@ func isExpectedSpanOutcome(err error) bool {
 		return false
 	}
 	switch {
+	case errors.Is(err, context.Canceled):
+		return true
 	case errors.Is(err, domain.ErrCacheMiss):
 		return true
 	case errors.Is(err, domain.ErrPolicyViolation):

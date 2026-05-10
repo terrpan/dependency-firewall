@@ -6,12 +6,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 )
 
-// CachedOCIClient decorates an upstream client with tenant-aware OCI artifact caching.
+// CachedOCIClient decorates an upstream client with tenant and upstream-aware OCI artifact caching.
 type CachedOCIClient struct {
 	delegate port.UpstreamClient
 	cache    port.OCIArtifactCache
@@ -19,13 +20,14 @@ type CachedOCIClient struct {
 }
 
 type cacheReadCloser struct {
-	ctx      context.Context
-	source   io.ReadCloser
-	writer   port.OCIArtifactWriter
-	logger   *slog.Logger
-	tenantID string
-	kind     port.OCIArtifactKind
-	digest   string
+	ctx        context.Context
+	source     io.ReadCloser
+	writer     port.OCIArtifactWriter
+	logger     *slog.Logger
+	tenantID   string
+	upstreamID string
+	kind       port.OCIArtifactKind
+	digest     string
 }
 
 // NewCachedOCIClient creates a cache-backed OCI client.
@@ -42,11 +44,13 @@ func NewCachedOCIClient(delegate port.UpstreamClient, cache port.OCIArtifactCach
 
 // FetchMetadata fetches OCI manifests, consulting the cache when a digest is available.
 func (c *CachedOCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
-	if artifact.Digest != "" {
-		cached, err := c.cache.Get(ctx, upstream.TenantID, port.OCIArtifactManifest, artifact.Digest)
+	tenantID, upstreamID, cacheableScope := ociArtifactCacheScope(upstream)
+	if artifact.Digest != "" && cacheableScope {
+		cached, err := c.cache.Get(ctx, tenantID, upstreamID, port.OCIArtifactManifest, artifact.Digest)
 		if err == nil {
 			c.logger.Debug("OCI manifest cache hit",
-				"tenant_id", upstream.TenantID,
+				"tenant_id", tenantID,
+				"upstream_id", upstreamID,
 				"digest", artifact.Digest,
 			)
 			return cached, nil
@@ -54,7 +58,8 @@ func (c *CachedOCIClient) FetchMetadata(ctx context.Context, upstream domain.Ups
 		if !errors.Is(err, domain.ErrCacheMiss) {
 			c.logger.Warn("OCI manifest cache get failed",
 				"error", err,
-				"tenant_id", upstream.TenantID,
+				"tenant_id", tenantID,
+				"upstream_id", upstreamID,
 				"digest", artifact.Digest,
 			)
 		}
@@ -64,32 +69,43 @@ func (c *CachedOCIClient) FetchMetadata(ctx context.Context, upstream domain.Ups
 	if err != nil {
 		return nil, err
 	}
-	return c.wrapResponse(ctx, upstream.TenantID, port.OCIArtifactManifest, artifact.Digest, resp)
+	if !cacheableScope {
+		return resp, nil
+	}
+	return c.wrapResponse(ctx, tenantID, upstreamID, port.OCIArtifactManifest, artifact.Digest, resp)
 }
 
-// FetchContent fetches OCI blobs, consulting the cache first by tenant and digest.
+// FetchContent fetches OCI blobs, consulting the cache first by tenant, upstream, and digest.
 func (c *CachedOCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
-	cached, err := c.cache.Get(ctx, upstream.TenantID, port.OCIArtifactBlob, digest)
-	if err == nil {
-		c.logger.Debug("OCI blob cache hit",
-			"tenant_id", upstream.TenantID,
-			"digest", digest,
-		)
-		return cached, nil
-	}
-	if !errors.Is(err, domain.ErrCacheMiss) {
-		c.logger.Warn("OCI blob cache get failed",
-			"error", err,
-			"tenant_id", upstream.TenantID,
-			"digest", digest,
-		)
+	tenantID, upstreamID, cacheableScope := ociArtifactCacheScope(upstream)
+	if cacheableScope {
+		cached, err := c.cache.Get(ctx, tenantID, upstreamID, port.OCIArtifactBlob, digest)
+		if err == nil {
+			c.logger.Debug("OCI blob cache hit",
+				"tenant_id", tenantID,
+				"upstream_id", upstreamID,
+				"digest", digest,
+			)
+			return cached, nil
+		}
+		if !errors.Is(err, domain.ErrCacheMiss) {
+			c.logger.Warn("OCI blob cache get failed",
+				"error", err,
+				"tenant_id", tenantID,
+				"upstream_id", upstreamID,
+				"digest", digest,
+			)
+		}
 	}
 
 	resp, err := c.delegate.FetchContent(ctx, upstream, digest)
 	if err != nil {
 		return nil, err
 	}
-	return c.wrapResponse(ctx, upstream.TenantID, port.OCIArtifactBlob, digest, resp)
+	if !cacheableScope {
+		return resp, nil
+	}
+	return c.wrapResponse(ctx, tenantID, upstreamID, port.OCIArtifactBlob, digest, resp)
 }
 
 // ResolveReference delegates tag resolution to the wrapped upstream client.
@@ -97,12 +113,12 @@ func (c *CachedOCIClient) ResolveReference(ctx context.Context, upstream domain.
 	return c.delegate.ResolveReference(ctx, upstream, artifact)
 }
 
-func (c *CachedOCIClient) wrapResponse(ctx context.Context, tenantID string, kind port.OCIArtifactKind, digest string, resp *port.UpstreamResponse) (*port.UpstreamResponse, error) {
+func (c *CachedOCIClient) wrapResponse(ctx context.Context, tenantID, upstreamID string, kind port.OCIArtifactKind, digest string, resp *port.UpstreamResponse) (*port.UpstreamResponse, error) {
 	if digest == "" || resp == nil || resp.StatusCode != http.StatusOK || resp.Body == nil {
 		return resp, nil
 	}
 
-	writer, err := c.cache.StartWrite(ctx, tenantID, kind, digest, port.OCIArtifactDescriptor{
+	writer, err := c.cache.StartWrite(ctx, tenantID, upstreamID, kind, digest, port.OCIArtifactDescriptor{
 		ContentType: resp.ContentType,
 		Headers:     cloneStringMap(resp.Headers),
 	})
@@ -110,6 +126,7 @@ func (c *CachedOCIClient) wrapResponse(ctx context.Context, tenantID string, kin
 		c.logger.Warn("OCI cache start write failed",
 			"error", err,
 			"tenant_id", tenantID,
+			"upstream_id", upstreamID,
 			"kind", kind,
 			"digest", digest,
 		)
@@ -117,13 +134,14 @@ func (c *CachedOCIClient) wrapResponse(ctx context.Context, tenantID string, kin
 	}
 
 	resp.Body = &cacheReadCloser{
-		ctx:      ctx,
-		source:   resp.Body,
-		writer:   writer,
-		logger:   c.logger,
-		tenantID: tenantID,
-		kind:     kind,
-		digest:   digest,
+		ctx:        ctx,
+		source:     resp.Body,
+		writer:     writer,
+		logger:     c.logger,
+		tenantID:   tenantID,
+		upstreamID: upstreamID,
+		kind:       kind,
+		digest:     digest,
 	}
 	return resp, nil
 }
@@ -135,6 +153,7 @@ func (r *cacheReadCloser) Read(p []byte) (int, error) {
 			r.logger.Warn("OCI cache write failed; continuing without cache fill",
 				"error", writeErr,
 				"tenant_id", r.tenantID,
+				"upstream_id", r.upstreamID,
 				"kind", r.kind,
 				"digest", r.digest,
 			)
@@ -148,6 +167,7 @@ func (r *cacheReadCloser) Read(p []byte) (int, error) {
 			r.logger.Warn("OCI cache commit failed",
 				"error", commitErr,
 				"tenant_id", r.tenantID,
+				"upstream_id", r.upstreamID,
 				"kind", r.kind,
 				"digest", r.digest,
 			)
@@ -179,4 +199,10 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func ociArtifactCacheScope(upstream domain.Upstream) (string, string, bool) {
+	tenantID := strings.TrimSpace(upstream.TenantID)
+	upstreamID := strings.TrimSpace(upstream.ID)
+	return tenantID, upstreamID, tenantID != "" && upstreamID != ""
 }

@@ -69,7 +69,7 @@ func (c *OCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream,
 	}
 	req.Header.Set("Accept", ociAcceptHeaders)
 
-	resp, err := c.doOCIRequest(req)
+	resp, err := c.doOCIRequest(req, upstream)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -104,7 +104,7 @@ func (c *OCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, 
 		return nil, fmt.Errorf("creating blob request: %w", err)
 	}
 
-	resp, err := c.doOCIRequest(req)
+	resp, err := c.doOCIRequest(req, upstream)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -133,23 +133,23 @@ func (c *OCIClient) ResolveReference(ctx context.Context, upstream domain.Upstre
 	)
 
 	// Try HEAD first.
-	digest, err := c.resolveTagHead(ctx, url)
+	digest, err := c.resolveTagHead(ctx, upstream, url)
 	if err == nil && digest != "" {
 		return digest, nil
 	}
 
 	// Fall back to GET.
-	return c.resolveTagGet(ctx, url)
+	return c.resolveTagGet(ctx, upstream, url)
 }
 
-func (c *OCIClient) resolveTagHead(ctx context.Context, url string) (string, error) {
+func (c *OCIClient) resolveTagHead(ctx context.Context, upstream domain.Upstream, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("creating HEAD request: %w", err)
 	}
 	req.Header.Set("Accept", ociAcceptHeaders)
 
-	resp, err := c.doOCIRequest(req)
+	resp, err := c.doOCIRequest(req, upstream)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -166,14 +166,14 @@ func (c *OCIClient) resolveTagHead(ctx context.Context, url string) (string, err
 	return digest, nil
 }
 
-func (c *OCIClient) resolveTagGet(ctx context.Context, url string) (string, error) {
+func (c *OCIClient) resolveTagGet(ctx context.Context, upstream domain.Upstream, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("creating GET request: %w", err)
 	}
 	req.Header.Set("Accept", ociAcceptHeaders)
 
-	resp, err := c.doOCIRequest(req)
+	resp, err := c.doOCIRequest(req, upstream)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", domain.ErrUpstreamUnavailable, err)
 	}
@@ -204,7 +204,20 @@ func extractHeaders(resp *http.Response) map[string]string {
 	return headers
 }
 
-func (c *OCIClient) doOCIRequest(req *http.Request) (*http.Response, error) {
+func applyRegistryAuth(req *http.Request, auth *domain.UpstreamAuth) {
+	if auth == nil {
+		return
+	}
+	switch auth.Type {
+	case domain.UpstreamAuthBearerToken:
+		req.Header.Set("Authorization", "Bearer "+auth.Secret)
+	case domain.UpstreamAuthBasic:
+		req.SetBasicAuth(auth.Username, auth.Secret)
+	}
+}
+
+func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*http.Response, error) {
+	applyRegistryAuth(req, upstream.Auth)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -213,7 +226,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 
-	token, ok, err := c.fetchBearerToken(req.Context(), resp.Header.Get("WWW-Authenticate"))
+	token, ok, err := c.fetchBearerToken(req.Context(), resp.Header.Get("WWW-Authenticate"), upstream.Auth)
 	if err != nil {
 		resp.Body.Close()
 		return nil, err
@@ -231,7 +244,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request) (*http.Response, error) {
 	return c.httpClient.Do(retry)
 }
 
-func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string) (string, bool, error) {
+func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth *domain.UpstreamAuth) (string, bool, error) {
 	params, ok := parseBearerChallenge(challenge)
 	if !ok {
 		return "", false, nil
@@ -259,6 +272,9 @@ func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string) (str
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL.String(), nil)
 	if err != nil {
 		return "", false, fmt.Errorf("creating bearer token request: %w", err)
+	}
+	if auth != nil && auth.Type == domain.UpstreamAuthBasic {
+		req.SetBasicAuth(auth.Username, auth.Secret)
 	}
 
 	resp, err := c.httpClient.Do(req)

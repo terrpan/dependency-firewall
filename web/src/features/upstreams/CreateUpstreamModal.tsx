@@ -6,6 +6,7 @@ import {
   getUpstreamCapabilityDefinitions,
   upstreamBaseUrlExamples,
   upstreamEcosystems,
+  upstreamNameExamples,
   type UpstreamCapability,
   type UpstreamDraft,
   type UpstreamDraftErrors,
@@ -16,6 +17,11 @@ const createWizardSteps = [
     id: 'connection',
     label: 'Connection',
     description: 'Choose the ecosystem, name, and URL.',
+  },
+  {
+    id: 'auth',
+    label: 'Authentication',
+    description: 'Configure OCI registry credentials.',
   },
   {
     id: 'review',
@@ -46,6 +52,16 @@ function formatDraftCapabilities(draft: UpstreamDraft): string {
   return draft.capabilities.length > 0
     ? draft.capabilities.map((capability) => formatUpstreamCapabilityLabel(capability)).join(', ')
     : 'None selected'
+}
+
+function formatDraftAuth(draft: UpstreamDraft): string {
+  if (draft.ecosystem !== 'oci' || draft.authType === 'none') {
+    return 'Unauthenticated'
+  }
+  if (draft.authType === 'basic') {
+    return draft.authUsername.trim() ? `Basic as ${draft.authUsername.trim()}` : 'Basic'
+  }
+  return 'Bearer token'
 }
 
 export function CreateUpstreamModal({
@@ -94,6 +110,10 @@ export function CreateUpstreamModal({
             <dt>Capabilities</dt>
             <dd>{formatDraftCapabilities(draft)}</dd>
           </div>
+          <div>
+            <dt>Authentication</dt>
+            <dd>{formatDraftAuth(draft)}</dd>
+          </div>
         </dl>
       </section>
     </div>
@@ -132,14 +152,14 @@ export function CreateUpstreamModal({
           </button>
         ) : null}
 
-        {currentStep === 0 ? (
+        {currentStep < createWizardSteps.length - 1 ? (
           <button
             className="primary-button"
             disabled={!tenantId || isPending}
             form="create-upstream-form"
             type="submit"
           >
-            Review details
+            {currentStep === 0 ? 'Configure auth' : 'Review details'}
           </button>
         ) : (
           <button
@@ -195,7 +215,7 @@ export function CreateUpstreamModal({
                 id="upstream-name"
                 name="name"
                 onChange={(event) => onDraftChange('name', event.target.value)}
-                placeholder="docker-hub"
+                placeholder={upstreamNameExamples[draft.ecosystem]}
                 ref={initialFocusRef}
                 value={draft.name}
               />
@@ -263,6 +283,81 @@ export function CreateUpstreamModal({
               </div>
             </fieldset>
           </div>
+        ) : currentStep === 1 ? (
+          <div className="upstreams-wizard-section">
+            <div className="upstreams-wizard-copy">
+              <h3>Authentication</h3>
+            </div>
+
+            <div className={`upstreams-field${draftErrors.authType ? ' upstreams-field-invalid' : ''}`}>
+              <label htmlFor="upstream-auth-type">Registry authentication</label>
+              <select
+                aria-invalid={Boolean(draftErrors.authType)}
+                disabled={draft.ecosystem !== 'oci'}
+                id="upstream-auth-type"
+                name="authType"
+                onChange={(event) => onDraftChange('authType', event.target.value)}
+                value={draft.ecosystem === 'oci' ? draft.authType : 'none'}
+              >
+                <option value="none">Unauthenticated</option>
+                <option value="basic">Username / password or PAT</option>
+                <option value="bearer_token">Bearer token</option>
+              </select>
+              <small>Authentication settings are stored server-side and are not returned after creation.</small>
+              {draftErrors.authType ? <p className="upstreams-field-error">{draftErrors.authType}</p> : null}
+            </div>
+
+            {draft.ecosystem === 'oci' && draft.authType === 'basic' ? (
+              <>
+                <div className={`upstreams-field${draftErrors.authUsername ? ' upstreams-field-invalid' : ''}`}>
+                  <label htmlFor="upstream-auth-username">Username</label>
+                  <input
+                    aria-invalid={Boolean(draftErrors.authUsername)}
+                    autoComplete="username"
+                    id="upstream-auth-username"
+                    name="authUsername"
+                    onChange={(event) => onDraftChange('authUsername', event.target.value)}
+                    value={draft.authUsername}
+                  />
+                  {draftErrors.authUsername ? (
+                    <p className="upstreams-field-error">{draftErrors.authUsername}</p>
+                  ) : null}
+                </div>
+
+                <div className={`upstreams-field${draftErrors.authPassword ? ' upstreams-field-invalid' : ''}`}>
+                  <label htmlFor="upstream-auth-password">Password or PAT</label>
+                  <input
+                    aria-invalid={Boolean(draftErrors.authPassword)}
+                    autoComplete="new-password"
+                    id="upstream-auth-password"
+                    name="authPassword"
+                    onChange={(event) => onDraftChange('authPassword', event.target.value)}
+                    type="password"
+                    value={draft.authPassword}
+                  />
+                  {draftErrors.authPassword ? (
+                    <p className="upstreams-field-error">{draftErrors.authPassword}</p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+
+            {draft.ecosystem === 'oci' && draft.authType === 'bearer_token' ? (
+              <div className={`upstreams-field${draftErrors.authToken ? ' upstreams-field-invalid' : ''}`}>
+                <label htmlFor="upstream-auth-token">Bearer token</label>
+                <input
+                  aria-invalid={Boolean(draftErrors.authToken)}
+                  autoComplete="off"
+                  id="upstream-auth-token"
+                  name="authToken"
+                  onChange={(event) => onDraftChange('authToken', event.target.value)}
+                  type="password"
+                  value={draft.authToken}
+                />
+                {draftErrors.authToken ? <p className="upstreams-field-error">{draftErrors.authToken}</p> : null}
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div className="upstreams-wizard-section">
             <div className="upstreams-wizard-copy">
@@ -292,6 +387,10 @@ export function CreateUpstreamModal({
                 <div>
                   <dt>Capabilities</dt>
                   <dd>{formatDraftCapabilities(draft)}</dd>
+                </div>
+                <div>
+                  <dt>Authentication</dt>
+                  <dd>{formatDraftAuth(draft)}</dd>
                 </div>
               </dl>
             </div>

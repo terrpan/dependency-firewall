@@ -16,9 +16,10 @@ import (
 
 // BundleService builds proxy-ready tenant bundles from control-plane repositories.
 type BundleService struct {
-	tenants   tenantGetter
-	policies  port.PolicyRepository
-	upstreams port.UpstreamRepository
+	tenants             tenantGetter
+	policies            port.PolicyRepository
+	upstreams           port.UpstreamRepository
+	includeUpstreamAuth bool
 }
 
 type tenantGetter interface {
@@ -26,11 +27,26 @@ type tenantGetter interface {
 }
 
 // NewBundleService creates a new BundleService.
-func NewBundleService(tenants tenantGetter, policies port.PolicyRepository, upstreams port.UpstreamRepository) *BundleService {
-	return &BundleService{
-		tenants:   tenants,
-		policies:  policies,
-		upstreams: upstreams,
+func NewBundleService(tenants tenantGetter, policies port.PolicyRepository, upstreams port.UpstreamRepository, options ...BundleServiceOption) *BundleService {
+	s := &BundleService{
+		tenants:             tenants,
+		policies:            policies,
+		upstreams:           upstreams,
+		includeUpstreamAuth: true,
+	}
+	for _, option := range options {
+		option(s)
+	}
+	return s
+}
+
+// BundleServiceOption customizes bundle construction.
+type BundleServiceOption func(*BundleService)
+
+// WithBundleUpstreamAuth controls whether authenticated upstream secrets may be included.
+func WithBundleUpstreamAuth(include bool) BundleServiceOption {
+	return func(s *BundleService) {
+		s.includeUpstreamAuth = include
 	}
 }
 
@@ -52,6 +68,13 @@ func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*
 	upstreams, err := s.upstreams.ListByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing bundle upstreams: %w", err)
+	}
+	if !s.includeUpstreamAuth {
+		for i := range upstreams {
+			if upstreams[i].UpstreamAuthConfigured() {
+				return nil, fmt.Errorf("%w: authenticated upstreams cannot be bundled over insecure transport", domain.ErrUpstreamAuthTransportInsecure)
+			}
+		}
 	}
 
 	revision, err := bundleRevision(*tenant, policies, upstreams)
@@ -247,7 +270,15 @@ type bundleUpstreamHashInput struct {
 	Ecosystem    domain.EcosystemType        `json:"ecosystem"`
 	BaseURL      string                      `json:"base_url"`
 	Capabilities []domain.UpstreamCapability `json:"capabilities"`
+	Auth         bundleUpstreamAuthHashInput `json:"auth"`
 	UpdatedAt    time.Time                   `json:"updated_at"`
+}
+
+type bundleUpstreamAuthHashInput struct {
+	Type      domain.UpstreamAuthType `json:"type"`
+	Username  string                  `json:"username,omitempty"`
+	Secret    string                  `json:"secret,omitempty"`
+	UpdatedAt time.Time               `json:"updated_at,omitempty"`
 }
 
 func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []domain.Upstream) (string, error) {
@@ -284,12 +315,22 @@ func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []
 	}
 
 	for i := range upstreams {
+		auth := bundleUpstreamAuthHashInput{Type: domain.UpstreamAuthNone}
+		if upstreams[i].Auth != nil {
+			auth = bundleUpstreamAuthHashInput{
+				Type:      upstreams[i].Auth.Type,
+				Username:  upstreams[i].Auth.Username,
+				Secret:    upstreams[i].Auth.Secret,
+				UpdatedAt: upstreams[i].Auth.UpdatedAt,
+			}
+		}
 		payload.Upstreams = append(payload.Upstreams, bundleUpstreamHashInput{
 			ID:           upstreams[i].ID,
 			Name:         upstreams[i].Name,
 			Ecosystem:    upstreams[i].Ecosystem,
 			BaseURL:      upstreams[i].BaseURL,
 			Capabilities: append([]domain.UpstreamCapability(nil), upstreams[i].Capabilities...),
+			Auth:         auth,
 			UpdatedAt:    upstreams[i].UpdatedAt,
 		})
 	}
@@ -321,6 +362,10 @@ func cloneBundle(bundle *domain.TenantBundle) *domain.TenantBundle {
 	for i := range bundle.Upstreams {
 		cloned.Upstreams[i] = bundle.Upstreams[i]
 		cloned.Upstreams[i].Capabilities = append([]domain.UpstreamCapability(nil), bundle.Upstreams[i].Capabilities...)
+		if bundle.Upstreams[i].Auth != nil {
+			auth := *bundle.Upstreams[i].Auth
+			cloned.Upstreams[i].Auth = &auth
+		}
 	}
 
 	return cloned

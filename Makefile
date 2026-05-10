@@ -1,4 +1,4 @@
-.PHONY: help build push up down restart logs logs-control-plane logs-proxy ps clean status test test-integration test-all test-coverage fmt lint vet tidy all
+.PHONY: help build push mtls-certs up down restart logs logs-control-plane logs-proxy ps clean status test test-integration test-all test-coverage fmt lint vet tidy all
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -12,7 +12,10 @@ build: ## Build the firewall image using ko and load it into Docker
 push: ## Push the firewall image using ko
 	ko build ./cmd/firewall
 
-up: build ## Build and start docker compose
+mtls-certs: ## Generate local mTLS certificates for split-mode Docker Compose
+	@if [ ! -f examples/mtls/certs/ca.pem ]; then ./examples/mtls/generate-certs.sh; fi
+
+up: mtls-certs build ## Build and start docker compose
 	docker compose up -d
 
 down: ## Stop docker compose

@@ -149,6 +149,16 @@ export function UpstreamDetailsPanel({
             <dd>{policyTypes.length > 0 ? policyTypes.join(', ') : 'None'}</dd>
           </div>
           <div>
+            <dt>Authentication</dt>
+            <dd>
+              {upstream.auth?.configured
+                ? upstream.auth.username
+                  ? `${upstream.auth.type} (${upstream.auth.username})`
+                  : upstream.auth.type
+                : 'Unauthenticated'}
+            </dd>
+          </div>
+          <div>
             <dt>Created</dt>
             <dd>{formatTimestamp(upstream.created_at)}</dd>
           </div>

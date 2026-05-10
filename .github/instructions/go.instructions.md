@@ -317,6 +317,7 @@ Follow idiomatic Go practices and community standards when writing Go code. Thes
 - Use crypto/rand for random number generation
 - Store passwords using bcrypt, scrypt, or argon2 (consider golang.org/x/crypto for additional options)
 - Use TLS for network communication
+- Do not send secrets in bundle or ingest gRPC payloads unless the transport authenticates both peers and authorizes the proxy identity for the requested tenant; use mTLS plus tenant authorization for split proxy/control-plane traffic
 
 ## Documentation
 

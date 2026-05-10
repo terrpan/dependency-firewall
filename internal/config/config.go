@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -32,6 +33,7 @@ type Config struct {
 	Audit     AuditConfig     `mapstructure:"audit" validate:"required"`
 	Health    HealthConfig    `mapstructure:"health"`
 	Bundle    BundleConfig    `mapstructure:"bundle" validate:"required"`
+	Secrets   SecretsConfig   `mapstructure:"secrets"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
@@ -137,9 +139,32 @@ type HealthConfig struct {
 
 // BundleConfig holds control-plane bundle gRPC and proxy refresh settings.
 type BundleConfig struct {
-	ListenAddr       string        `mapstructure:"listen_addr"`
-	ControlPlaneAddr string        `mapstructure:"control_plane_addr"`
-	RefreshInterval  time.Duration `mapstructure:"refresh_interval" validate:"gte=0"`
+	ListenAddr       string          `mapstructure:"listen_addr"`
+	ControlPlaneAddr string          `mapstructure:"control_plane_addr"`
+	RefreshInterval  time.Duration   `mapstructure:"refresh_interval" validate:"gte=0"`
+	TLS              BundleTLSConfig `mapstructure:"tls"`
+}
+
+// BundleTLSConfig holds control-plane gRPC transport security settings.
+type BundleTLSConfig struct {
+	Mode                      string                      `mapstructure:"mode" validate:"oneof=insecure mtls"`
+	CAFile                    string                      `mapstructure:"ca_file"`
+	CertFile                  string                      `mapstructure:"cert_file"`
+	KeyFile                   string                      `mapstructure:"key_file"`
+	ServerNameOverride        string                      `mapstructure:"server_name_override"`
+	AllowInsecureControlPlane bool                        `mapstructure:"allow_insecure_control_plane"`
+	AuthorizedClients         []BundleTLSAuthorizedClient `mapstructure:"authorized_clients"`
+}
+
+// BundleTLSAuthorizedClient maps one mTLS client certificate identity to tenant access.
+type BundleTLSAuthorizedClient struct {
+	Identity  string   `mapstructure:"identity"`
+	TenantIDs []string `mapstructure:"tenant_ids"`
+}
+
+// SecretsConfig holds application-managed secret settings.
+type SecretsConfig struct {
+	UpstreamAuthKey string `mapstructure:"upstream_auth_key"`
 }
 
 // LoadOptions customizes config loading behavior.
@@ -205,6 +230,14 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 	v.SetDefault("bundle.listen_addr", ":9090")
 	v.SetDefault("bundle.control_plane_addr", "127.0.0.1:9090")
 	v.SetDefault("bundle.refresh_interval", 30*time.Second)
+	v.SetDefault("bundle.tls.mode", "insecure")
+	v.SetDefault("bundle.tls.ca_file", "")
+	v.SetDefault("bundle.tls.cert_file", "")
+	v.SetDefault("bundle.tls.key_file", "")
+	v.SetDefault("bundle.tls.server_name_override", "")
+	v.SetDefault("bundle.tls.allow_insecure_control_plane", false)
+	v.SetDefault("bundle.tls.authorized_clients", []BundleTLSAuthorizedClient{})
+	v.SetDefault("secrets.upstream_auth_key", "")
 
 	if strings.TrimSpace(options.ConfigPath) != "" {
 		v.SetConfigFile(options.ConfigPath)
@@ -224,6 +257,9 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 	v.SetEnvPrefix("FIREWALL")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
+	if err := bindEnvKeys(v); err != nil {
+		return nil, err
+	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
@@ -235,6 +271,15 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func bindEnvKeys(v *viper.Viper) error {
+	for _, key := range v.AllKeys() {
+		if err := v.BindEnv(key); err != nil {
+			return fmt.Errorf("binding environment variable for %q: %w", key, err)
+		}
+	}
+	return nil
 }
 
 // Validate validates the configuration after file and environment decoding.
@@ -285,16 +330,57 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+	if key := strings.TrimSpace(c.Secrets.UpstreamAuthKey); key != "" {
+		decoded, err := base64.StdEncoding.DecodeString(key)
+		if err != nil || len(decoded) != 32 {
+			return fmt.Errorf("invalid config: field %q must be a base64 encoded 32-byte key", "secrets.upstream_auth_key")
+		}
+	}
+	if strings.EqualFold(c.Bundle.TLS.Mode, "mtls") {
+		if strings.TrimSpace(c.Bundle.TLS.CAFile) == "" {
+			return fmt.Errorf("invalid config: field %q is required when bundle.tls.mode is %q", "bundle.tls.ca_file", c.Bundle.TLS.Mode)
+		}
+		if strings.TrimSpace(c.Bundle.TLS.CertFile) == "" {
+			return fmt.Errorf("invalid config: field %q is required when bundle.tls.mode is %q", "bundle.tls.cert_file", c.Bundle.TLS.Mode)
+		}
+		if strings.TrimSpace(c.Bundle.TLS.KeyFile) == "" {
+			return fmt.Errorf("invalid config: field %q is required when bundle.tls.mode is %q", "bundle.tls.key_file", c.Bundle.TLS.Mode)
+		}
+		if c.Runtime.Mode == RuntimeModeControlPlane {
+			if len(c.Bundle.TLS.AuthorizedClients) == 0 {
+				return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q and bundle.tls.mode is %q", "bundle.tls.authorized_clients", c.Runtime.Mode, c.Bundle.TLS.Mode)
+			}
+			for i, client := range c.Bundle.TLS.AuthorizedClients {
+				if strings.TrimSpace(client.Identity) == "" {
+					return fmt.Errorf("invalid config: field %q is required", fmt.Sprintf("bundle.tls.authorized_clients[%d].identity", i))
+				}
+				if len(client.TenantIDs) == 0 {
+					return fmt.Errorf("invalid config: field %q must include at least one tenant id", fmt.Sprintf("bundle.tls.authorized_clients[%d].tenant_ids", i))
+				}
+				for j, tenantID := range client.TenantIDs {
+					if strings.TrimSpace(tenantID) == "" {
+						return fmt.Errorf("invalid config: field %q must not be blank", fmt.Sprintf("bundle.tls.authorized_clients[%d].tenant_ids[%d]", i, j))
+					}
+				}
+			}
+		}
+	}
 	switch c.Runtime.Mode {
 	case RuntimeModeControlPlane:
 		if strings.TrimSpace(c.Bundle.ListenAddr) == "" {
 			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.listen_addr", c.Runtime.Mode)
+		}
+		if c.Bundle.TLS.Mode != "mtls" && !c.Bundle.TLS.AllowInsecureControlPlane {
+			return fmt.Errorf("invalid config: field %q must be %q when runtime.mode is %q unless %q is true", "bundle.tls.mode", "mtls", c.Runtime.Mode, "bundle.tls.allow_insecure_control_plane")
 		}
 	}
 	switch c.Runtime.Mode {
 	case RuntimeModeAllInOne, RuntimeModeProxy:
 		if strings.TrimSpace(c.Bundle.ControlPlaneAddr) == "" {
 			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.control_plane_addr", c.Runtime.Mode)
+		}
+		if c.Runtime.Mode == RuntimeModeProxy && c.Bundle.TLS.Mode != "mtls" {
+			return fmt.Errorf("invalid config: field %q must be %q when runtime.mode is %q", "bundle.tls.mode", "mtls", c.Runtime.Mode)
 		}
 	}
 

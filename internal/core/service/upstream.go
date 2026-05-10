@@ -11,13 +11,32 @@ import (
 
 // UpstreamService owns upstream management workflows for the control plane.
 type UpstreamService struct {
-	repo     port.UpstreamRepository
-	policies port.PolicyRepository
+	repo                        port.UpstreamRepository
+	policies                    port.PolicyRepository
+	allowAuthenticatedUpstreams bool
 }
 
 // NewUpstreamService creates a new UpstreamService.
-func NewUpstreamService(repo port.UpstreamRepository, policies port.PolicyRepository) *UpstreamService {
-	return &UpstreamService{repo: repo, policies: policies}
+func NewUpstreamService(repo port.UpstreamRepository, policies port.PolicyRepository, options ...UpstreamServiceOption) *UpstreamService {
+	s := &UpstreamService{
+		repo:                        repo,
+		policies:                    policies,
+		allowAuthenticatedUpstreams: true,
+	}
+	for _, option := range options {
+		option(s)
+	}
+	return s
+}
+
+// UpstreamServiceOption customizes upstream service behavior.
+type UpstreamServiceOption func(*UpstreamService)
+
+// WithAuthenticatedUpstreams controls whether the service may store authenticated upstream configs.
+func WithAuthenticatedUpstreams(allowed bool) UpstreamServiceOption {
+	return func(s *UpstreamService) {
+		s.allowAuthenticatedUpstreams = allowed
+	}
 }
 
 // Create creates an upstream.
@@ -27,6 +46,9 @@ func (s *UpstreamService) Create(ctx context.Context, upstream *domain.Upstream)
 		return err
 	}
 	upstream.Capabilities = capabilities
+	if err := s.validateAuth(upstream); err != nil {
+		return err
+	}
 
 	if err := s.repo.Create(ctx, upstream); err != nil {
 		return fmt.Errorf("creating upstream: %w", err)
@@ -59,12 +81,40 @@ func (s *UpstreamService) Update(ctx context.Context, upstream *domain.Upstream)
 		return err
 	}
 	upstream.Capabilities = capabilities
+	if err := s.validateAuth(upstream); err != nil {
+		return err
+	}
 
 	if err := s.validateScopedPolicies(ctx, *upstream); err != nil {
 		return err
 	}
 	if err := s.repo.Update(ctx, upstream); err != nil {
 		return fmt.Errorf("updating upstream: %w", err)
+	}
+	return nil
+}
+
+func (s *UpstreamService) validateAuth(upstream *domain.Upstream) error {
+	if !upstream.UpstreamAuthConfigured() {
+		return nil
+	}
+	if !s.allowAuthenticatedUpstreams {
+		return domain.ErrUpstreamAuthTransportInsecure
+	}
+	if upstream.Ecosystem != domain.EcosystemOCI {
+		return fmt.Errorf("%w: upstream auth is only supported for OCI", domain.ErrUpstreamAuthInvalid)
+	}
+	switch upstream.Auth.Type {
+	case domain.UpstreamAuthBasic:
+		if upstream.Auth.Username == "" || upstream.Auth.Secret == "" {
+			return fmt.Errorf("%w: basic auth requires username and password", domain.ErrUpstreamAuthInvalid)
+		}
+	case domain.UpstreamAuthBearerToken:
+		if upstream.Auth.Secret == "" {
+			return fmt.Errorf("%w: bearer token auth requires token", domain.ErrUpstreamAuthInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported auth type %q", domain.ErrUpstreamAuthInvalid, upstream.Auth.Type)
 	}
 	return nil
 }

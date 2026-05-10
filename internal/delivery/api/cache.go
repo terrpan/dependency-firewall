@@ -34,7 +34,7 @@ func (h *CacheHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Clear tenant decision cache",
 		Description: "Invalidates cached policy decisions for the tenant so subsequent proxy requests are evaluated again.",
 		Tags:        []string{"cache"},
-		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusInternalServerError),
 	}, h.clearDecisionCacheHuma)
 	removeValidationResponse(api, "/api/v1/cache/decisions", http.MethodDelete)
 
@@ -45,7 +45,7 @@ func (h *CacheHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Clear tenant metadata cache",
 		Description: "Invalidates cached enrichment metadata for the tenant so subsequent proxy requests fetch fresh artifact metadata again.",
 		Tags:        []string{"cache"},
-		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusInternalServerError),
 	}, h.clearMetadataCacheHuma)
 	removeValidationResponse(api, "/api/v1/cache/metadata", http.MethodDelete)
 }
@@ -65,8 +65,7 @@ func (h *CacheHandler) clearDecisionCacheHuma(ctx context.Context, input *cacheT
 	}
 
 	if err := h.caches.ClearTenantDecisions(ctx, tenantID); err != nil {
-		h.logger.Error("clearing tenant decision cache", "error", err, "tenant_id", tenantID)
-		return nil, huma.Error500InternalServerError("failed to clear decision cache")
+		return nil, humaInternalError(ctx, h.logger, "clearing tenant decision cache", err, "failed to clear decision cache", "tenant_id", tenantID)
 	}
 
 	return &cacheClearOutput{
@@ -84,8 +83,7 @@ func (h *CacheHandler) clearMetadataCacheHuma(ctx context.Context, input *cacheT
 	}
 
 	if err := h.caches.ClearTenantMetadata(ctx, tenantID); err != nil {
-		h.logger.Error("clearing tenant metadata cache", "error", err, "tenant_id", tenantID)
-		return nil, huma.Error500InternalServerError("failed to clear metadata cache")
+		return nil, humaInternalError(ctx, h.logger, "clearing tenant metadata cache", err, "failed to clear metadata cache", "tenant_id", tenantID)
 	}
 
 	return &cacheClearOutput{

@@ -91,6 +91,45 @@ func TestUpstreamService_CreateDefaultsCapabilities(t *testing.T) {
 	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemNPM), repo.created[0].Capabilities)
 }
 
+func TestUpstreamService_RejectsAuthenticatedUpstreamsWhenDisabled(t *testing.T) {
+	repo := &stubUpstreamRepository{}
+	service := NewUpstreamService(repo, nil, WithAuthenticatedUpstreams(false))
+
+	err := service.Create(context.Background(), &domain.Upstream{
+		TenantID:  "tenant-1",
+		Name:      "private-oci",
+		Ecosystem: domain.EcosystemOCI,
+		BaseURL:   "https://ghcr.io",
+		Auth: &domain.UpstreamAuth{
+			Type:   domain.UpstreamAuthBearerToken,
+			Secret: "registry-token",
+		},
+	})
+
+	require.ErrorIs(t, err, domain.ErrUpstreamAuthTransportInsecure)
+	assert.Empty(t, repo.created)
+}
+
+func TestUpstreamService_RejectsAuthForNonOCIUpstreams(t *testing.T) {
+	repo := &stubUpstreamRepository{}
+	service := NewUpstreamService(repo, nil)
+
+	err := service.Create(context.Background(), &domain.Upstream{
+		TenantID:  "tenant-1",
+		Name:      "private-npm",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+		Auth: &domain.UpstreamAuth{
+			Type:     domain.UpstreamAuthBasic,
+			Username: "robot",
+			Secret:   "secret",
+		},
+	})
+
+	require.ErrorIs(t, err, domain.ErrUpstreamAuthInvalid)
+	assert.Empty(t, repo.created)
+}
+
 func TestUpstreamService_UpdateRejectsIncompatibleScopedPolicies(t *testing.T) {
 	repo := &stubUpstreamRepository{}
 	policies := &stubPolicyRepository{

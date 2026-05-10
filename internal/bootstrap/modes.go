@@ -11,12 +11,14 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 	"github.com/danielterry/dependency-firewall/internal/delivery/bundlegrpc"
 	"github.com/danielterry/dependency-firewall/internal/delivery/ingestgrpc"
 	auditinfra "github.com/danielterry/dependency-firewall/internal/infra/audit"
 	bundleinfra "github.com/danielterry/dependency-firewall/internal/infra/bundle"
+	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
 	ingestinfra "github.com/danielterry/dependency-firewall/internal/infra/ingest"
 	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
 )
@@ -42,10 +44,17 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 
 	httpServer := newHTTPServer(cfg, controlPlaneMux)
 
-	grpcServer := grpc.NewServer(append([]grpc.ServerOption{
-		grpc.ForceServerCodec(jsonCodec{}),
-	}, telemetry.ServerOptions()...)...)
-	bundlegrpc.NewServer(service.NewBundleService(deps.tenantRepo, deps.policyRepo, deps.upstreamRepo)).Register(grpcServer)
+	controlPlaneGRPCOptions, err := controlPlaneGRPCServerOptions(cfg, logger, deps.auditService)
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(controlPlaneGRPCOptions...)
+	bundlegrpc.NewServer(service.NewBundleService(
+		deps.tenantRepo,
+		deps.policyRepo,
+		deps.upstreamRepo,
+		service.WithBundleUpstreamAuth(cfg.Bundle.TLS.Mode == "mtls"),
+	)).Register(grpcServer)
 	ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo)).Register(grpcServer)
 
 	listener, err := net.Listen("tcp", cfg.Bundle.ListenAddr)
@@ -58,6 +67,14 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 		"http_addr", httpServer.Addr,
 		"bundle_addr", cfg.Bundle.ListenAddr,
 	)
+	if cfg.Bundle.TLS.Mode != "mtls" && cfg.Bundle.TLS.AllowInsecureControlPlane {
+		logger.Warn("control plane gRPC is running without mTLS",
+			"bundle_addr", cfg.Bundle.ListenAddr,
+			"runtime_mode", cfg.Runtime.Mode,
+			"bundle_tls_mode", cfg.Bundle.TLS.Mode,
+			"override", "bundle.tls.allow_insecure_control_plane",
+		)
+	}
 
 	return serve(ctx, logger,
 		server{
@@ -107,13 +124,13 @@ func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info
 	}
 	defer deps.close()
 
-	grpcClient, err := bundleinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr)
+	grpcClient, err := bundleinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr, cfg.Bundle.TLS)
 	if err != nil {
 		return err
 	}
 	defer grpcClient.Close()
 
-	ingestClient, err := ingestinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr)
+	ingestClient, err := ingestinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr, cfg.Bundle.TLS)
 	if err != nil {
 		return err
 	}
@@ -156,7 +173,7 @@ func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, i
 	defer deps.close()
 
 	localBundles := service.NewCachedBundleProvider(
-		service.NewBundleService(deps.tenantRepo, deps.policyRepo, deps.upstreamRepo),
+		service.NewBundleService(deps.tenantRepo, deps.policyRepo, deps.upstreamRepo, service.WithBundleUpstreamAuth(true)),
 		cfg.Bundle.RefreshInterval,
 		logger,
 	)
@@ -205,6 +222,52 @@ func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, i
 			return httpServer.Shutdown(ctx)
 		},
 	})
+}
+
+func controlPlaneGRPCServerOptions(cfg *config.Config, logger *slog.Logger, auditService *service.AuditService) ([]grpc.ServerOption, error) {
+	options, err := controlplanegrpc.ServerOptions(cfg.Bundle.TLS)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Bundle.TLS.Mode == "mtls" {
+		options = append(options, grpc.UnaryInterceptor(controlplanegrpc.TenantAuthorizationInterceptor(
+			cfg.Bundle.TLS.AuthorizedClients,
+			controlPlaneTenantIDFromRequest,
+			controlplanegrpc.WithTenantAuthorizationLogger(logger),
+			controlplanegrpc.WithTenantAuthorizationDeniedRecorder(controlPlaneAuthorizationDeniedRecorder(auditService)),
+		)))
+	}
+	return append(options, telemetry.ServerOptions()...), nil
+}
+
+func controlPlaneAuthorizationDeniedRecorder(auditService *service.AuditService) controlplanegrpc.TenantAuthorizationDeniedRecorder {
+	return func(ctx context.Context, event controlplanegrpc.TenantAuthorizationDeniedEvent) error {
+		if auditService == nil || !auditService.Enabled() || event.TenantID == "" {
+			return nil
+		}
+		return auditService.Record(ctx, domain.AuditEvent{
+			TenantID:   event.TenantID,
+			EventType:  domain.AuditEventRequestDenied,
+			Source:     "control-plane/grpc-authz",
+			Outcome:    domain.DecisionDeny,
+			Message:    "control-plane grpc request denied",
+			CreatedAt:  time.Now().UTC(),
+			EntityType: "control_plane_grpc_request",
+			Payload: map[string]any{
+				"client_identities":  event.ClientIdentities,
+				"grpc_method":        event.FullMethod,
+				"permission_message": event.PermissionMessage,
+				"reason":             event.Reason,
+			},
+		})
+	}
+}
+
+func controlPlaneTenantIDFromRequest(req any) string {
+	if tenantID := bundlegrpc.TenantIDFromRequest(req); tenantID != "" {
+		return tenantID
+	}
+	return ingestgrpc.TenantIDFromRequest(req)
 }
 
 func runProxyHTTP(

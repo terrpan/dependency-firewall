@@ -16,9 +16,11 @@ import (
 type stubAuditRecorder struct {
 	err    error
 	events []domain.AuditEvent
+	calls  int
 }
 
 func (s *stubAuditRecorder) Record(_ context.Context, event *domain.AuditEvent) error {
+	s.calls++
 	if s.err != nil {
 		return s.err
 	}
@@ -83,5 +85,27 @@ func TestAuditService_RecordFailureModes(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Empty(t, recorder.events)
+	})
+
+	t.Run("canceled context is ignored even when fail closed", func(t *testing.T) {
+		recorder := &stubAuditRecorder{err: context.Canceled}
+		service := NewAuditService(
+			recorder,
+			nil,
+			logger,
+			true,
+			domain.AuditFailureModeFailClosed,
+			domain.AuditDetailLevelSummary,
+		)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := service.Record(ctx, domain.AuditEvent{
+			TenantID:  "tenant-1",
+			EventType: domain.AuditEventEvaluationStarted,
+		})
+
+		require.NoError(t, err)
+		assert.Zero(t, recorder.calls)
 	})
 }

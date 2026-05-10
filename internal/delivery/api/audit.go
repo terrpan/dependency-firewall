@@ -34,7 +34,7 @@ func (h *AuditHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List audit events",
 		Description: "Lists tenant-scoped audit events for evaluation, proxy, and decision workflows with structured filtering options.",
 		Tags:        []string{"audit"},
-		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusInternalServerError),
 	}, h.listHuma)
 	removeValidationResponse(api, "/api/v1/audit/events", http.MethodGet)
 }
@@ -72,6 +72,9 @@ func (h *AuditHandler) listHuma(ctx context.Context, input *auditListInput) (*au
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
+	ctx, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	events, err := h.audits.ListByTenant(ctx, domain.AuditEventFilter{
 		TenantID:      tenantID,
 		Limit:         parseAuditLimit(input.Limit),
@@ -86,8 +89,7 @@ func (h *AuditHandler) listHuma(ctx context.Context, input *auditListInput) (*au
 		Until:         until,
 	})
 	if err != nil {
-		h.logger.Error("listing audit events", "error", err, "tenant_id", tenantID)
-		return nil, huma.Error500InternalServerError("failed to list audit events")
+		return nil, humaInternalError(ctx, h.logger, "listing audit events", err, "failed to list audit events", "tenant_id", tenantID)
 	}
 
 	return &auditListOutput{Body: toAuditEventsResponse(events)}, nil

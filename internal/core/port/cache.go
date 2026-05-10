@@ -44,8 +44,8 @@ type OCIArtifactWriter interface {
 	Abort() error
 }
 
-// OCIArtifactCache caches OCI manifests and blobs by tenant and immutable digest.
+// OCIArtifactCache caches OCI manifests and blobs by tenant, upstream, and immutable digest.
 type OCIArtifactCache interface {
-	Get(ctx context.Context, tenantID string, kind OCIArtifactKind, digest string) (*UpstreamResponse, error)
-	StartWrite(ctx context.Context, tenantID string, kind OCIArtifactKind, digest string, descriptor OCIArtifactDescriptor) (OCIArtifactWriter, error)
+	Get(ctx context.Context, tenantID string, upstreamID string, kind OCIArtifactKind, digest string) (*UpstreamResponse, error)
+	StartWrite(ctx context.Context, tenantID string, upstreamID string, kind OCIArtifactKind, digest string, descriptor OCIArtifactDescriptor) (OCIArtifactWriter, error)
 }

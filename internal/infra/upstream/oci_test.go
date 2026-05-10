@@ -134,3 +134,72 @@ func TestOCIClientResolveReference_FollowsBearerChallenge(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, digest, resolvedDigest)
 }
+
+func TestOCIClientFetchMetadata_UsesBasicAuthForBearerTokenChallenge(t *testing.T) {
+	const token = "private-token"
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			username, password, ok := r.BasicAuth()
+			assert.True(t, ok)
+			assert.Equal(t, "robot", username)
+			assert.Equal(t, "registry-pat", password)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"token": token}))
+		case "/v2/acme/app/manifests/1.0.0":
+			if r.Header.Get("Authorization") != "Bearer "+token {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:acme/app:pull"`)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(`{"schemaVersion":2}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewOCIClient(srv.Client())
+	upstream := domain.Upstream{
+		BaseURL: srv.URL,
+		Auth: &domain.UpstreamAuth{
+			Type:     domain.UpstreamAuthBasic,
+			Username: "robot",
+			Secret:   "registry-pat",
+		},
+	}
+	artifact := domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Version: "1.0.0"}
+
+	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestOCIClientFetchMetadata_UsesStaticBearerToken(t *testing.T) {
+	const token = "static-token"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer "+token, r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"schemaVersion":2}`))
+	}))
+	defer srv.Close()
+
+	client := NewOCIClient(srv.Client())
+	upstream := domain.Upstream{
+		BaseURL: srv.URL,
+		Auth: &domain.UpstreamAuth{
+			Type:   domain.UpstreamAuthBearerToken,
+			Secret: token,
+		},
+	}
+	artifact := domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Version: "1.0.0"}
+
+	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}

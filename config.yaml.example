@@ -69,3 +69,18 @@ bundle:
   listen_addr: ":9090"
   control_plane_addr: "127.0.0.1:9090"
   refresh_interval: 30s
+  tls:
+    # Split control-plane/proxy mode should use mtls. all-in-one local
+    # development can keep insecure because bundle and ingest stay in-process.
+    mode: insecure
+    ca_file: ""
+    cert_file: ""
+    key_file: ""
+    server_name_override: ""
+    # Control-plane mode only. Defaults to false. Set true only for local
+    # development when intentionally running bundle/ingest gRPC without mTLS.
+    # Startup logs will emit a warning when this override is active.
+    allow_insecure_control_plane: false
+    # Control-plane mode only. Identities are read from the proxy client
+    # certificate URI SAN, DNS SAN, email SAN, or Common Name.
+    authorized_clients: []

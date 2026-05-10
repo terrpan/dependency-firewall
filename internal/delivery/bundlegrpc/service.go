@@ -76,8 +76,26 @@ type BundleUpstream struct {
 	Ecosystem    domain.EcosystemType `json:"ecosystem"`
 	BaseURL      string               `json:"base_url"`
 	Capabilities []string             `json:"capabilities"`
+	Auth         *BundleUpstreamAuth  `json:"auth,omitempty"`
 	CreatedAt    string               `json:"created_at"`
 	UpdatedAt    string               `json:"updated_at"`
+}
+
+type BundleUpstreamAuth struct {
+	Type      domain.UpstreamAuthType `json:"type"`
+	Username  string                  `json:"username,omitempty"`
+	Secret    string                  `json:"secret,omitempty"`
+	UpdatedAt string                  `json:"updated_at,omitempty"`
+}
+
+// TenantIDFromRequest returns the tenant id carried by bundle gRPC requests.
+func TenantIDFromRequest(req any) string {
+	switch typed := req.(type) {
+	case *GetTenantBundleRequest:
+		return typed.TenantID
+	default:
+		return ""
+	}
 }
 
 // Register registers the bundle service on the given gRPC registrar.
@@ -202,6 +220,17 @@ func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, er
 
 	for i := range bundle.Upstreams {
 		effectiveCapabilities := bundle.Upstreams[i].EffectiveCapabilities()
+		var auth *BundleUpstreamAuth
+		if bundle.Upstreams[i].Auth != nil {
+			auth = &BundleUpstreamAuth{
+				Type:     bundle.Upstreams[i].Auth.Type,
+				Username: bundle.Upstreams[i].Auth.Username,
+				Secret:   bundle.Upstreams[i].Auth.Secret,
+			}
+			if !bundle.Upstreams[i].Auth.UpdatedAt.IsZero() {
+				auth.UpdatedAt = bundle.Upstreams[i].Auth.UpdatedAt.UTC().Format(timeLayout)
+			}
+		}
 		response.Bundle.Upstreams = append(response.Bundle.Upstreams, BundleUpstream{
 			ID:           bundle.Upstreams[i].ID,
 			TenantID:     bundle.Upstreams[i].TenantID,
@@ -209,6 +238,7 @@ func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, er
 			Ecosystem:    bundle.Upstreams[i].Ecosystem,
 			BaseURL:      bundle.Upstreams[i].BaseURL,
 			Capabilities: domain.UpstreamCapabilityStrings(effectiveCapabilities),
+			Auth:         auth,
 			CreatedAt:    bundle.Upstreams[i].CreatedAt.UTC().Format(timeLayout),
 			UpdatedAt:    bundle.Upstreams[i].UpdatedAt.UTC().Format(timeLayout),
 		})
@@ -322,7 +352,7 @@ func (u BundleUpstream) toDomain() (*domain.Upstream, error) {
 		return nil, fmt.Errorf("parsing upstream updated_at: %w", err)
 	}
 
-	return &domain.Upstream{
+	upstream := &domain.Upstream{
 		ID:           u.ID,
 		TenantID:     u.TenantID,
 		Name:         u.Name,
@@ -331,7 +361,20 @@ func (u BundleUpstream) toDomain() (*domain.Upstream, error) {
 		Capabilities: domain.ParseUpstreamCapabilities(u.Capabilities),
 		CreatedAt:    createdAt,
 		UpdatedAt:    updatedAt,
-	}, nil
+	}
+	if u.Auth != nil && u.Auth.Type != "" && u.Auth.Type != domain.UpstreamAuthNone {
+		authUpdatedAt, err := parseBundleTime(u.Auth.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parsing upstream auth updated_at: %w", err)
+		}
+		upstream.Auth = &domain.UpstreamAuth{
+			Type:      u.Auth.Type,
+			Username:  u.Auth.Username,
+			Secret:    u.Auth.Secret,
+			UpdatedAt: authUpdatedAt,
+		}
+	}
+	return upstream, nil
 }
 
 func parseBundleTime(raw string) (time.Time, error) {

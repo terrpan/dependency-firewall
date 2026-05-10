@@ -68,8 +68,7 @@ func (h *PolicyHandler) importPoliciesHuma(ctx context.Context, input *importPol
 		if isPolicyNameConflict(err) {
 			return nil, huma.Error409Conflict("policy name already exists")
 		}
-		h.logger.Error("importing policies", "error", err, "tenant_id", tenantID)
-		return nil, huma.Error500InternalServerError("failed to import policies")
+		return nil, humaInternalError(ctx, h.logger, "importing policies", err, "failed to import policies", "tenant_id", tenantID)
 	}
 
 	return &importPoliciesOutput{

@@ -48,6 +48,8 @@ The default Compose topology runs the same image twice:
 - proxy on `http://localhost:8081`
 - control-plane gRPC (bundle + ingest) on `localhost:9090`
 
+`make up` generates local test mTLS certificates under `examples/mtls/certs` before starting the split topology.
+
 ```bash
 make up
 ```
@@ -117,9 +119,17 @@ All config keys can be overridden with `FIREWALL_*` environment variables.
 | `bundle.listen_addr` | `:9090` | gRPC bundle listen address for control-plane mode |
 | `bundle.control_plane_addr` | `127.0.0.1:9090` | gRPC address the proxy uses for bundle and ingest RPCs |
 | `bundle.refresh_interval` | `30s` | On-demand bundle refresh interval in proxy mode |
+| `bundle.tls.mode` | `insecure` | Control-plane gRPC transport mode: `insecure` for all-in-one/local dev or `mtls` for split control-plane/proxy deployments |
+| `bundle.tls.ca_file` | `""` | CA bundle used to verify the peer when `bundle.tls.mode=mtls` |
+| `bundle.tls.cert_file` | `""` | Process certificate used for mTLS bundle and ingest gRPC |
+| `bundle.tls.key_file` | `""` | Private key for `bundle.tls.cert_file` |
+| `bundle.tls.server_name_override` | `""` | Optional proxy-side server name override for control-plane certificate verification |
+| `bundle.tls.allow_insecure_control_plane` | `false` | Explicit control-plane-only local/dev override that permits `bundle.tls.mode=insecure`; emits a startup warning |
+| `bundle.tls.authorized_clients` | `[]` | Control-plane-only list mapping client certificate identities to tenant IDs allowed for bundle and ingest RPCs |
+| `secrets.upstream_auth_key` | `""` | Base64 encoded 32-byte AES key used to encrypt upstream registry credentials at rest |
 | `database.dsn` | `postgres://localhost:5432/firewall?sslmode=disable` | PostgreSQL connection string for `all-in-one` and `control-plane` modes |
 | `valkey.addr` | `localhost:6379` | Valkey address |
-| `oci_cache.enabled` | `false` | Enable tenant-aware OCI artifact caching |
+| `oci_cache.enabled` | `false` | Enable tenant and upstream-aware OCI artifact caching |
 | `telemetry.enabled` | `false` | Enable OpenTelemetry tracing |
 | `telemetry.endpoint` | `http://localhost:4317` | OTLP collector endpoint used by the Go runtimes |
 | `telemetry.protocol` | `grpc` | OTLP transport protocol: `grpc` or `http/protobuf` |
@@ -128,6 +138,12 @@ All config keys can be overridden with `FIREWALL_*` environment variables.
 | `audit.failure_mode` | `fail_closed` | Audit sink failure behavior |
 
 The Valkey configuration surface is unchanged by the client migration: keep using `valkey.addr`, `valkey.password`, and `valkey.db` to point the runtime at your Valkey endpoint. Under the hood, the Go runtime now uses `github.com/valkey-io/valkey-go`.
+
+Authenticated OCI upstreams store Basic/PAT or static bearer-token credentials server-side. Secrets are encrypted in PostgreSQL with `secrets.upstream_auth_key` and are never returned from the API. Split `control-plane` and `proxy` modes require `bundle.tls.mode=mtls`; the control plane also requires `bundle.tls.authorized_clients` so each proxy certificate identity is authorized for explicit tenant IDs before bundles or ingest operations can access tenant data.
+
+OCI artifact cache entries are scoped by `tenant_id`, `upstream_id`, artifact kind, and immutable digest. A digest match from one upstream is not reused for another upstream.
+
+See [mTLS Configuration](./docs/mtls.md) for split-mode certificate, identity, and tenant authorization examples.
 
 If tracing is enabled, Valkey client spans now report `db.system=valkey`.
 
@@ -151,15 +167,28 @@ The project now emits OpenTelemetry traces across:
 The Compose file includes an optional OpenTelemetry Collector in front of the Aspire dashboard behind the `observability` profile:
 
 ```bash
+make mtls-certs
 FIREWALL_TELEMETRY_ENABLED=true \
 docker compose --profile observability up -d postgres valkey control-plane proxy otel-collector aspire-dashboard
 ```
 
 Open `http://localhost:18888` to inspect traces.
 
+If local Postgres or Valkey already uses the default host ports, override only the host bindings:
+
+```bash
+FIREWALL_POSTGRES_PORT=15432 \
+FIREWALL_VALKEY_PORT=16379 \
+FIREWALL_CONTROL_PLANE_PORT=18080 \
+FIREWALL_PROXY_PORT=18081 \
+FIREWALL_BUNDLE_PORT=19090 \
+FIREWALL_TELEMETRY_ENABLED=true \
+docker compose --profile observability up -d postgres valkey control-plane proxy otel-collector aspire-dashboard
+```
+
 In this local topology:
 
-- Go services export to the collector on `http://localhost:4317`
+- Go services export to the collector on `http://otel-collector:4317` inside Compose
 - the browser exports OTLP/HTTP protobuf to `http://localhost:4318/v1/traces`
 - the collector forwards traces to Aspire
 
@@ -194,11 +223,13 @@ When the browser tracing flag is enabled, the UI emits route-navigation spans an
 If you want the standalone proxy service included in the trace view, run the split topology and exercise proxy traffic directly:
 
 ```bash
+make mtls-certs
 FIREWALL_TELEMETRY_ENABLED=true \
 docker compose --profile observability up -d postgres valkey control-plane proxy otel-collector aspire-dashboard
 
 curl http://localhost:8081/npm/t/<tenant-id>/u/<upstream-id>/lodash
-curl http://u-<upstream-id>.<tenant-id>.localhost:8081/v2/library/nginx/manifests/1.25.3
+curl -H "Host: u-<upstream-id>.<tenant-id>.localhost" \
+  http://localhost:8081/v2/library/nginx/manifests/1.25.3
 ```
 
 Those requests emit spans from the **proxy HTTP entrypoint**, the **bundle/ingest gRPC hops**, and the downstream **registry/cache/enrichment** work so the proxy shows up as a first-class service in Aspire.
@@ -250,7 +281,8 @@ npm install lodash@4.17.21
 ## OCI example
 
 ```bash
-curl http://u-<upstream-id>.<tenant-id>.localhost:8081/v2/library/nginx/manifests/1.25.3
+curl -H "Host: u-<upstream-id>.<tenant-id>.localhost" \
+  http://localhost:8081/v2/library/nginx/manifests/1.25.3
 
 docker pull u-<upstream-id>.<tenant-id>.localhost:8081/library/nginx:1.25.3
 ```

@@ -1,0 +1,94 @@
+services:
+  control-plane:
+    image: dependency-firewall:latest
+    command: ["-config=/etc/firewall/config/control-plane.yaml"]
+    ports:
+      - "${FIREWALL_CONTROL_PLANE_PORT:-8080}:8080"
+      - "${FIREWALL_BUNDLE_PORT:-9090}:9090"
+    volumes:
+      - ./control-plane.yaml:/etc/firewall/config/control-plane.yaml:ro
+      - ./certs/ca.pem:/etc/firewall/mtls/ca.pem:ro
+      - ./certs/control-plane.pem:/etc/firewall/mtls/control-plane.pem:ro
+      - ./certs/control-plane-key.pem:/etc/firewall/mtls/control-plane-key.pem:ro
+    environment:
+      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-true}"
+      FIREWALL_TELEMETRY_ENDPOINT: "${FIREWALL_TELEMETRY_ENDPOINT:-http://otel-collector:4317}"
+      FIREWALL_TELEMETRY_PROTOCOL: "${FIREWALL_TELEMETRY_PROTOCOL:-grpc}"
+      FIREWALL_TELEMETRY_INSECURE: "${FIREWALL_TELEMETRY_INSECURE:-true}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+  proxy:
+    image: dependency-firewall:latest
+    command: ["-config=/etc/firewall/config/proxy.yaml"]
+    ports:
+      - "${FIREWALL_PROXY_PORT:-8081}:8080"
+    volumes:
+      - ./proxy.yaml:/etc/firewall/config/proxy.yaml:ro
+      - ./certs/ca.pem:/etc/firewall/mtls/ca.pem:ro
+      - ./certs/proxy-a.pem:/etc/firewall/mtls/proxy-a.pem:ro
+      - ./certs/proxy-a-key.pem:/etc/firewall/mtls/proxy-a-key.pem:ro
+    environment:
+      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-true}"
+      FIREWALL_TELEMETRY_ENDPOINT: "${FIREWALL_TELEMETRY_ENDPOINT:-http://otel-collector:4317}"
+      FIREWALL_TELEMETRY_PROTOCOL: "${FIREWALL_TELEMETRY_PROTOCOL:-grpc}"
+      FIREWALL_TELEMETRY_INSECURE: "${FIREWALL_TELEMETRY_INSECURE:-true}"
+    depends_on:
+      control-plane:
+        condition: service_started
+      valkey:
+        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${FIREWALL_POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: firewall
+      POSTGRES_PASSWORD: firewall
+      POSTGRES_DB: firewall
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firewall"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "${FIREWALL_VALKEY_PORT:-6379}:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      aspire-dashboard:
+        condition: service_started
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    profiles: ["observability"]
+    ports:
+      - "18888:18888"
+    environment:
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+
+volumes:
+  postgres_data:
+  valkey_data:

@@ -1,0 +1,48 @@
+runtime:
+  mode: proxy
+
+server:
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 0s
+  idle_timeout: 120s
+
+oci_cache:
+  enabled: true
+  backend: disk
+  root_dir: "/tmp/dependency-firewall/oci-cache"
+  max_bytes: 0
+  max_age: 0s
+  max_entries: 0
+
+valkey:
+  addr: "valkey:6379"
+  password: ""
+  db: 0
+
+log:
+  level: debug
+  format: json
+
+telemetry:
+  enabled: false
+  endpoint: "http://otel-collector:4317"
+  protocol: grpc
+  insecure: true
+
+audit:
+  enabled: true
+  slog: true
+  postgres: true
+  failure_mode: fail_closed
+  detail_level: summary
+
+bundle:
+  control_plane_addr: "control-plane:9090"
+  refresh_interval: 30s
+  tls:
+    mode: mtls
+    ca_file: "/etc/firewall/mtls/ca.pem"
+    cert_file: "/etc/firewall/mtls/proxy-a.pem"
+    key_file: "/etc/firewall/mtls/proxy-a-key.pem"
+    server_name_override: "control-plane.firewall.local"

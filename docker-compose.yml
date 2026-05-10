@@ -1,15 +1,15 @@
 services:
   control-plane:
     image: dependency-firewall:latest
-    command: ["-mode=control-plane"]
+    command: ["-config=/etc/firewall/config/control-plane.yaml"]
     ports:
-      - "8080:8080"
-      - "9090:9090"
+      - "${FIREWALL_CONTROL_PLANE_PORT:-8080}:8080"
+      - "${FIREWALL_BUNDLE_PORT:-9090}:9090"
     environment:
       FIREWALL_DATABASE_DSN: "postgres://firewall:firewall@postgres:5432/firewall?sslmode=disable"
       FIREWALL_VALKEY_ADDR: "valkey:6379"
       FIREWALL_LOG_LEVEL: "debug"
-      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-true}"
+      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-false}"
       FIREWALL_TELEMETRY_ENDPOINT: "${FIREWALL_TELEMETRY_ENDPOINT:-http://otel-collector:4317}"
       FIREWALL_TELEMETRY_PROTOCOL: "${FIREWALL_TELEMETRY_PROTOCOL:-grpc}"
       FIREWALL_TELEMETRY_INSECURE: "${FIREWALL_TELEMETRY_INSECURE:-true}"
@@ -18,28 +18,27 @@ services:
       FIREWALL_SERVER_PORT: "8080"
       FIREWALL_HEALTH_PROXY_URL: "http://proxy:8080/healthz"
       FIREWALL_BUNDLE_LISTEN_ADDR: ":9090"
+    volumes:
+      - ./examples/mtls/control-plane.yaml:/etc/firewall/config/control-plane.yaml:ro
+      - ./examples/mtls/certs/ca.pem:/etc/firewall/mtls/ca.pem:ro
+      - ./examples/mtls/certs/control-plane.pem:/etc/firewall/mtls/control-plane.pem:ro
+      - ./examples/mtls/certs/control-plane-key.pem:/etc/firewall/mtls/control-plane-key.pem:ro
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     restart: unless-stopped
 
   proxy:
     image: dependency-firewall:latest
-    command: ["-mode=proxy"]
+    command: ["-config=/etc/firewall/config/proxy.yaml"]
     ports:
-      - "8081:8080"
+      - "${FIREWALL_PROXY_PORT:-8081}:8080"
     environment:
       FIREWALL_VALKEY_ADDR: "valkey:6379"
       FIREWALL_LOG_LEVEL: "debug"
-      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-true}"
+      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-false}"
       FIREWALL_TELEMETRY_ENDPOINT: "${FIREWALL_TELEMETRY_ENDPOINT:-http://otel-collector:4317}"
       FIREWALL_TELEMETRY_PROTOCOL: "${FIREWALL_TELEMETRY_PROTOCOL:-grpc}"
       FIREWALL_TELEMETRY_INSECURE: "${FIREWALL_TELEMETRY_INSECURE:-true}"
@@ -47,23 +46,22 @@ services:
       FIREWALL_SERVER_PORT: "8080"
       FIREWALL_BUNDLE_CONTROL_PLANE_ADDR: "control-plane:9090"
       FIREWALL_OCI_CACHE_ENABLED: "true"
+    volumes:
+      - ./examples/mtls/proxy.yaml:/etc/firewall/config/proxy.yaml:ro
+      - ./examples/mtls/certs/ca.pem:/etc/firewall/mtls/ca.pem:ro
+      - ./examples/mtls/certs/proxy-a.pem:/etc/firewall/mtls/proxy-a.pem:ro
+      - ./examples/mtls/certs/proxy-a-key.pem:/etc/firewall/mtls/proxy-a-key.pem:ro
     depends_on:
       control-plane:
         condition: service_started
       valkey:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      - "${FIREWALL_POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: firewall
       POSTGRES_PASSWORD: firewall
@@ -79,7 +77,7 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     ports:
-      - "6379:6379"
+      - "${FIREWALL_VALKEY_PORT:-6379}:6379"
     volumes:
       - valkey_data:/data
     healthcheck:

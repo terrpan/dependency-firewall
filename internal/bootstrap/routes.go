@@ -56,7 +56,11 @@ func registerControlPlaneRoutes(
 	tenantService := service.NewTenantService(deps.tenantRepo)
 	policyService := service.NewPolicyService(deps.policyRepo, deps.policyRevisionRepo, deps.decisionCache, deps.upstreamRepo)
 	cacheService := service.NewCacheService(deps.decisionCache, deps.metadataCache)
-	upstreamService := service.NewUpstreamService(deps.upstreamRepo, deps.policyRepo)
+	upstreamService := service.NewUpstreamService(
+		deps.upstreamRepo,
+		deps.policyRepo,
+		service.WithAuthenticatedUpstreams(cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls"),
+	)
 	evaluationService := service.NewEvaluationService(deps.decisionRepo)
 	auditListService := service.NewAuditService(nil, deps.auditRepo, logger, cfg.Audit.Enabled, parseAuditFailureMode(cfg.Audit.FailureMode), parseAuditDetailLevel(cfg.Audit.DetailLevel))
 

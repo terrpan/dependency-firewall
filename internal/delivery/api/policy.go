@@ -35,7 +35,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Description:   "Creates a tenant-scoped policy definition used during proxy policy evaluation.",
 		DefaultStatus: http.StatusCreated,
 		Tags:          []string{"policies"},
-		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+		Errors:        controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError),
 	}, h.create)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-policies",
@@ -44,7 +44,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List policies",
 		Description: "Lists the policies currently configured for the tenant.",
 		Tags:        []string{"policies"},
-		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError),
 	}, h.list)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-policy",
@@ -53,7 +53,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Get a policy by ID",
 		Description: "Returns one tenant-scoped policy definition by ID.",
 		Tags:        []string{"policies"},
-		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError),
 	}, h.get)
 	huma.Register(api, huma.Operation{
 		OperationID: "update-policy",
@@ -62,7 +62,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Update a policy",
 		Description: "Updates an existing tenant-scoped policy definition.",
 		Tags:        []string{"policies"},
-		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.update)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-policy",
@@ -72,7 +72,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Description:   "Deletes a tenant-scoped policy definition by ID. Use force=true to detach historical evaluation and decision references first.",
 		DefaultStatus: http.StatusNoContent,
 		Tags:          []string{"policies"},
-		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:        controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.delete)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-policy-versions",
@@ -81,7 +81,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List policy versions",
 		Description: "Lists the retained version history for a tenant-scoped policy definition.",
 		Tags:        []string{"policies"},
-		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError),
 	}, h.listVersions)
 	huma.Register(api, huma.Operation{
 		OperationID: "rollback-policy",
@@ -90,7 +90,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Rollback a policy",
 		Description: "Restores a tenant-scoped policy definition from a retained version snapshot.",
 		Tags:        []string{"policies"},
-		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError),
 	}, h.rollback)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-policy-types",
@@ -99,6 +99,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List policy types",
 		Description: "Lists the supported policy types, actions, schema versions, and authoring metadata available to the control plane.",
 		Tags:        []string{"policies"},
+		Errors:      controlPlaneReadErrors(),
 	}, h.listTypesHuma)
 	huma.Register(api, huma.Operation{
 		OperationID: "import-policies",
@@ -107,7 +108,7 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Import policies",
 		Description: "Imports a tenant policy document from YAML or JSON and upserts policies by name within the tenant.",
 		Tags:        []string{"policies"},
-		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusUnsupportedMediaType, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusUnsupportedMediaType, http.StatusInternalServerError),
 	}, h.importPoliciesHuma)
 	removeValidationResponse(api, "/api/v1/policies", http.MethodGet, http.MethodPost)
 	removeValidationResponse(api, "/api/v1/policies/{id}", http.MethodGet, http.MethodPut, http.MethodDelete)
@@ -124,7 +125,10 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 	)
 }
 
-func (h *PolicyHandler) listTypesHuma(context.Context, *struct{}) (*policyTypesOutput, error) {
+func (h *PolicyHandler) listTypesHuma(ctx context.Context, _ *struct{}) (*policyTypesOutput, error) {
+	_, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	return &policyTypesOutput{Body: toPolicyTypesResponse(h.policies.ListTypes())}, nil
 }
 

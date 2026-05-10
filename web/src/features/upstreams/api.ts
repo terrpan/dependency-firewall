@@ -61,6 +61,10 @@ export type UpstreamDraft = {
   ecosystem: UpstreamEcosystem
   baseUrl: string
   capabilities: UpstreamCapability[]
+  authType: 'none' | 'basic' | 'bearer_token'
+  authUsername: string
+  authPassword: string
+  authToken: string
 }
 
 export type UpstreamDraftErrors = Partial<Record<keyof UpstreamDraft, string>>
@@ -68,6 +72,11 @@ export type UpstreamDraftErrors = Partial<Record<keyof UpstreamDraft, string>>
 export const upstreamBaseUrlExamples: Record<UpstreamEcosystem, string> = {
   npm: 'https://registry.npmjs.org',
   oci: 'https://registry-1.docker.io',
+}
+
+export const upstreamNameExamples: Record<UpstreamEcosystem, string> = {
+  npm: 'npm-registry',
+  oci: 'docker-hub',
 }
 
 type UpstreamsApi = Pick<ControlPlaneApi, 'upstreams'>
@@ -82,6 +91,10 @@ export function createEmptyUpstreamDraft(ecosystem: UpstreamEcosystem = 'npm'): 
     ecosystem,
     baseUrl: upstreamBaseUrlExamples[ecosystem],
     capabilities: defaultUpstreamCapabilities(ecosystem),
+    authType: 'none',
+    authUsername: '',
+    authPassword: '',
+    authToken: '',
   }
 }
 
@@ -182,6 +195,9 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
   const baseUrl = draft.baseUrl.trim()
   const capabilities = normalizeUpstreamCapabilities(draft.ecosystem, draft.capabilities)
   const errors: UpstreamDraftErrors = {}
+  const authUsername = draft.authUsername.trim()
+  const authPassword = draft.authPassword.trim()
+  const authToken = draft.authToken.trim()
 
   if (!name) {
     errors.name = 'Enter a display name for this upstream.'
@@ -208,12 +224,41 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
     return { value: null, errors }
   }
 
+  if (draft.ecosystem !== 'oci' && draft.authType !== 'none') {
+    errors.authType = 'Authentication is only available for OCI upstreams.'
+  }
+
+  if (draft.ecosystem === 'oci' && draft.authType === 'basic') {
+    if (!authUsername) {
+      errors.authUsername = 'Enter the registry username.'
+    }
+    if (!authPassword) {
+      errors.authPassword = 'Enter the registry password or token.'
+    }
+  }
+
+  if (draft.ecosystem === 'oci' && draft.authType === 'bearer_token' && !authToken) {
+    errors.authToken = 'Enter the bearer token.'
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return { value: null, errors }
+  }
+
+  const auth =
+    draft.ecosystem === 'oci' && draft.authType !== 'none'
+      ? draft.authType === 'basic'
+        ? { type: 'basic' as const, username: authUsername, password: authPassword }
+        : { type: 'bearer_token' as const, token: authToken }
+      : undefined
+
   return {
     value: {
       name,
       ecosystem,
       base_url: baseUrl,
       capabilities,
+      ...(auth ? { auth } : {}),
     },
     errors: {},
   }

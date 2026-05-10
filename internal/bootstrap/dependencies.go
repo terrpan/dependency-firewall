@@ -20,6 +20,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/infra/osv"
 	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
 	"github.com/danielterry/dependency-firewall/internal/infra/scorecard"
+	"github.com/danielterry/dependency-firewall/internal/infra/secrets"
 	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
 	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
 	valkeyinfra "github.com/danielterry/dependency-firewall/internal/infra/valkey"
@@ -78,12 +79,17 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		metadataCache: valkeyinfra.NewMetadataCache(valkeyClient),
 	}
 	if pool != nil {
+		secretCodec, err := upstreamSecretCodec(cfg)
+		if err != nil {
+			deps.close()
+			return nil, err
+		}
 		deps.tenantRepo = postgres.NewTenantRepository(pool)
 		deps.policyRepo = postgres.NewPolicyRepository(pool)
 		deps.policyRevisionRepo = postgres.NewPolicyRevisionRepository(pool)
 		deps.decisionRepo = postgres.NewDecisionRepository(pool)
 		deps.auditRepo = postgres.NewAuditEventRepository(pool)
-		deps.upstreamRepo = postgres.NewUpstreamRepository(pool)
+		deps.upstreamRepo = postgres.NewUpstreamRepository(pool, secretCodec)
 	}
 
 	auditRecorders := make([]port.AuditEventRecorder, 0, 2)
@@ -121,6 +127,18 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(30 * time.Second)))
 
 	return deps, nil
+}
+
+func upstreamSecretCodec(cfg *config.Config) (*secrets.AESGCMCodec, error) {
+	key := strings.TrimSpace(cfg.Secrets.UpstreamAuthKey)
+	if key == "" {
+		return nil, nil
+	}
+	codec, err := secrets.NewAESGCMCodecFromBase64(key)
+	if err != nil {
+		return nil, fmt.Errorf("configuring upstream auth secret codec: %w", err)
+	}
+	return codec, nil
 }
 
 func (d *dependencies) close() {

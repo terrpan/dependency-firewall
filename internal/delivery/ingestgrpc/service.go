@@ -32,6 +32,24 @@ type Server struct {
 	service proxyIngestService
 }
 
+// TenantIDFromRequest returns the tenant id carried by ingest gRPC requests.
+func TenantIDFromRequest(req any) string {
+	switch typed := req.(type) {
+	case *RecordDecisionRequest:
+		return typed.Decision.TenantID
+	case *GetDecisionByArtifactRequest:
+		return typed.TenantID
+	case *ListDecisionsByTenantRequest:
+		return typed.TenantID
+	case *HasRecentAllowRequest:
+		return typed.TenantID
+	case *RecordAuditEventRequest:
+		return typed.Event.TenantID
+	default:
+		return ""
+	}
+}
+
 // NewServer creates a new Server.
 func NewServer(service proxyIngestService) *Server {
 	return &Server{service: service}

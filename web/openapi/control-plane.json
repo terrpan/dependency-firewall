@@ -131,6 +131,10 @@
       "CreateUpstreamRequest": {
         "additionalProperties": false,
         "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/UpstreamAuthRequest",
+            "description": "Optional server-side upstream authentication settings"
+          },
           "base_url": {
             "description": "Upstream base URL",
             "type": "string"
@@ -596,9 +600,62 @@
         ],
         "type": "object"
       },
+      "UpstreamAuthRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "description": "Password or PAT for basic authentication",
+            "type": "string"
+          },
+          "token": {
+            "description": "Static bearer token",
+            "type": "string"
+          },
+          "type": {
+            "description": "Upstream authentication type",
+            "enum": [
+              "none",
+              "basic",
+              "bearer_token"
+            ],
+            "type": "string"
+          },
+          "username": {
+            "description": "Username for basic/PAT authentication",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpstreamAuthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "configured"
+        ],
+        "type": "object"
+      },
       "UpstreamResponse": {
         "additionalProperties": false,
         "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/UpstreamAuthResponse"
+          },
           "base_url": {
             "type": "string"
           },
@@ -645,6 +702,7 @@
           "base_url",
           "capabilities",
           "supported_policy_types",
+          "auth",
           "created_at",
           "updated_at"
         ],
@@ -800,6 +858,15 @@
             },
             "description": "Bad Request"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -809,6 +876,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List audit events",
@@ -852,6 +929,15 @@
               }
             },
             "description": "Bad Request"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -905,6 +991,15 @@
               }
             },
             "description": "Bad Request"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -995,6 +1090,15 @@
             },
             "description": "Bad Request"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1004,6 +1108,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List evaluations",
@@ -1064,6 +1178,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1073,6 +1196,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List policies",
@@ -1134,6 +1267,15 @@
               }
             },
             "description": "Conflict"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -1248,6 +1390,15 @@
             },
             "description": "Unsupported Media Type"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1334,6 +1485,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1415,6 +1575,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1424,6 +1593,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "Get a policy by ID",
@@ -1505,6 +1684,15 @@
               }
             },
             "description": "Conflict"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -1599,6 +1787,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1688,6 +1885,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1697,6 +1903,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List policy versions",
@@ -1726,7 +1942,16 @@
             },
             "description": "OK"
           },
-          "default": {
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1734,7 +1959,17 @@
                 }
               }
             },
-            "description": "Error"
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List policy types",
@@ -1764,6 +1999,15 @@
             },
             "description": "OK"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1773,6 +2017,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List tenants",
@@ -1824,6 +2078,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1870,6 +2133,15 @@
               }
             },
             "description": "Not Found"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -1923,6 +2195,15 @@
             },
             "description": "Not Found"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -1932,6 +2213,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "Get a tenant by ID",
@@ -2005,6 +2296,15 @@
             },
             "description": "Conflict"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -2064,6 +2364,15 @@
             },
             "description": "Bad Request"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -2073,6 +2382,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "List upstreams",
@@ -2134,6 +2453,15 @@
               }
             },
             "description": "Conflict"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -2200,6 +2528,15 @@
               }
             },
             "description": "Not Found"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {
@@ -2272,6 +2609,15 @@
             },
             "description": "Not Found"
           },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "content": {
               "application/json": {
@@ -2281,6 +2627,16 @@
               }
             },
             "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           }
         },
         "summary": "Get an upstream by ID",
@@ -2362,6 +2718,15 @@
               }
             },
             "description": "Conflict"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
           },
           "500": {
             "content": {

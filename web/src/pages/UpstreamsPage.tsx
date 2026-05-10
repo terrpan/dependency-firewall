@@ -263,8 +263,8 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
 
     setDraftErrors({})
 
-    if (createStep === 0) {
-      setCreateStep(1)
+    if (createStep < 2) {
+      setCreateStep((currentStep) => currentStep + 1)
       return
     }
 
@@ -340,7 +340,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
         initialFocusRef={nameInputRef}
         isError={createMutation.isError}
         isPending={createMutation.isPending}
-        onBack={() => setCreateStep(0)}
+        onBack={() => setCreateStep((currentStep) => Math.max(0, currentStep - 1))}
         onCapabilityToggle={handleCapabilityToggle}
         onClose={closeCreateModal}
         onDraftChange={handleDraftChange}

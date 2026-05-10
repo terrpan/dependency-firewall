@@ -24,6 +24,20 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 		TenantID:    "tenant-1",
 		Revision:    "rev-1",
 		GeneratedAt: now,
+		Upstreams: []domain.Upstream{{
+			ID:        "upstream-1",
+			TenantID:  "tenant-1",
+			Name:      "private-oci",
+			Ecosystem: domain.EcosystemOCI,
+			BaseURL:   "https://ghcr.io",
+			Auth: &domain.UpstreamAuth{
+				Type:      domain.UpstreamAuthBearerToken,
+				Secret:    "registry-token",
+				UpdatedAt: now,
+			},
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now,
+		}},
 	}
 
 	response, err := toBundleResponse(bundle)
@@ -33,6 +47,9 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, bundle.Tenant, restored.Tenant)
 	assert.Equal(t, bundle.TenantID, restored.TenantID)
+	require.Len(t, restored.Upstreams, 1)
+	require.NotNil(t, restored.Upstreams[0].Auth)
+	assert.Equal(t, "registry-token", restored.Upstreams[0].Auth.Secret)
 }
 
 func TestBundleToDomainFallsBackToLegacyTenantID(t *testing.T) {

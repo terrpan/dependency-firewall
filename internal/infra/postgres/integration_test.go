@@ -20,6 +20,7 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/infra/postgres"
+	"github.com/danielterry/dependency-firewall/internal/infra/secrets"
 	"github.com/danielterry/dependency-firewall/migrations"
 )
 
@@ -694,6 +695,54 @@ func TestUpstreamRepository_CreateAndGet(t *testing.T) {
 	assert.Equal(t, domain.EcosystemNPM, got.Ecosystem)
 	assert.Equal(t, "https://registry.npmjs.org", got.BaseURL)
 	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemNPM), got.Capabilities)
+}
+
+func TestUpstreamRepository_StoresEncryptedAuth(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "upstream-auth-tenant")
+	codec, err := secrets.NewAESGCMCodec([]byte("0123456789abcdef0123456789abcdef"))
+	require.NoError(t, err)
+	repo := postgres.NewUpstreamRepository(pool, codec)
+
+	upstream := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "private-oci",
+		Ecosystem: domain.EcosystemOCI,
+		BaseURL:   "https://ghcr.io",
+		Auth: &domain.UpstreamAuth{
+			Type:     domain.UpstreamAuthBasic,
+			Username: "robot",
+			Secret:   "registry-pat",
+		},
+	}
+	require.NoError(t, repo.Create(ctx, upstream))
+	require.False(t, upstream.Auth.UpdatedAt.IsZero())
+
+	var storedSecret string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT auth_secret::text FROM upstreams WHERE id = $1`, upstream.ID).Scan(&storedSecret))
+	assert.NotContains(t, storedSecret, "registry-pat")
+
+	got, err := repo.GetByID(ctx, tenant.ID, upstream.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.Auth)
+	assert.Equal(t, domain.UpstreamAuthBasic, got.Auth.Type)
+	assert.Equal(t, "robot", got.Auth.Username)
+	assert.Equal(t, "registry-pat", got.Auth.Secret)
+
+	got.Name = "private-oci-updated"
+	got.Auth = nil
+	require.NoError(t, repo.Update(ctx, got))
+	preserved, err := repo.GetByID(ctx, tenant.ID, upstream.ID)
+	require.NoError(t, err)
+	require.NotNil(t, preserved.Auth)
+	assert.Equal(t, "registry-pat", preserved.Auth.Secret)
+
+	preserved.Auth = &domain.UpstreamAuth{Type: domain.UpstreamAuthNone}
+	require.NoError(t, repo.Update(ctx, preserved))
+	cleared, err := repo.GetByID(ctx, tenant.ID, upstream.ID)
+	require.NoError(t, err)
+	assert.Nil(t, cleared.Auth)
 }
 
 func TestUpstreamRepository_GetByEcosystem(t *testing.T) {

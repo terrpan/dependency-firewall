@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"github.com/danielterry/dependency-firewall/internal/errutil"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -58,6 +59,11 @@ func (s *AuditService) Record(ctx context.Context, event domain.AuditEvent) erro
 	if s == nil || !s.enabled || s.recorder == nil {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		if errutil.IsCanceled(err) {
+			return nil
+		}
+	}
 
 	ctx, span := tracer.Start(ctx, "audit.record")
 	span.SetAttributes(
@@ -78,7 +84,10 @@ func (s *AuditService) Record(ctx context.Context, event domain.AuditEvent) erro
 	}
 
 	if err := s.recorder.Record(ctx, &event); err != nil {
-		recordSpanError(span, err)
+		if errutil.IsCanceled(err) {
+			return nil
+		}
+		recordSpanErrorIfUnexpected(span, err)
 		if s.logger != nil {
 			s.logger.ErrorContext(ctx, "writing audit event",
 				"error", err,
@@ -100,13 +109,16 @@ func (s *AuditService) ListByTenant(ctx context.Context, filter domain.AuditEven
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("listing audit events: repository unavailable")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ctx, span := tracer.Start(ctx, "audit.list")
 	span.SetAttributes(attribute.String("tenant.id", filter.TenantID))
 	defer span.End()
 
 	events, err := s.repo.ListByTenant(ctx, filter)
 	if err != nil {
-		recordSpanError(span, err)
+		recordSpanErrorIfUnexpected(span, err)
 		return nil, fmt.Errorf("listing audit events: %w", err)
 	}
 	return events, nil

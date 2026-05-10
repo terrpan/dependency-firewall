@@ -59,7 +59,9 @@ func TestGRPCClient_DecisionRepositoryAndAuditRecorder(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	decisionRepo := &grpcDecisionRepository{}
 	auditRecorder := &grpcAuditRecorder{}
-	grpcServer := grpc.NewServer(controlplanegrpc.ServerOptions()...)
+	serverOptions, err := controlplanegrpc.ServerOptions()
+	require.NoError(t, err)
+	grpcServer := grpc.NewServer(serverOptions...)
 	ingestgrpc.NewServer(service.NewProxyIngestService(decisionRepo, auditRecorder)).Register(grpcServer)
 	defer grpcServer.Stop()
 
@@ -67,13 +69,15 @@ func TestGRPCClient_DecisionRepositoryAndAuditRecorder(t *testing.T) {
 		_ = grpcServer.Serve(listener)
 	}()
 
+	dialOptions, err := controlplanegrpc.DialOptions()
+	require.NoError(t, err)
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		append([]grpc.DialOption{
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 				return listener.Dial()
 			}),
-		}, controlplanegrpc.DialOptions()...)...,
+		}, dialOptions...)...,
 	)
 	require.NoError(t, err)
 	defer conn.Close()
@@ -133,7 +137,9 @@ func TestGRPCClient_MapsArtifactNotFound(t *testing.T) {
 	t.Parallel()
 
 	listener := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer(controlplanegrpc.ServerOptions()...)
+	serverOptions, err := controlplanegrpc.ServerOptions()
+	require.NoError(t, err)
+	grpcServer := grpc.NewServer(serverOptions...)
 	ingestgrpc.NewServer(service.NewProxyIngestService(&grpcDecisionRepository{}, &grpcAuditRecorder{})).Register(grpcServer)
 	defer grpcServer.Stop()
 
@@ -141,13 +147,15 @@ func TestGRPCClient_MapsArtifactNotFound(t *testing.T) {
 		_ = grpcServer.Serve(listener)
 	}()
 
+	dialOptions, err := controlplanegrpc.DialOptions()
+	require.NoError(t, err)
 	conn, err := grpc.NewClient(
 		"passthrough:///bufnet",
 		append([]grpc.DialOption{
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 				return listener.Dial()
 			}),
-		}, controlplanegrpc.DialOptions()...)...,
+		}, dialOptions...)...,
 	)
 	require.NoError(t, err)
 	defer conn.Close()

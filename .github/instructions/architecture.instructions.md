@@ -32,7 +32,7 @@ Consult `docs/architecture.md` for a system overview. Update it whenever core fu
 ### OCI
 
 - OCI tenant routing for Docker-compatible traffic must use hostname-based resolution at the delivery boundary when the client supports it. Keep `X-Tenant-ID` support only for direct tests or non-Docker clients.
-- OCI artifact caching must remain tenant-aware across lookup, writes, cleanup, and future backend extensions. Do not add cross-tenant cache reuse as an implicit shortcut.
+- OCI artifact caching must remain scoped by both tenant and upstream across lookup, writes, cleanup, and future backend extensions. Do not add cross-tenant or cross-upstream cache reuse as an implicit shortcut.
 - Do not expose filesystem-style abstractions such as `fs.FS` from core for OCI artifact caching. Model cache behavior as a core port and keep storage details in infrastructure.
 
 ### Core and infrastructure

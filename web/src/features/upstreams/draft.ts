@@ -28,6 +28,14 @@ export function updateUpstreamDraftField(
     ecosystem: nextEcosystem,
     baseUrl: shouldUseExample ? upstreamBaseUrlExamples[nextEcosystem] : draft.baseUrl,
     capabilities: createEmptyUpstreamDraft(nextEcosystem).capabilities,
+    ...(nextEcosystem === 'oci'
+      ? {}
+      : {
+          authType: 'none' as const,
+          authUsername: '',
+          authPassword: '',
+          authToken: '',
+        }),
   }
 }
 

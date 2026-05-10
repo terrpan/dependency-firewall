@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -33,7 +35,7 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 		Description:   "Creates a tenant-scoped upstream registry configuration for npm or OCI proxying.",
 		DefaultStatus: http.StatusCreated,
 		Tags:          []string{"upstreams"},
-		Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError},
+		Errors:        controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError),
 	}, h.create)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-upstreams",
@@ -42,7 +44,7 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "List upstreams",
 		Description: "Lists the upstream registry configurations registered for the tenant.",
 		Tags:        []string{"upstreams"},
-		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusInternalServerError),
 	}, h.list)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-upstream",
@@ -51,7 +53,7 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Get an upstream by ID",
 		Description: "Returns one tenant-scoped upstream registry configuration by ID.",
 		Tags:        []string{"upstreams"},
-		Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:      controlPlaneReadErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.get)
 	huma.Register(api, huma.Operation{
 		OperationID: "update-upstream",
@@ -60,7 +62,7 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Update an upstream",
 		Description: "Updates a tenant-scoped upstream registry configuration.",
 		Tags:        []string{"upstreams"},
-		Errors:      []int{http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.update)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-upstream",
@@ -70,7 +72,7 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 		Description:   "Deletes a tenant-scoped upstream registry configuration by ID.",
 		DefaultStatus: http.StatusNoContent,
 		Tags:          []string{"upstreams"},
-		Errors:        []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+		Errors:        controlPlaneErrors(http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.delete)
 	removeValidationResponse(api, "/api/v1/upstreams", http.MethodGet, http.MethodPost)
 	removeValidationResponse(api, "/api/v1/upstreams/{id}", http.MethodGet, http.MethodPut, http.MethodDelete)
@@ -81,6 +83,14 @@ type createUpstreamRequest struct {
 	Ecosystem    domain.EcosystemType        `json:"ecosystem,omitempty" validate:"required,oneof=npm oci" doc:"Upstream ecosystem"`
 	BaseURL      string                      `json:"base_url,omitempty" validate:"notblank,url" doc:"Upstream base URL"`
 	Capabilities []domain.UpstreamCapability `json:"capabilities,omitempty" doc:"Capability profile used for policy compatibility checks"`
+	Auth         *upstreamAuthRequest        `json:"auth,omitempty" doc:"Optional server-side upstream authentication settings"`
+}
+
+type upstreamAuthRequest struct {
+	Type     domain.UpstreamAuthType `json:"type,omitempty" enum:"none,basic,bearer_token" doc:"Upstream authentication type"`
+	Username string                  `json:"username,omitempty" doc:"Username for basic/PAT authentication"`
+	Password string                  `json:"password,omitempty" doc:"Password or PAT for basic authentication"`
+	Token    string                  `json:"token,omitempty" doc:"Static bearer token"`
 }
 
 type upstreamHeaderInput struct {
@@ -125,10 +135,12 @@ func (h *UpstreamHandler) list(ctx context.Context, input *upstreamHeaderInput) 
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
+	ctx, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	upstreams, err := h.upstreams.ListByTenant(ctx, tenantID)
 	if err != nil {
-		h.logger.Error("listing upstreams", "error", err)
-		return nil, huma.Error500InternalServerError("failed to list upstreams")
+		return nil, humaInternalError(ctx, h.logger, "listing upstreams", err, "failed to list upstreams", "tenant_id", tenantID)
 	}
 	return &upstreamListOutput{Body: toUpstreamsResponse(upstreams)}, nil
 }
@@ -139,13 +151,15 @@ func (h *UpstreamHandler) get(ctx context.Context, input *upstreamIDInput) (*ups
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
+	ctx, cancel := withControlPlaneReadTimeout(ctx)
+	defer cancel()
+
 	upstream, err := h.upstreams.GetByID(ctx, tenantID, input.ID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			return nil, huma.Error404NotFound("upstream not found")
 		}
-		h.logger.Error("getting upstream", "error", err)
-		return nil, huma.Error500InternalServerError("failed to get upstream")
+		return nil, humaInternalError(ctx, h.logger, "getting upstream", err, "failed to get upstream", "tenant_id", tenantID, "upstream_id", input.ID)
 	}
 	return &upstreamOutput{Body: toUpstreamResponse(upstream)}, nil
 }
@@ -171,8 +185,7 @@ func (h *UpstreamHandler) delete(ctx context.Context, input *upstreamIDInput) (*
 		if errors.Is(err, domain.ErrUpstreamInUse) {
 			return nil, huma.Error409Conflict("upstream is still referenced by policies")
 		}
-		h.logger.Error("deleting upstream", "error", err)
-		return nil, huma.Error500InternalServerError("failed to delete upstream")
+		return nil, humaInternalError(ctx, h.logger, "deleting upstream", err, "failed to delete upstream", "tenant_id", tenantID, "upstream_id", input.ID)
 	}
 	return nil, nil
 }
@@ -194,6 +207,11 @@ func (h *UpstreamHandler) createUpstream(ctx context.Context, rawTenantID string
 		BaseURL:      req.BaseURL,
 		Capabilities: req.Capabilities,
 	}
+	auth, err := toDomainUpstreamAuth(req.Ecosystem, req.Auth)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	upstream.Auth = auth
 	if err := h.upstreams.Create(ctx, upstream); err != nil {
 		if errors.Is(err, domain.ErrUpstreamNameConflict) {
 			return nil, huma.Error409Conflict("upstream name already exists")
@@ -204,8 +222,10 @@ func (h *UpstreamHandler) createUpstream(ctx context.Context, rawTenantID string
 		if errors.Is(err, domain.ErrUnsupportedUpstreamCapability) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		h.logger.Error("creating upstream", "error", err)
-		return nil, huma.Error500InternalServerError("failed to create upstream")
+		if errors.Is(err, domain.ErrUpstreamAuthInvalid) || errors.Is(err, domain.ErrUpstreamAuthKeyUnavailable) || errors.Is(err, domain.ErrUpstreamAuthTransportInsecure) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, humaInternalError(ctx, h.logger, "creating upstream", err, "failed to create upstream", "tenant_id", tenantID, "upstream_name", req.Name)
 	}
 	return toUpstreamResponse(upstream), nil
 }
@@ -228,6 +248,11 @@ func (h *UpstreamHandler) updateUpstream(ctx context.Context, rawTenantID, id st
 		BaseURL:      req.BaseURL,
 		Capabilities: req.Capabilities,
 	}
+	auth, err := toDomainUpstreamAuth(req.Ecosystem, req.Auth)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	upstream.Auth = auth
 	if err := h.upstreams.Update(ctx, upstream); err != nil {
 		if errors.Is(err, domain.ErrUpstreamNameConflict) {
 			return nil, huma.Error409Conflict("upstream name already exists")
@@ -241,8 +266,53 @@ func (h *UpstreamHandler) updateUpstream(ctx context.Context, rawTenantID, id st
 		if errors.Is(err, domain.ErrUnsupportedUpstreamCapability) || errors.Is(err, domain.ErrUpstreamPolicyConflict) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		h.logger.Error("updating upstream", "error", err)
-		return nil, huma.Error500InternalServerError("failed to update upstream")
+		if errors.Is(err, domain.ErrUpstreamAuthInvalid) || errors.Is(err, domain.ErrUpstreamAuthKeyUnavailable) || errors.Is(err, domain.ErrUpstreamAuthTransportInsecure) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, humaInternalError(ctx, h.logger, "updating upstream", err, "failed to update upstream", "tenant_id", tenantID, "upstream_id", id)
 	}
-	return toUpstreamResponse(upstream), nil
+	updated, err := h.upstreams.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, humaInternalError(ctx, h.logger, "loading updated upstream", err, "failed to load updated upstream", "tenant_id", tenantID, "upstream_id", id)
+	}
+	return toUpstreamResponse(updated), nil
+}
+
+func toDomainUpstreamAuth(ecosystem domain.EcosystemType, req *upstreamAuthRequest) (*domain.UpstreamAuth, error) {
+	if req == nil {
+		return nil, nil
+	}
+	if req.Type == "" {
+		req.Type = domain.UpstreamAuthNone
+	}
+	if req.Type == domain.UpstreamAuthNone {
+		return &domain.UpstreamAuth{Type: domain.UpstreamAuthNone}, nil
+	}
+	if ecosystem != domain.EcosystemOCI {
+		return nil, fmt.Errorf("%w: upstream auth is only supported for OCI", domain.ErrUpstreamAuthInvalid)
+	}
+	username := strings.TrimSpace(req.Username)
+	password := strings.TrimSpace(req.Password)
+	token := strings.TrimSpace(req.Token)
+	switch req.Type {
+	case domain.UpstreamAuthBasic:
+		if username == "" || password == "" {
+			return nil, fmt.Errorf("%w: basic auth requires username and password", domain.ErrUpstreamAuthInvalid)
+		}
+		return &domain.UpstreamAuth{
+			Type:     domain.UpstreamAuthBasic,
+			Username: username,
+			Secret:   password,
+		}, nil
+	case domain.UpstreamAuthBearerToken:
+		if token == "" {
+			return nil, fmt.Errorf("%w: bearer token auth requires token", domain.ErrUpstreamAuthInvalid)
+		}
+		return &domain.UpstreamAuth{
+			Type:   domain.UpstreamAuthBearerToken,
+			Secret: token,
+		}, nil
+	default:
+		return nil, fmt.Errorf("%w: unsupported auth type %q", domain.ErrUpstreamAuthInvalid, req.Type)
+	}
 }

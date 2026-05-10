@@ -40,6 +40,7 @@ type artifactMetadata struct {
 type diskWriteSession struct {
 	cache        *DiskCache
 	tenantID     string
+	upstreamID   string
 	kind         port.OCIArtifactKind
 	digest       string
 	file         *os.File
@@ -77,8 +78,8 @@ func NewDiskCache(opts DiskCacheOptions) (*DiskCache, error) {
 }
 
 // Get retrieves a cached OCI artifact. Returns domain.ErrCacheMiss if not found.
-func (c *DiskCache) Get(_ context.Context, tenantID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
-	dataPath, metaPath, err := c.finalPaths(tenantID, kind, digest)
+func (c *DiskCache) Get(_ context.Context, tenantID string, upstreamID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
+	dataPath, metaPath, err := c.finalPaths(tenantID, upstreamID, kind, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +114,8 @@ func (c *DiskCache) Get(_ context.Context, tenantID string, kind port.OCIArtifac
 }
 
 // StartWrite begins a staged OCI artifact cache write.
-func (c *DiskCache) StartWrite(_ context.Context, tenantID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
-	finalData, finalMeta, err := c.finalPaths(tenantID, kind, digest)
+func (c *DiskCache) StartWrite(_ context.Context, tenantID string, upstreamID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
+	finalData, finalMeta, err := c.finalPaths(tenantID, upstreamID, kind, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +124,11 @@ func (c *DiskCache) StartWrite(_ context.Context, tenantID string, kind port.OCI
 		return nil, fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	tempDir := filepath.Join(c.rootDir, tenantPathComponent(tenantID), ".tmp")
+	scopeRoot, err := c.scopeRoot(tenantID, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	tempDir := filepath.Join(scopeRoot, ".tmp")
 	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating cache temp directory: %w", err)
 	}
@@ -136,6 +141,7 @@ func (c *DiskCache) StartWrite(_ context.Context, tenantID string, kind port.OCI
 	return &diskWriteSession{
 		cache:        c,
 		tenantID:     tenantID,
+		upstreamID:   upstreamID,
 		kind:         kind,
 		digest:       digest,
 		file:         file,
@@ -204,7 +210,7 @@ func (s *diskWriteSession) Commit(ctx context.Context) error {
 	}
 
 	s.committed = true
-	if err := s.cache.enforceLimits(ctx, s.tenantID); err != nil {
+	if err := s.cache.enforceLimits(ctx, s.tenantID, s.upstreamID); err != nil {
 		return fmt.Errorf("enforcing cache limits: %w", err)
 	}
 	return nil
@@ -224,13 +230,16 @@ func (s *diskWriteSession) Abort() error {
 	return nil
 }
 
-func (c *DiskCache) enforceLimits(_ context.Context, tenantID string) error {
+func (c *DiskCache) enforceLimits(_ context.Context, tenantID, upstreamID string) error {
 	if c.maxAge <= 0 && c.maxEntries <= 0 && c.maxBytes <= 0 {
 		return nil
 	}
 
-	tenantRoot := filepath.Join(c.rootDir, tenantPathComponent(tenantID))
-	files, err := c.collectTenantFiles(tenantRoot)
+	scopeRoot, err := c.scopeRoot(tenantID, upstreamID)
+	if err != nil {
+		return err
+	}
+	files, err := c.collectScopedFiles(scopeRoot)
 	if err != nil {
 		return err
 	}
@@ -275,16 +284,16 @@ func (c *DiskCache) enforceLimits(_ context.Context, tenantID string) error {
 	return nil
 }
 
-func (c *DiskCache) collectTenantFiles(tenantRoot string) ([]cachedFile, error) {
-	if _, err := os.Stat(tenantRoot); err != nil {
+func (c *DiskCache) collectScopedFiles(scopeRoot string) ([]cachedFile, error) {
+	if _, err := os.Stat(scopeRoot); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("stat tenant cache root: %w", err)
+		return nil, fmt.Errorf("stat OCI cache scope root: %w", err)
 	}
 
 	var files []cachedFile
-	err := filepath.WalkDir(tenantRoot, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(scopeRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -310,7 +319,7 @@ func (c *DiskCache) collectTenantFiles(tenantRoot string) ([]cachedFile, error) 
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("walking tenant cache: %w", err)
+		return nil, fmt.Errorf("walking OCI cache scope: %w", err)
 	}
 	return files, nil
 }
@@ -325,13 +334,29 @@ func removeCachedFile(file cachedFile) error {
 	return nil
 }
 
-func (c *DiskCache) finalPaths(tenantID string, kind port.OCIArtifactKind, digest string) (string, string, error) {
+func (c *DiskCache) finalPaths(tenantID, upstreamID string, kind port.OCIArtifactKind, digest string) (string, string, error) {
 	algo, encoded, err := splitDigest(digest)
 	if err != nil {
 		return "", "", err
 	}
-	base := filepath.Join(c.rootDir, tenantPathComponent(tenantID), string(kind), algo, encoded)
+	scopeRoot, err := c.scopeRoot(tenantID, upstreamID)
+	if err != nil {
+		return "", "", err
+	}
+	base := filepath.Join(scopeRoot, string(kind), algo, encoded)
 	return base + ".data", base + ".meta.json", nil
+}
+
+func (c *DiskCache) scopeRoot(tenantID, upstreamID string) (string, error) {
+	tenantComponent, err := pathComponent("tenant_id", tenantID)
+	if err != nil {
+		return "", err
+	}
+	upstreamComponent, err := pathComponent("upstream_id", upstreamID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(c.rootDir, tenantComponent, upstreamComponent), nil
 }
 
 func splitDigest(digest string) (string, string, error) {
@@ -342,8 +367,12 @@ func splitDigest(digest string) (string, string, error) {
 	return algo, encoded, nil
 }
 
-func tenantPathComponent(tenantID string) string {
-	return url.PathEscape(strings.TrimSpace(tenantID))
+func pathComponent(name, value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("OCI cache %s is required", name)
+	}
+	return url.PathEscape(trimmed), nil
 }
 
 func cloneHeaders(headers map[string]string) map[string]string {
