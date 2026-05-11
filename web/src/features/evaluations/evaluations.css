@@ -1,7 +1,7 @@
 .evaluations-layout,
 .evaluations-side-stack {
   display: grid;
-  gap: 20px;
+  gap: var(--space-layout);
   align-items: start;
 }
 
@@ -15,7 +15,7 @@
 
 .metric-grid {
   display: grid;
-  gap: 14px;
+  gap: var(--space-item);
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
@@ -25,17 +25,17 @@
   padding: 18px;
   border-radius: 18px;
   border: 1px solid var(--border-soft);
-  background: rgba(15, 23, 42, 0.68);
+  background: var(--surface-muted);
 }
 
 .metric-card-success {
-  border-color: rgba(34, 197, 94, 0.24);
-  background: rgba(21, 128, 61, 0.18);
+  border-color: var(--success-border);
+  background: var(--success-surface);
 }
 
 .metric-card-danger {
-  border-color: rgba(248, 113, 113, 0.24);
-  background: rgba(153, 27, 27, 0.18);
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
 }
 
 .metric-label,
@@ -62,7 +62,7 @@
 .evaluation-list,
 .dependency-list {
   display: grid;
-  gap: 18px;
+  gap: var(--space-card);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -73,12 +73,12 @@
   padding: 20px;
   border-radius: 20px;
   border: 1px solid var(--border-soft);
-  background: rgba(15, 23, 42, 0.68);
+  background: var(--surface-muted);
 }
 
 .evaluation-item {
   display: grid;
-  gap: 14px;
+  gap: var(--space-item);
 }
 
 .evaluation-list-compact .evaluation-item {
@@ -115,7 +115,7 @@
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
+  gap: var(--space-item);
   margin: 0;
 }
 
@@ -125,7 +125,7 @@
   padding: 14px 16px;
   border-radius: 16px;
   border: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(15, 23, 42, 0.36);
+  background: var(--surface-subtle);
 }
 
 .detail-grid dd {
@@ -145,9 +145,9 @@
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  background: rgba(217, 119, 6, 0.18);
-  color: #fcd34d;
+  border: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--warning-text);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
 }

@@ -30,7 +30,6 @@ export function UpstreamsListPanel({
       <div className="upstreams-panel-header">
         <div>
           <h3>Configured upstreams</h3>
-          <p>Registry endpoints for the active tenant.</p>
         </div>
         {isLoading ? <span className="status-pill">Loading</span> : null}
       </div>
@@ -103,7 +102,6 @@ export function UpstreamDetailsPanel({
       <div className="upstreams-panel-header">
         <div>
           <h3>Upstream details</h3>
-          <p>Inspect the selected registry endpoint.</p>
         </div>
         {upstream ? (
           <div className="upstreams-panel-actions">
@@ -197,9 +195,7 @@ export function UpstreamUsagePanel({
       <div className="upstreams-panel-header">
         <div>
           <h3>{usage?.title ?? 'Usage instructions'}</h3>
-          <p>
-            {usage?.summary ?? 'Select an upstream to see how developers should use it from npm or Docker.'}
-          </p>
+          {usage ? <p>{usage.summary}</p> : null}
         </div>
       </div>
 

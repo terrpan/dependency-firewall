@@ -9,6 +9,7 @@ import {
   createUpstream,
   listUpstreams,
   sortUpstreams,
+  upstreamEcosystemSupportsAuth,
   upstreamsQueryKey,
   validateUpstreamDraft,
   type UpstreamCapability,
@@ -92,6 +93,8 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
     () => formatUpstreamPolicyTypes(selectedUpstream),
     [selectedUpstream],
   )
+  const createStepCount = upstreamEcosystemSupportsAuth(draft.ecosystem) ? 3 : 2
+  const createReviewStep = createStepCount - 1
 
   const setSelectedUpstreamId = useCallback(
     (nextUpstreamId: string | null) => {
@@ -202,6 +205,11 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
   function handleDraftChange(field: keyof UpstreamDraft, value: string) {
     createMutation.reset()
     setDraft((currentDraft) => updateUpstreamDraftField(currentDraft, field, value))
+    if (field === 'ecosystem') {
+      const nextEcosystem = value as UpstreamEcosystem
+      const nextStepCount = upstreamEcosystemSupportsAuth(nextEcosystem) ? 3 : 2
+      setCreateStep((currentStep) => Math.min(currentStep, nextStepCount - 1))
+    }
     setDraftErrors((currentErrors) => {
       if (!currentErrors[field]) {
         return currentErrors
@@ -255,7 +263,17 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    const validation = validateUpstreamDraft(draft)
+    const validationDraft =
+      createStep === 0
+        ? {
+            ...draft,
+            authType: 'none' as const,
+            authUsername: '',
+            authPassword: '',
+            authToken: '',
+          }
+        : draft
+    const validation = validateUpstreamDraft(validationDraft)
     if (!validation.value) {
       setDraftErrors(validation.errors)
       return
@@ -263,7 +281,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
 
     setDraftErrors({})
 
-    if (createStep < 2) {
+    if (createStep < createReviewStep) {
       setCreateStep((currentStep) => currentStep + 1)
       return
     }
@@ -277,7 +295,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
         <div>
           <p className="eyebrow">Registry configuration</p>
           <h2>Upstreams</h2>
-          <p className="page-summary">Keep the list and detail view in place while new upstreams are added in a modal.</p>
+          <p className="page-summary">Registry endpoints for this tenant.</p>
         </div>
         <div className="upstreams-actions">
           <span className="status-pill">{upstreams.length} configured</span>

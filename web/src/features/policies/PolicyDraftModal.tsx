@@ -61,17 +61,29 @@ function getSchemaVersions(descriptor: PolicyTypeDescriptor) {
     : [descriptor.current_schema_version]
 }
 
-function getSupportedEcosystems(descriptor: PolicyTypeDescriptor): string[] {
-  return descriptor.supported_ecosystems?.length ? descriptor.supported_ecosystems : ['npm', 'oci']
-}
-
 function getRequiredCapabilities(descriptor: PolicyTypeDescriptor): string[] {
   return descriptor.required_capabilities ?? []
 }
 
+function getPolicyEffectCopy(
+  descriptor: PolicyTypeDescriptor | null,
+  definition: DraftDefinition | null,
+): { summary: string; description: string | null } | null {
+  if (!descriptor || !definition) {
+    return null
+  }
+
+  const summary = descriptor.summary || definition.summary
+  const description = descriptor.description || definition.description
+
+  return {
+    summary,
+    description: description && description !== summary ? description : null,
+  }
+}
+
 export function PolicyDraftModal({
   open,
-  tenantId,
   isEditingPolicy,
   hasCreateDraftInProgress,
   currentStep,
@@ -111,47 +123,44 @@ export function PolicyDraftModal({
   onDraftChange,
 }: PolicyDraftModalProps) {
   const currentPolicyWizardStep = policyWizardSteps[currentStep] ?? null
+  const policyEffectCopy = getPolicyEffectCopy(selectedDescriptor, selectedDefinition)
+  const previewAside =
+    currentStep >= 2 ? (
+      <div className="policy-preview-column">
+        <section className="policy-preview-card policy-preview-card-compact">
+          <div className="policy-preview-header">
+            <h4>Preview</h4>
+            <div className="policy-preview-toggle" aria-label="Policy preview format">
+              <button
+                aria-pressed={previewFormat === 'json'}
+                className={`policy-preview-toggle-button${previewFormat === 'json' ? ' active' : ''}`}
+                onClick={() => onPreviewFormatChange('json')}
+                type="button"
+              >
+                JSON
+              </button>
+              <button
+                aria-pressed={previewFormat === 'yaml'}
+                className={`policy-preview-toggle-button${previewFormat === 'yaml' ? ' active' : ''}`}
+                onClick={() => onPreviewFormatChange('yaml')}
+                type="button"
+              >
+                YAML
+              </button>
+            </div>
+          </div>
+          <pre className="code-block policy-preview-block">{previewFormat === 'json' ? jsonPreview : yamlPreview}</pre>
+        </section>
+      </div>
+    ) : undefined
 
   return (
     <ModalWizard
       allowStepSelection
-      aside={
-        <div className="policy-preview-column">
-          <section className="policy-preview-card">
-            <div className="policy-preview-header">
-              <div>
-                <h4>Policy preview</h4>
-                <p className="muted">Preview the current draft in JSON or YAML.</p>
-              </div>
-              <div className="policy-preview-toggle" aria-label="Policy preview format">
-                <button
-                  aria-pressed={previewFormat === 'json'}
-                  className={`policy-preview-toggle-button${previewFormat === 'json' ? ' active' : ''}`}
-                  onClick={() => onPreviewFormatChange('json')}
-                  type="button"
-                >
-                  JSON
-                </button>
-                <button
-                  aria-pressed={previewFormat === 'yaml'}
-                  className={`policy-preview-toggle-button${previewFormat === 'yaml' ? ' active' : ''}`}
-                  onClick={() => onPreviewFormatChange('yaml')}
-                  type="button"
-                >
-                  YAML
-                </button>
-              </div>
-            </div>
-            <pre className="code-block policy-preview-block">
-              {previewFormat === 'json' ? jsonPreview : yamlPreview}
-            </pre>
-          </section>
-        </div>
-      }
+      aside={previewAside}
       currentStep={currentStep}
-      description={isEditingPolicy ? 'Edit the policy in guided steps.' : 'Create the policy in guided steps.'}
+      description={isEditingPolicy ? 'Edit the selected policy.' : 'Create a tenant-scoped policy.'}
       dismissible={!savePolicyIsPending}
-      eyebrow="Guided creation"
       footer={
         <div className="wizard-actions wizard-actions-modal">
           <button className="secondary-button" disabled={currentStep === 0} onClick={onBack} type="button">
@@ -186,7 +195,6 @@ export function PolicyDraftModal({
       }
       headerMeta={
         <>
-          {tenantId ? <span className="status-pill status-pill-neutral">Tenant scoped</span> : null}
           {isEditingPolicy ? <span className="status-pill status-pill-neutral">Editing</span> : null}
           {draft.type ? <span className="policy-badge policy-badge-info">{draft.type}</span> : null}
           {policyTypesIsError ? (
@@ -207,25 +215,16 @@ export function PolicyDraftModal({
         <div className="policy-modal-copy">
           <div className="policy-section-heading">
             <div>
-              <p className="eyebrow">Guided-first flow</p>
               <h3>{currentPolicyWizardStep?.label}</h3>
               {currentPolicyWizardStep?.description ? (
                 <p className="muted">{currentPolicyWizardStep.description}</p>
               ) : null}
             </div>
-            <span className="policy-preview-note">{previewFormat.toUpperCase()} preview</span>
           </div>
         </div>
 
         {currentStep === 0 ? (
           <div className="policy-form-stack">
-            {upstreams.length > 0 ? (
-              <section className="policy-summary-card">
-                <h4>Choose the upstream scope first</h4>
-                <p className="muted">Policy types depend on the selected upstream.</p>
-              </section>
-            ) : null}
-
             {draftFieldErrors.upstreamId ? (
               <section className="policy-error-panel">
                 <h4>Choose an upstream to continue</h4>
@@ -251,11 +250,6 @@ export function PolicyDraftModal({
                         <span className="policy-badge policy-badge-info">{upstream.ecosystem.toUpperCase()}</span>
                       </div>
                       <p className="muted">{upstream.base_url}</p>
-                      <p className="policy-type-card-note">
-                        {compatibleDescriptorsForUpstream.length > 0
-                          ? `${compatibleDescriptorsForUpstream.length} compatible policy type${compatibleDescriptorsForUpstream.length === 1 ? '' : 's'} available for this upstream.`
-                          : 'No compatible policy types are currently available for this upstream.'}
-                      </p>
                       <div className="policy-chip-row">
                         <span className="policy-chip">
                           {compatibleDescriptorsForUpstream.length} policy type
@@ -298,11 +292,8 @@ export function PolicyDraftModal({
         {currentStep === 1 ? (
           <div className="policy-form-stack">
             {selectedUpstream ? (
-              <section className="policy-summary-card">
-                <h4>{selectedUpstream.name} policy catalog</h4>
-                <p className="muted">
-                  Showing policy types that match this {selectedUpstream.ecosystem.toUpperCase()} upstream.
-                </p>
+              <section className="policy-summary-card policy-summary-card-compact">
+                <h4>{selectedUpstream.name}</h4>
                 <div className="policy-chip-row">
                   <span className="policy-chip">{selectedUpstream.base_url}</span>
                   {(selectedUpstream.capabilities ?? []).map((capability) => (
@@ -343,7 +334,6 @@ export function PolicyDraftModal({
                         <span className="policy-badge policy-badge-info">{descriptor.type}</span>
                       </div>
                       <p className="muted">{descriptor.summary}</p>
-                      <p className="policy-type-card-note">Available for the selected upstream.</p>
                       <div className="policy-chip-row">
                         {supportedActions.map((action) => (
                           <span key={action} className="policy-chip">
@@ -380,6 +370,14 @@ export function PolicyDraftModal({
 
         {currentStep === 2 && draft.type && selectedDescriptor && selectedDefinition && selectedUpstream ? (
           <div className="policy-form-grid">
+            {policyEffectCopy ? (
+              <section className="policy-summary-card policy-effect-card">
+                <h4>{getPolicyTypeLabel(draft.type)}</h4>
+                <p className="muted">{policyEffectCopy.summary}</p>
+                {policyEffectCopy.description ? <p className="muted">{policyEffectCopy.description}</p> : null}
+              </section>
+            ) : null}
+
             <label className="policy-field">
               <span>Upstream scope</span>
               <div className="policy-readonly-value">
@@ -469,6 +467,13 @@ export function PolicyDraftModal({
 
         {currentStep === 3 && draft.type && selectedDescriptor && selectedDefinition ? (
           <div className="policy-form-stack">
+            {policyEffectCopy ? (
+              <section className="policy-summary-card policy-effect-card">
+                <h4>{getPolicyTypeLabel(draft.type)}</h4>
+                <p className="muted">{policyEffectCopy.summary}</p>
+              </section>
+            ) : null}
+
             {selectedDefinition.numberField ? (
               <label className={`policy-field${draftFieldErrors.numericValue ? ' policy-field-invalid' : ''}`}>
                 <span>{selectedDefinition.numberLabel}</span>
@@ -594,23 +599,6 @@ export function PolicyDraftModal({
               <span>Record matches as dry-run warnings instead of denying immediately</span>
             </label>
 
-            <section className="policy-metadata-card">
-              <h4>Policy type guidance</h4>
-              <p className="muted">{selectedDescriptor.description}</p>
-              <p className="muted">{selectedDescriptor.help}</p>
-              <p className="muted">
-                Supported ecosystems:{' '}
-                {getSupportedEcosystems(selectedDescriptor)
-                  .map((ecosystem) => ecosystem.toUpperCase())
-                  .join(', ')}
-                {getRequiredCapabilities(selectedDescriptor).length > 0
-                  ? ` • Requires ${getRequiredCapabilities(selectedDescriptor)
-                      .map((capability) => formatUpstreamCapabilityLabel(capability))
-                      .join(', ')}`
-                  : ''}
-              </p>
-              <pre className="code-block policy-example-block">{selectedDescriptor.example}</pre>
-            </section>
           </div>
         ) : null}
 
@@ -618,7 +606,7 @@ export function PolicyDraftModal({
           <div className="policy-review-stack">
             <section className="policy-summary-card">
               <h4>Review before {isEditingPolicy ? 'saving' : 'creating'}</h4>
-              <p className="muted">Confirm the draft, then save.</p>
+              {policyEffectCopy ? <p className="muted">{policyEffectCopy.summary}</p> : null}
               <div className="policy-chip-row">
                 {selectedUpstream ? <span className="policy-chip">{formatUpstreamOptionLabel(selectedUpstream)}</span> : null}
                 {draft.type ? <span className="policy-chip">{getPolicyTypeLabel(draft.type)}</span> : null}

@@ -10,6 +10,7 @@ export const upstreamEcosystems = ['npm', 'oci'] as const
 
 export type UpstreamEcosystem = (typeof upstreamEcosystems)[number]
 export type UpstreamCapability = NonNullable<CreateUpstreamRequest['capabilities']>[number]
+export type UpstreamAuthType = 'none' | 'basic' | 'bearer_token'
 
 type UpstreamCapabilityDefinition = {
   id: UpstreamCapability
@@ -17,40 +18,51 @@ type UpstreamCapabilityDefinition = {
   description: string
 }
 
-const upstreamCapabilityDefinitions: Record<UpstreamEcosystem, readonly UpstreamCapabilityDefinition[]> = {
-  npm: [
-    {
-      id: 'publish_time',
-      label: 'Publish time',
-      description: 'Enable age-based policies that rely on package publish timestamps.',
-    },
-    {
-      id: 'licenses',
-      label: 'Licenses',
-      description: 'Enable license match and license allowlist policies.',
-    },
-    {
-      id: 'vulnerability_lookup',
-      label: 'Vulnerability lookup',
-      description: 'Enable CVSS threshold policies backed by the current enrichment flow.',
-    },
-    {
-      id: 'scorecard_lookup',
-      label: 'Scorecard lookup',
-      description: 'Enable OpenSSF Scorecard policies backed by npm source-repository enrichment.',
-    },
-  ],
-  oci: [
-    {
-      id: 'manifest_digest_lookup',
-      label: 'Manifest digest lookup',
-      description: 'Enable mutable-tag blocking by resolving tags to OCI manifests and digests.',
-    },
-  ],
+type UpstreamEcosystemDefinition = {
+  capabilities: readonly UpstreamCapabilityDefinition[]
+  authTypes: readonly UpstreamAuthType[]
 }
 
-const capabilityLabels = Object.values(upstreamCapabilityDefinitions)
-  .flat()
+const upstreamEcosystemDefinitions: Record<UpstreamEcosystem, UpstreamEcosystemDefinition> = {
+  npm: {
+    authTypes: ['none'],
+    capabilities: [
+      {
+        id: 'publish_time',
+        label: 'Publish time',
+        description: 'Enable age-based policies that rely on package publish timestamps.',
+      },
+      {
+        id: 'licenses',
+        label: 'Licenses',
+        description: 'Enable license match and license allowlist policies.',
+      },
+      {
+        id: 'vulnerability_lookup',
+        label: 'Vulnerability lookup',
+        description: 'Enable CVSS threshold policies backed by the current enrichment flow.',
+      },
+      {
+        id: 'scorecard_lookup',
+        label: 'Scorecard lookup',
+        description: 'Enable OpenSSF Scorecard policies backed by npm source-repository enrichment.',
+      },
+    ],
+  },
+  oci: {
+    authTypes: ['none', 'basic', 'bearer_token'],
+    capabilities: [
+      {
+        id: 'manifest_digest_lookup',
+        label: 'Manifest digest lookup',
+        description: 'Enable mutable-tag blocking by resolving tags to OCI manifests and digests.',
+      },
+    ],
+  },
+}
+
+const capabilityLabels = Object.values(upstreamEcosystemDefinitions)
+  .flatMap((definition) => definition.capabilities)
   .reduce<Record<string, string>>((labels, definition) => {
     labels[definition.id] = definition.label
     return labels
@@ -61,7 +73,7 @@ export type UpstreamDraft = {
   ecosystem: UpstreamEcosystem
   baseUrl: string
   capabilities: UpstreamCapability[]
-  authType: 'none' | 'basic' | 'bearer_token'
+  authType: UpstreamAuthType
   authUsername: string
   authPassword: string
   authToken: string
@@ -119,11 +131,26 @@ function isUpstreamEcosystem(value: string): value is UpstreamEcosystem {
 }
 
 export function getUpstreamCapabilityDefinitions(ecosystem: UpstreamEcosystem) {
-  return upstreamCapabilityDefinitions[ecosystem]
+  return upstreamEcosystemDefinitions[ecosystem].capabilities
+}
+
+export function getUpstreamAuthTypes(ecosystem: UpstreamEcosystem): readonly UpstreamAuthType[] {
+  return upstreamEcosystemDefinitions[ecosystem].authTypes
+}
+
+export function upstreamEcosystemSupportsAuth(ecosystem: UpstreamEcosystem): boolean {
+  return getUpstreamAuthTypes(ecosystem).some((authType) => authType !== 'none')
+}
+
+export function upstreamEcosystemSupportsAuthType(
+  ecosystem: UpstreamEcosystem,
+  authType: UpstreamAuthType,
+): boolean {
+  return getUpstreamAuthTypes(ecosystem).includes(authType)
 }
 
 export function defaultUpstreamCapabilities(ecosystem: UpstreamEcosystem): UpstreamCapability[] {
-  return upstreamCapabilityDefinitions[ecosystem].map((definition) => definition.id)
+  return getUpstreamCapabilityDefinitions(ecosystem).map((definition) => definition.id)
 }
 
 export function normalizeUpstreamCapabilities(
@@ -224,11 +251,11 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
     return { value: null, errors }
   }
 
-  if (draft.ecosystem !== 'oci' && draft.authType !== 'none') {
-    errors.authType = 'Authentication is only available for OCI upstreams.'
+  if (!upstreamEcosystemSupportsAuthType(draft.ecosystem, draft.authType)) {
+    errors.authType = 'Choose an authentication type supported by this ecosystem.'
   }
 
-  if (draft.ecosystem === 'oci' && draft.authType === 'basic') {
+  if (upstreamEcosystemSupportsAuthType(draft.ecosystem, 'basic') && draft.authType === 'basic') {
     if (!authUsername) {
       errors.authUsername = 'Enter the registry username.'
     }
@@ -237,7 +264,11 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
     }
   }
 
-  if (draft.ecosystem === 'oci' && draft.authType === 'bearer_token' && !authToken) {
+  if (
+    upstreamEcosystemSupportsAuthType(draft.ecosystem, 'bearer_token') &&
+    draft.authType === 'bearer_token' &&
+    !authToken
+  ) {
     errors.authToken = 'Enter the bearer token.'
   }
 
@@ -246,7 +277,7 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
   }
 
   const auth =
-    draft.ecosystem === 'oci' && draft.authType !== 'none'
+    upstreamEcosystemSupportsAuthType(draft.ecosystem, draft.authType) && draft.authType !== 'none'
       ? draft.authType === 'basic'
         ? { type: 'basic' as const, username: authUsername, password: authPassword }
         : { type: 'bearer_token' as const, token: authToken }

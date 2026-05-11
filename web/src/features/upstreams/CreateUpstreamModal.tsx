@@ -3,32 +3,56 @@ import type { FormEventHandler, RefObject } from 'react'
 import { ModalWizard, type ModalWizardStep } from '../../components/modal/index.ts'
 import {
   formatUpstreamCapabilityLabel,
+  getUpstreamAuthTypes,
   getUpstreamCapabilityDefinitions,
+  upstreamEcosystemSupportsAuthType,
+  upstreamEcosystemSupportsAuth,
   upstreamBaseUrlExamples,
   upstreamEcosystems,
   upstreamNameExamples,
   type UpstreamCapability,
+  type UpstreamAuthType,
   type UpstreamDraft,
   type UpstreamDraftErrors,
 } from './api.ts'
 
-const createWizardSteps = [
-  {
-    id: 'connection',
-    label: 'Connection',
-    description: 'Choose the ecosystem, name, and URL.',
-  },
-  {
-    id: 'auth',
-    label: 'Authentication',
-    description: 'Configure OCI registry credentials.',
-  },
-  {
-    id: 'review',
-    label: 'Review',
-    description: 'Confirm the tenant-scoped details.',
-  },
-] satisfies readonly ModalWizardStep[]
+const connectionStep = {
+  id: 'connection',
+  label: 'Connection',
+  description: 'Choose the ecosystem, name, and URL.',
+} satisfies ModalWizardStep
+
+const authStep = {
+  id: 'auth',
+  label: 'Authentication',
+  description: 'Configure OCI registry credentials.',
+} satisfies ModalWizardStep
+
+const reviewStep = {
+  id: 'review',
+  label: 'Review',
+  description: 'Confirm the tenant-scoped details.',
+} satisfies ModalWizardStep
+
+const createWizardStepsWithAuth = [connectionStep, authStep, reviewStep] satisfies readonly ModalWizardStep[]
+const createWizardStepsWithoutAuth = [connectionStep, reviewStep] satisfies readonly ModalWizardStep[]
+
+function getCreateWizardSteps(draft: UpstreamDraft): readonly ModalWizardStep[] {
+  return upstreamEcosystemSupportsAuth(draft.ecosystem) ? createWizardStepsWithAuth : createWizardStepsWithoutAuth
+}
+
+const authTypeLabels: Record<UpstreamAuthType, string> = {
+  none: 'Unauthenticated',
+  basic: 'Username / password or PAT',
+  bearer_token: 'Bearer token',
+}
+
+function getAuthTypeOptions(draft: UpstreamDraft) {
+  return getUpstreamAuthTypes(draft.ecosystem).map((authType) => ({
+    value: authType,
+    label: authTypeLabels[authType],
+  }))
+}
 
 type CreateUpstreamModalProps = {
   open: boolean
@@ -55,7 +79,7 @@ function formatDraftCapabilities(draft: UpstreamDraft): string {
 }
 
 function formatDraftAuth(draft: UpstreamDraft): string {
-  if (draft.ecosystem !== 'oci' || draft.authType === 'none') {
+  if (!upstreamEcosystemSupportsAuthType(draft.ecosystem, draft.authType) || draft.authType === 'none') {
     return 'Unauthenticated'
   }
   if (draft.authType === 'basic') {
@@ -81,43 +105,15 @@ export function CreateUpstreamModal({
   onReset,
   onSubmit,
 }: CreateUpstreamModalProps) {
-  const aside = (
-    <div className="upstreams-wizard-aside">
-      <section className="upstreams-wizard-card">
-        <p className="eyebrow">Tenant scope</p>
-        <h3>Active tenant</h3>
-        <p className="muted">
-          Created for <code>{tenantId ?? 'the selected tenant'}</code> only.
-        </p>
-      </section>
-
-      <section className="upstreams-wizard-card">
-        <h3>Draft summary</h3>
-        <dl className="upstreams-wizard-summary">
-          <div>
-            <dt>Name</dt>
-            <dd>{draft.name.trim() || 'Not set yet'}</dd>
-          </div>
-          <div>
-            <dt>Ecosystem</dt>
-            <dd>{draft.ecosystem.toUpperCase()}</dd>
-          </div>
-          <div>
-            <dt>Base URL</dt>
-            <dd>{draft.baseUrl.trim() || upstreamBaseUrlExamples[draft.ecosystem]}</dd>
-          </div>
-          <div>
-            <dt>Capabilities</dt>
-            <dd>{formatDraftCapabilities(draft)}</dd>
-          </div>
-          <div>
-            <dt>Authentication</dt>
-            <dd>{formatDraftAuth(draft)}</dd>
-          </div>
-        </dl>
-      </section>
-    </div>
-  )
+  const wizardSteps = getCreateWizardSteps(draft)
+  const authTypeOptions = getAuthTypeOptions(draft)
+  const activeStep = wizardSteps[Math.min(currentStep, wizardSteps.length - 1)] ?? reviewStep
+  const isReviewStep = activeStep.id === 'review'
+  const isAuthStep = activeStep.id === 'auth'
+  const nextLabel =
+    activeStep.id === 'connection' && upstreamEcosystemSupportsAuth(draft.ecosystem)
+      ? 'Configure auth'
+      : 'Review details'
 
   const footer = (
     <div className="upstreams-wizard-footer">
@@ -152,14 +148,14 @@ export function CreateUpstreamModal({
           </button>
         ) : null}
 
-        {currentStep < createWizardSteps.length - 1 ? (
+        {!isReviewStep ? (
           <button
             className="primary-button"
             disabled={!tenantId || isPending}
             form="create-upstream-form"
             type="submit"
           >
-            {currentStep === 0 ? 'Configure auth' : 'Review details'}
+            {nextLabel}
           </button>
         ) : (
           <button
@@ -177,11 +173,10 @@ export function CreateUpstreamModal({
 
   return (
     <ModalWizard
-      aside={aside}
       closeOnEscape={!isPending}
       closeOnOverlayClick={!isPending}
       currentStep={currentStep}
-      description="Create an npm or OCI upstream."
+      description="Add the registry endpoint and optional OCI credentials."
       dismissible={!isPending}
       footer={footer}
       headerMeta={
@@ -191,7 +186,7 @@ export function CreateUpstreamModal({
       onClose={onClose}
       open={open}
       size="wide"
-      steps={createWizardSteps}
+      steps={wizardSteps}
       title="Create upstream"
     >
       <form className="upstreams-form upstreams-modal-form" id="create-upstream-form" onSubmit={onSubmit}>
@@ -202,7 +197,7 @@ export function CreateUpstreamModal({
           </div>
         ) : null}
 
-        {currentStep === 0 ? (
+        {activeStep.id === 'connection' ? (
           <div className="upstreams-wizard-section">
             <div className="upstreams-wizard-copy">
               <h3>Connection details</h3>
@@ -219,7 +214,6 @@ export function CreateUpstreamModal({
                 ref={initialFocusRef}
                 value={draft.name}
               />
-              <small>Use a short operator-facing label for this upstream.</small>
               {draftErrors.name ? <p className="upstreams-field-error">{draftErrors.name}</p> : null}
             </div>
 
@@ -238,7 +232,6 @@ export function CreateUpstreamModal({
                   </option>
                 ))}
               </select>
-              <small>Duplicate registry URLs are blocked for the same tenant and ecosystem.</small>
               {draftErrors.ecosystem ? (
                 <p className="upstreams-field-error">{draftErrors.ecosystem}</p>
               ) : null}
@@ -254,7 +247,6 @@ export function CreateUpstreamModal({
                 placeholder={upstreamBaseUrlExamples[draft.ecosystem]}
                 value={draft.baseUrl}
               />
-              <small>Example: {upstreamBaseUrlExamples[draft.ecosystem]}</small>
               {draftErrors.baseUrl ? (
                 <p className="upstreams-field-error">{draftErrors.baseUrl}</p>
               ) : null}
@@ -262,7 +254,6 @@ export function CreateUpstreamModal({
 
             <fieldset className="upstreams-capability-group">
               <legend>Capability profile</legend>
-              <p className="muted">Capabilities control which policy types can use this upstream.</p>
               <div className="upstreams-capability-list">
                 {getUpstreamCapabilityDefinitions(draft.ecosystem).map((capability) => {
                   const checked = draft.capabilities.includes(capability.id)
@@ -275,7 +266,6 @@ export function CreateUpstreamModal({
                       />
                       <span>
                         <strong>{capability.label}</strong>
-                        <small>{capability.description}</small>
                       </span>
                     </label>
                   )
@@ -283,32 +273,32 @@ export function CreateUpstreamModal({
               </div>
             </fieldset>
           </div>
-        ) : currentStep === 1 ? (
+        ) : isAuthStep ? (
           <div className="upstreams-wizard-section">
             <div className="upstreams-wizard-copy">
               <h3>Authentication</h3>
             </div>
 
-            <div className={`upstreams-field${draftErrors.authType ? ' upstreams-field-invalid' : ''}`}>
+            <div className={`upstreams-field upstreams-auth-type-field${draftErrors.authType ? ' upstreams-field-invalid' : ''}`}>
               <label htmlFor="upstream-auth-type">Registry authentication</label>
               <select
                 aria-invalid={Boolean(draftErrors.authType)}
-                disabled={draft.ecosystem !== 'oci'}
                 id="upstream-auth-type"
                 name="authType"
                 onChange={(event) => onDraftChange('authType', event.target.value)}
-                value={draft.ecosystem === 'oci' ? draft.authType : 'none'}
+                value={draft.authType}
               >
-                <option value="none">Unauthenticated</option>
-                <option value="basic">Username / password or PAT</option>
-                <option value="bearer_token">Bearer token</option>
+                {authTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
-              <small>Authentication settings are stored server-side and are not returned after creation.</small>
               {draftErrors.authType ? <p className="upstreams-field-error">{draftErrors.authType}</p> : null}
             </div>
 
-            {draft.ecosystem === 'oci' && draft.authType === 'basic' ? (
-              <>
+            {draft.authType === 'basic' ? (
+              <div className="upstreams-auth-detail-fields">
                 <div className={`upstreams-field${draftErrors.authUsername ? ' upstreams-field-invalid' : ''}`}>
                   <label htmlFor="upstream-auth-username">Username</label>
                   <input
@@ -339,22 +329,24 @@ export function CreateUpstreamModal({
                     <p className="upstreams-field-error">{draftErrors.authPassword}</p>
                   ) : null}
                 </div>
-              </>
+              </div>
             ) : null}
 
-            {draft.ecosystem === 'oci' && draft.authType === 'bearer_token' ? (
-              <div className={`upstreams-field${draftErrors.authToken ? ' upstreams-field-invalid' : ''}`}>
-                <label htmlFor="upstream-auth-token">Bearer token</label>
-                <input
-                  aria-invalid={Boolean(draftErrors.authToken)}
-                  autoComplete="off"
-                  id="upstream-auth-token"
-                  name="authToken"
-                  onChange={(event) => onDraftChange('authToken', event.target.value)}
-                  type="password"
-                  value={draft.authToken}
-                />
-                {draftErrors.authToken ? <p className="upstreams-field-error">{draftErrors.authToken}</p> : null}
+            {draft.authType === 'bearer_token' ? (
+              <div className="upstreams-auth-detail-fields">
+                <div className={`upstreams-field${draftErrors.authToken ? ' upstreams-field-invalid' : ''}`}>
+                  <label htmlFor="upstream-auth-token">Bearer token</label>
+                  <input
+                    aria-invalid={Boolean(draftErrors.authToken)}
+                    autoComplete="off"
+                    id="upstream-auth-token"
+                    name="authToken"
+                    onChange={(event) => onDraftChange('authToken', event.target.value)}
+                    type="password"
+                    value={draft.authToken}
+                  />
+                  {draftErrors.authToken ? <p className="upstreams-field-error">{draftErrors.authToken}</p> : null}
+                </div>
               </div>
             ) : null}
           </div>

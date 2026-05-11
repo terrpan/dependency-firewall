@@ -77,12 +77,7 @@ export function PolicyListPanel({
     <section className="card policy-list-card">
       <div className="policy-section-heading">
         <div>
-          <p className="eyebrow">Policies list</p>
           <h3>Current tenant policies</h3>
-          <p className="muted">
-            Priority order mirrors evaluation order while each card can open a detailed overview
-            or jump straight to history.
-          </p>
         </div>
         <div className="policy-list-tools">
           {activeFilters.length > 0 || policySearch.trim() ? (

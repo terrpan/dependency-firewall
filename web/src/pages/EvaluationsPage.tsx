@@ -126,10 +126,7 @@ export function EvaluationsPage() {
         <div>
           <p className="eyebrow">Decision history</p>
           <h2>Evaluations</h2>
-          <p className="page-summary">
-            Review recent allow and deny outcomes, page through stored decisions, and inspect audit
-            detail without leaving the log.
-          </p>
+          <p className="page-summary">Stored allow and deny decisions for the selected tenant.</p>
         </div>
 
         <div className="page-actions">
@@ -151,7 +148,7 @@ export function EvaluationsPage() {
           <section className="card">
             <div className="section-header">
               <div>
-                <h3>Current page summary</h3>
+                <h3>Page summary</h3>
                 <p className="muted">
                   {evaluations.length > 0
                     ? `Showing results ${rangeStart}-${rangeEnd}${hasArtifactSearch || hasActiveFilters ? ' for the current search and filters.' : '.'}`
@@ -207,25 +204,12 @@ export function EvaluationsPage() {
               </>
             )}
           </section>
-
-          <section className="card">
-            <h3>Audit view notes</h3>
-            <ul className="list">
-              <li>Outcome summary is derived from the currently loaded page only.</li>
-              <li>Reasons come from recorded evaluation audit data; no backend fields are invented.</li>
-              <li>Policy hash and cache timestamps stay visible for operator debugging.</li>
-            </ul>
-          </section>
         </div>
 
         <section className="card evaluations-log-card">
           <div className="section-header">
             <div>
               <h3>Audit log</h3>
-              <p className="muted">
-                Stored decisions, primary reasons, warnings, and policy metadata for the selected
-                tenant.
-              </p>
             </div>
           </div>
 

@@ -831,24 +831,17 @@ export function PoliciesPage() {
         <div>
           <p className="eyebrow">Policy control plane</p>
           <h2>Policies</h2>
-          <p className="page-summary">
-            Browse current rules, open a detailed policy view on demand, and keep creation in a popup
-            that preserves your place.
-          </p>
+          <p className="page-summary">Rules evaluated for this tenant.</p>
         </div>
         <div className="policies-header-status">
-          {tenantId ? <span className="status-pill status-pill-neutral">Tenant scoped</span> : null}
           <span className="status-pill status-pill-neutral">{policies.length} policies</span>
-          <span className="status-pill status-pill-neutral">{upstreams.length} upstreams</span>
           <span
             className={`status-pill ${enabledPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral'}`}
           >
             {enabledPoliciesCount} enabled
           </span>
-          <span className="status-pill status-pill-neutral">{dryRunPoliciesCount} dry run</span>
-          {policyTypesQuery.isError ? (
-            <span className="status-pill status-pill-neutral">Fallback metadata</span>
-          ) : null}
+          {dryRunPoliciesCount > 0 ? <span className="status-pill status-pill-neutral">{dryRunPoliciesCount} dry run</span> : null}
+          {policyTypesQuery.isError ? <span className="status-pill status-pill-neutral">Fallback metadata</span> : null}
         </div>
       </header>
 

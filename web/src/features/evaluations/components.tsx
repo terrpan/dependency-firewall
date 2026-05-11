@@ -205,6 +205,7 @@ type ControlPlaneHealthCardProps = {
   isLoading: boolean
   error?: unknown
   onRetry: () => void
+  compact?: boolean
 }
 
 export function ControlPlaneHealthCard({
@@ -212,14 +213,15 @@ export function ControlPlaneHealthCard({
   isLoading,
   error,
   onRetry,
+  compact = false,
 }: ControlPlaneHealthCardProps) {
   if (isLoading) {
     return (
       <section className="card">
         <div className="section-header">
           <div>
-            <h3>Control-plane status</h3>
-            <p className="muted">Loading compact health and dependency status from /healthz.</p>
+            <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
+            {!compact ? <p className="muted">Loading health and dependency status.</p> : null}
           </div>
           <StatusPill label="Loading" />
         </div>
@@ -236,8 +238,8 @@ export function ControlPlaneHealthCard({
       <section className="card">
         <div className="section-header">
           <div>
-            <h3>Control-plane status</h3>
-            <p className="muted">Compact health and dependency status from /healthz.</p>
+            <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
+            {!compact ? <p className="muted">Health and dependency status.</p> : null}
           </div>
           <StatusPill label="Unavailable" tone="danger" />
         </div>
@@ -256,48 +258,52 @@ export function ControlPlaneHealthCard({
     <section className="card">
       <div className="section-header">
         <div>
-          <h3>Control-plane status</h3>
-          <p className="muted">Compact health and dependency status from /healthz.</p>
+          <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
+          {!compact ? <p className="muted">Health and dependency status.</p> : null}
         </div>
         <StatusPill label={health.status.toUpperCase()} tone={getStatusTone(health.status)} />
       </div>
 
-      <dl className="detail-grid">
-        <div>
-          <dt>Service</dt>
-          <dd>{health.service_name}</dd>
-        </div>
-        <div>
-          <dt>Version</dt>
-          <dd>{health.version}</dd>
-        </div>
-        <div>
-          <dt>Commit</dt>
-          <dd>{shortenHash(health.commit, 12)}</dd>
-        </div>
-        <div>
-          <dt>Updated</dt>
-          <dd>{formatTimestamp(health.timestamp)}</dd>
-        </div>
-        <div>
-          <dt>Runtime</dt>
-          <dd>
-            {health.os}/{health.arch} · {health.go_version}
-          </dd>
-        </div>
-        <div>
-          <dt>Build time</dt>
-          <dd>{health.build_time ? formatTimestamp(health.build_time) : '—'}</dd>
-        </div>
-      </dl>
+      {!compact ? (
+        <dl className="detail-grid">
+          <div>
+            <dt>Service</dt>
+            <dd>{health.service_name}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd>{health.version}</dd>
+          </div>
+          <div>
+            <dt>Commit</dt>
+            <dd>{shortenHash(health.commit, 12)}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{formatTimestamp(health.timestamp)}</dd>
+          </div>
+          <div>
+            <dt>Runtime</dt>
+            <dd>
+              {health.os}/{health.arch} · {health.go_version}
+            </dd>
+          </div>
+          <div>
+            <dt>Build time</dt>
+            <dd>{health.build_time ? formatTimestamp(health.build_time) : '—'}</dd>
+          </div>
+        </dl>
+      ) : null}
 
       {total > 0 ? (
         <>
-          <p className="muted">
-            {degradedCount === 0
-              ? `${total} dependencies are reporting healthy or ready.`
-              : `${degradedCount} of ${total} dependencies need operator attention.`}
-          </p>
+          {!compact ? (
+            <p className="muted">
+              {degradedCount === 0
+                ? `${total} dependencies are healthy.`
+                : `${degradedCount} of ${total} dependencies need review.`}
+            </p>
+          ) : null}
 
           <ul className="dependency-list">
             {dependencies.map(([name, dependency]) => (
