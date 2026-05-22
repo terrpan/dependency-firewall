@@ -104,15 +104,19 @@ func TestBundleServiceIncludesTenantRuntime(t *testing.T) {
 		},
 	}
 
-	service := NewBundleService(
+	upstreamRepo := &stubBundleUpstreamRepo{
+		bundleUpstreams: []domain.Upstream{{ID: "upstream-1", TenantID: "tenant-1", Name: "npmjs"}},
+	}
+
+	service, err := NewBundleService(
 		tenantRepo,
 		stubBundlePolicyRepo{
 			policies: []domain.Policy{{ID: "policy-1", TenantID: "tenant-1", Name: "deny old"}},
 		},
-		stubBundleUpstreamRepo{
-			upstreams: []domain.Upstream{{ID: "upstream-1", TenantID: "tenant-1", Name: "npmjs"}},
-		},
+		upstreamRepo,
+		WithBundleUpstreamRepository(upstreamRepo),
 	)
+	require.NoError(t, err)
 
 	bundle, err := service.GetTenantBundle(context.Background(), "tenant-1")
 	require.NoError(t, err)
@@ -127,7 +131,14 @@ func TestBundleServiceRevisionChangesWhenTenantRuntimeChanges(t *testing.T) {
 		tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"},
 	}
 
-	service := NewBundleService(tenantRepo, stubBundlePolicyRepo{}, stubBundleUpstreamRepo{})
+	upstreamRepo := &stubBundleUpstreamRepo{}
+	service, err := NewBundleService(
+		tenantRepo,
+		stubBundlePolicyRepo{},
+		upstreamRepo,
+		WithBundleUpstreamRepository(upstreamRepo),
+	)
+	require.NoError(t, err)
 
 	first, err := service.GetTenantBundle(context.Background(), "tenant-1")
 	require.NoError(t, err)
@@ -142,32 +153,88 @@ func TestBundleServiceRevisionChangesWhenTenantRuntimeChanges(t *testing.T) {
 func TestBundleServiceRejectsAuthenticatedUpstreamsWhenAuthDisabled(t *testing.T) {
 	t.Parallel()
 
-	service := NewBundleService(
+	upstreamRepo := &stubBundleUpstreamRepo{
+		bundleUpstreams: []domain.Upstream{{
+			ID:        "upstream-1",
+			TenantID:  "tenant-1",
+			Name:      "private-oci",
+			Ecosystem: domain.EcosystemOCI,
+			Auth: &domain.UpstreamAuth{
+				Type:   domain.UpstreamAuthBearerToken,
+				Secret: "registry-token",
+			},
+		}},
+	}
+
+	service, err := NewBundleService(
 		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
 		stubBundlePolicyRepo{},
-		stubBundleUpstreamRepo{
-			upstreams: []domain.Upstream{{
-				ID:        "upstream-1",
-				TenantID:  "tenant-1",
-				Name:      "private-oci",
-				Ecosystem: domain.EcosystemOCI,
-				Auth: &domain.UpstreamAuth{
-					Type:   domain.UpstreamAuthBearerToken,
-					Secret: "registry-token",
-				},
-			}},
-		},
+		upstreamRepo,
 		WithBundleUpstreamAuth(false),
+		WithBundleUpstreamRepository(upstreamRepo),
 	)
+	require.NoError(t, err)
 
-	_, err := service.GetTenantBundle(context.Background(), "tenant-1")
+	_, err = service.GetTenantBundle(context.Background(), "tenant-1")
 	require.ErrorIs(t, err, domain.ErrUpstreamAuthTransportInsecure)
 }
 
-func TestBundleServiceRevisionChangesWhenUpstreamAuthChanges(t *testing.T) {
+func TestNewBundleServiceRequiresBundleRepository(t *testing.T) {
 	t.Parallel()
 
-	upstreams := []domain.Upstream{{
+	_, err := NewBundleService(
+		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
+		stubBundlePolicyRepo{},
+		&stubBundleUpstreamRepo{},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bundle upstream repository")
+}
+
+func TestNewBundleServiceRequiresBundleRepositoryWhenAuthDisabled(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewBundleService(
+		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
+		stubBundlePolicyRepo{},
+		&stubBundleUpstreamRepo{},
+		WithBundleUpstreamAuth(false),
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bundle upstream repository")
+}
+
+func TestBundleServiceUsesBundleUpstreamRepository(t *testing.T) {
+	t.Parallel()
+
+	upstreamRepo := &stubBundleUpstreamRepo{
+		panicOnListByTenant: true,
+		bundleUpstreams: []domain.Upstream{{
+			ID:       "upstream-1",
+			TenantID: "tenant-1",
+			Name:     "npmjs",
+		}},
+	}
+
+	service, err := NewBundleService(
+		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
+		stubBundlePolicyRepo{},
+		upstreamRepo,
+		WithBundleUpstreamRepository(upstreamRepo),
+	)
+	require.NoError(t, err)
+
+	_, err = service.GetTenantBundle(context.Background(), "tenant-1")
+	require.NoError(t, err)
+	assert.Zero(t, upstreamRepo.listByTenantCalls)
+	assert.Equal(t, 1, upstreamRepo.listBundleByTenantCalls)
+}
+
+func TestBundleRevisionIgnoresUpstreamAuthSecretChanges(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.Tenant{ID: "tenant-1", Name: "Tenant One"}
+	upstreamsOne := []domain.Upstream{{
 		ID:        "upstream-1",
 		TenantID:  "tenant-1",
 		Name:      "private-oci",
@@ -177,25 +244,57 @@ func TestBundleServiceRevisionChangesWhenUpstreamAuthChanges(t *testing.T) {
 			Secret: "first-token",
 		},
 	}}
-	service := NewBundleService(
-		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
-		stubBundlePolicyRepo{},
-		stubBundleUpstreamRepo{upstreams: upstreams},
-	)
+	upstreamsTwo := []domain.Upstream{{
+		ID:        "upstream-1",
+		TenantID:  "tenant-1",
+		Name:      "private-oci",
+		Ecosystem: domain.EcosystemOCI,
+		Auth: &domain.UpstreamAuth{
+			Type:   domain.UpstreamAuthBearerToken,
+			Secret: "second-token",
+		},
+	}}
 
-	first, err := service.GetTenantBundle(context.Background(), "tenant-1")
+	first, err := bundleRevision(tenant, nil, upstreamsOne)
+	require.NoError(t, err)
+	second, err := bundleRevision(tenant, nil, upstreamsTwo)
 	require.NoError(t, err)
 
-	upstreams[0].Auth.Secret = "second-token"
-	service = NewBundleService(
-		&stubBundleTenantGetter{tenant: &domain.Tenant{ID: "tenant-1", Name: "Tenant One"}},
-		stubBundlePolicyRepo{},
-		stubBundleUpstreamRepo{upstreams: upstreams},
-	)
-	second, err := service.GetTenantBundle(context.Background(), "tenant-1")
+	assert.Equal(t, first, second)
+}
+
+func TestBundleRevisionTracksUpstreamAuthUpdatedAt(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	tenant := domain.Tenant{ID: "tenant-1", Name: "Tenant One"}
+	upstreamsOne := []domain.Upstream{{
+		ID:        "upstream-1",
+		TenantID:  "tenant-1",
+		Name:      "private-oci",
+		Ecosystem: domain.EcosystemOCI,
+		Auth: &domain.UpstreamAuth{
+			Type:      domain.UpstreamAuthBearerToken,
+			UpdatedAt: now,
+		},
+	}}
+	upstreamsTwo := []domain.Upstream{{
+		ID:        "upstream-1",
+		TenantID:  "tenant-1",
+		Name:      "private-oci",
+		Ecosystem: domain.EcosystemOCI,
+		Auth: &domain.UpstreamAuth{
+			Type:      domain.UpstreamAuthBearerToken,
+			UpdatedAt: now.Add(time.Minute),
+		},
+	}}
+
+	first, err := bundleRevision(tenant, nil, upstreamsOne)
+	require.NoError(t, err)
+	second, err := bundleRevision(tenant, nil, upstreamsTwo)
 	require.NoError(t, err)
 
-	assert.NotEqual(t, first.Revision, second.Revision)
+	assert.NotEqual(t, first, second)
 }
 
 type stubBundleProvider struct {
@@ -264,33 +363,50 @@ func (s stubBundlePolicyRepo) Delete(context.Context, string, string, bool) erro
 }
 
 type stubBundleUpstreamRepo struct {
-	upstreams []domain.Upstream
-	err       error
+	upstreams               []domain.Upstream
+	bundleUpstreams         []domain.Upstream
+	err                     error
+	bundleErr               error
+	panicOnListByTenant     bool
+	listByTenantCalls       int
+	listBundleByTenantCalls int
 }
 
-func (s stubBundleUpstreamRepo) GetByID(context.Context, string, string) (*domain.Upstream, error) {
+func (s *stubBundleUpstreamRepo) GetByID(context.Context, string, string) (*domain.Upstream, error) {
 	return nil, nil
 }
 
-func (s stubBundleUpstreamRepo) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
+func (s *stubBundleUpstreamRepo) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
 	return nil, nil
 }
 
-func (s stubBundleUpstreamRepo) ListByTenant(context.Context, string) ([]domain.Upstream, error) {
+func (s *stubBundleUpstreamRepo) ListByTenant(context.Context, string) ([]domain.Upstream, error) {
+	s.listByTenantCalls++
+	if s.panicOnListByTenant {
+		panic("ListByTenant should not be called")
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
 	return append([]domain.Upstream(nil), s.upstreams...), nil
 }
 
-func (s stubBundleUpstreamRepo) Create(context.Context, *domain.Upstream) error {
+func (s *stubBundleUpstreamRepo) ListBundleByTenant(context.Context, string) ([]domain.Upstream, error) {
+	s.listBundleByTenantCalls++
+	if s.bundleErr != nil {
+		return nil, s.bundleErr
+	}
+	return append([]domain.Upstream(nil), s.bundleUpstreams...), nil
+}
+
+func (s *stubBundleUpstreamRepo) Create(context.Context, *domain.Upstream) error {
 	return nil
 }
 
-func (s stubBundleUpstreamRepo) Update(context.Context, *domain.Upstream) error {
+func (s *stubBundleUpstreamRepo) Update(context.Context, *domain.Upstream) error {
 	return nil
 }
 
-func (s stubBundleUpstreamRepo) Delete(context.Context, string, string) error {
+func (s *stubBundleUpstreamRepo) Delete(context.Context, string, string) error {
 	return nil
 }

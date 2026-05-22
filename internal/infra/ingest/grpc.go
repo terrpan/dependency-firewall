@@ -8,8 +8,8 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/delivery/ingestgrpc"
 	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
+	ingestwire "github.com/danielterry/dependency-firewall/internal/wire/ingestgrpc"
 )
 
 // GRPCClient calls the control-plane proxy ingestion service over gRPC.
@@ -37,7 +37,7 @@ func (c *GRPCClient) Close() error {
 
 // RecordDecision persists one decision through the control-plane ingestion service.
 func (c *GRPCClient) RecordDecision(ctx context.Context, decision *domain.Decision) error {
-	persisted, err := ingestgrpc.RecordDecision(ctx, c.conn, decision)
+	persisted, err := ingestwire.RecordDecision(ctx, c.conn, decision)
 	if err != nil {
 		return err
 	}
@@ -47,22 +47,22 @@ func (c *GRPCClient) RecordDecision(ctx context.Context, decision *domain.Decisi
 
 // GetDecisionByArtifact fetches the most recent persisted decision for an artifact.
 func (c *GRPCClient) GetDecisionByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
-	return ingestgrpc.GetDecisionByArtifact(ctx, c.conn, tenantID, artifact)
+	return ingestwire.GetDecisionByArtifact(ctx, c.conn, tenantID, artifact)
 }
 
 // ListDecisionsByTenant fetches persisted decisions for a tenant.
 func (c *GRPCClient) ListDecisionsByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
-	return ingestgrpc.ListDecisionsByTenant(ctx, c.conn, tenantID, limit, offset, search)
+	return ingestwire.ListDecisionsByTenant(ctx, c.conn, tenantID, limit, offset, search)
 }
 
 // HasRecentAllow checks whether an artifact has a recent allow decision.
 func (c *GRPCClient) HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
-	return ingestgrpc.HasRecentAllow(ctx, c.conn, tenantID, ecosystem, namespace, name)
+	return ingestwire.HasRecentAllow(ctx, c.conn, tenantID, ecosystem, namespace, name)
 }
 
 // RecordAuditEvent persists one audit event through the control-plane ingestion service.
 func (c *GRPCClient) RecordAuditEvent(ctx context.Context, event *domain.AuditEvent) error {
-	persisted, err := ingestgrpc.RecordAuditEvent(ctx, c.conn, event)
+	persisted, err := ingestwire.RecordAuditEvent(ctx, c.conn, event)
 	if err != nil {
 		return err
 	}

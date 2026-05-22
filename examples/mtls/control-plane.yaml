@@ -55,6 +55,4 @@ bundle:
         tenant_ids:
           # Local example only because the seed script creates a fresh tenant ID.
           # Production should list explicit tenant IDs for each proxy identity.
-          # - "*"
-          - 84734108-d228-4998-bf29-526bea5f8864
-          - 5f92b976-f23b-4501-8e8f-e1de7edb6a1e
+          - "*"

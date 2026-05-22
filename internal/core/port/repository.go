@@ -50,3 +50,18 @@ type UpstreamRepository interface {
 	Update(ctx context.Context, upstream *domain.Upstream) error
 	Delete(ctx context.Context, tenantID, id string) error
 }
+
+// BundleUpstreamRepository lists upstreams for bundle construction without
+// decrypting auth secrets into domain memory.
+type BundleUpstreamRepository interface {
+	ListBundleByTenant(ctx context.Context, tenantID string) ([]domain.Upstream, error)
+}
+
+// UpstreamAuthSecretRewrapper decrypts one stored upstream auth secret and
+// immediately passes it to a caller-supplied wrapping function.
+type UpstreamAuthSecretRewrapper interface {
+	RewrapUpstreamAuthSecret(ctx context.Context, tenantID, upstreamID string, wrap UpstreamAuthSecretWrapper) ([]byte, error)
+}
+
+// UpstreamAuthSecretWrapper encrypts or otherwise wraps a plaintext upstream auth secret.
+type UpstreamAuthSecretWrapper func([]byte) ([]byte, error)

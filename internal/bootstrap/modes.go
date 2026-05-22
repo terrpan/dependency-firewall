@@ -48,13 +48,30 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 	if err != nil {
 		return err
 	}
+	if cfg.Bundle.TLS.Mode == "mtls" {
+		if deps.bundleUpstreamRepo == nil {
+			return fmt.Errorf("bundle upstream repository is required in mTLS mode")
+		}
+		if deps.authSecretRewrapper == nil {
+			return fmt.Errorf("upstream auth secret rewrapper is required in mTLS mode")
+		}
+	}
 	grpcServer := grpc.NewServer(controlPlaneGRPCOptions...)
-	bundlegrpc.NewServer(service.NewBundleService(
+	bundleService, err := service.NewBundleService(
 		deps.tenantRepo,
 		deps.policyRepo,
 		deps.upstreamRepo,
 		service.WithBundleUpstreamAuth(cfg.Bundle.TLS.Mode == "mtls"),
-	)).Register(grpcServer)
+		service.WithBundleUpstreamRepository(deps.bundleUpstreamRepo),
+	)
+	if err != nil {
+		return err
+	}
+	bundleServer, err := bundlegrpc.NewServer(bundleService, deps.authSecretRewrapper)
+	if err != nil {
+		return err
+	}
+	bundleServer.Register(grpcServer)
 	ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo)).Register(grpcServer)
 
 	listener, err := net.Listen("tcp", cfg.Bundle.ListenAddr)
@@ -172,8 +189,19 @@ func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, i
 	}
 	defer deps.close()
 
+	bundleService, err := service.NewBundleService(
+		deps.tenantRepo,
+		deps.policyRepo,
+		deps.upstreamRepo,
+		service.WithBundleUpstreamAuth(true),
+		service.WithBundleUpstreamRepository(deps.bundleUpstreamRepo),
+	)
+	if err != nil {
+		return err
+	}
+
 	localBundles := service.NewCachedBundleProvider(
-		service.NewBundleService(deps.tenantRepo, deps.policyRepo, deps.upstreamRepo, service.WithBundleUpstreamAuth(true)),
+		bundleService,
 		cfg.Bundle.RefreshInterval,
 		logger,
 	)

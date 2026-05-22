@@ -7,9 +7,10 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	wire "github.com/danielterry/dependency-firewall/internal/wire/ingestgrpc"
 )
 
-const serviceName = "dependencyfirewall.proxyingest.v1.ProxyIngestService"
+const serviceName = wire.ServiceName
 
 type proxyIngestService interface {
 	RecordDecision(context.Context, *domain.Decision) error
@@ -34,20 +35,7 @@ type Server struct {
 
 // TenantIDFromRequest returns the tenant id carried by ingest gRPC requests.
 func TenantIDFromRequest(req any) string {
-	switch typed := req.(type) {
-	case *RecordDecisionRequest:
-		return typed.Decision.TenantID
-	case *GetDecisionByArtifactRequest:
-		return typed.TenantID
-	case *ListDecisionsByTenantRequest:
-		return typed.TenantID
-	case *HasRecentAllowRequest:
-		return typed.TenantID
-	case *RecordAuditEventRequest:
-		return typed.Event.TenantID
-	default:
-		return ""
-	}
+	return wire.TenantIDFromRequest(req)
 }
 
 // NewServer creates a new Server.

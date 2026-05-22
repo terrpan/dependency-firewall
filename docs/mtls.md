@@ -1,6 +1,6 @@
 # mTLS Configuration
 
-Split `control-plane` and `proxy` deployments must use mTLS for bundle and ingest gRPC. This connection carries tenant bundles, durable decision writes, audit events, and authenticated upstream secrets when OCI upstream auth is configured.
+Split `control-plane` and `proxy` deployments must use mTLS for bundle and ingest gRPC. This connection carries tenant bundles, durable decision writes, audit events, and authenticated upstream auth envelopes when OCI upstream auth is configured.
 
 The configuration is process-local. In a split deployment, mount a control-plane config and the control-plane server certificate/key into the control-plane container, and mount a proxy config and the proxy client certificate/key into each proxy container. Do not mount the proxy private key into the control plane or the control-plane private key into the proxy.
 
@@ -27,6 +27,8 @@ flowchart LR
 
 mTLS authenticates the process on each side of the connection. Tenant authorization is a separate check: the control plane reads the proxy certificate identity and verifies that identity is allowed to access the `tenant_id` carried by the bundle or ingest RPC.
 
+For bundle delivery, the proxy client certificate is also the recipient key for upstream auth secrets. The control plane encrypts each configured upstream password/PAT/token to the requesting proxy certificate public key before placing it in the bundle response. The proxy keeps those version-2 envelopes in the runtime bundle cache and decrypts them with its local certificate private key only while constructing outbound OCI registry auth.
+
 ## Certificate requirements
 
 - Use a private CA or workload identity provider controlled by the deployment.
@@ -34,6 +36,7 @@ mTLS authenticates the process on each side of the connection. Tenant authorizat
 - The control-plane server certificate must be valid for the name the proxy dials, or the proxy must set `bundle.tls.server_name_override`.
 - The proxy client certificate must contain a stable identity in a DNS SAN, URI SAN, email SAN, or Common Name.
 - The control plane must list that exact identity in `bundle.tls.authorized_clients`.
+- Treat proxy private keys as bundle-secret decryption keys. A proxy can decrypt only envelopes encrypted to its own certificate public key.
 
 The examples below use DNS SANs because they are easy to issue and understand in local and self-managed deployments. The same authorization model works with any stable certificate identity the code can extract. SPIFFE URI SANs are also supported when a deployment actually uses SPIFFE/SPIRE or another workload identity system that issues SPIFFE IDs.
 
@@ -193,6 +196,7 @@ The proxy certificate DNS SAN is `proxy-a.firewall.local`, so the control-plane 
 - `bundle.tls.mode=mtls` requires `ca_file`, `cert_file`, and `key_file`.
 - `runtime.mode=control-plane` plus `bundle.tls.mode=mtls` requires at least one `authorized_clients` entry.
 - Authenticated OCI upstream secrets are delivered in bundles only when the bundle transport is mTLS-protected and tenant-authorized.
+- Split-mode proxy runtime requires bundle-delivered auth secrets to be version-2 encrypted envelopes and rejects plaintext bundle secrets. All-in-one mode uses the legacy-compatible resolver for local in-process flows.
 
 ## Operational checklist
 
@@ -202,3 +206,4 @@ The proxy certificate DNS SAN is `proxy-a.firewall.local`, so the control-plane 
 - Rotate proxy certificates by adding the new identity to `authorized_clients`, deploying the new cert, then removing the old identity.
 - Protect key files with filesystem permissions readable only by the firewall process.
 - Use one CA bundle for the trust anchors that should be allowed to participate in control-plane gRPC.
+- Rotate proxy certificates deliberately: new bundle envelopes are encrypted to the active proxy certificate public key, so a running proxy must have the matching private key.

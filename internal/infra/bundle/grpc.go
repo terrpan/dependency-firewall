@@ -8,8 +8,8 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/delivery/bundlegrpc"
 	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
+	bundlewire "github.com/danielterry/dependency-firewall/internal/wire/bundlegrpc"
 )
 
 // GRPCClient fetches tenant bundles from the control plane over gRPC.
@@ -38,5 +38,9 @@ func (c *GRPCClient) Close() error {
 
 // GetTenantBundle fetches a tenant bundle.
 func (c *GRPCClient) GetTenantBundle(ctx context.Context, tenantID string) (*domain.TenantBundle, error) {
-	return bundlegrpc.GetTenantBundle(ctx, c.conn, tenantID)
+	response, err := bundlewire.FetchTenantBundleResponse(ctx, c.conn, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return response.Bundle.ToDomain()
 }

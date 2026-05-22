@@ -19,6 +19,7 @@ type BundleService struct {
 	tenants             tenantGetter
 	policies            port.PolicyRepository
 	upstreams           port.UpstreamRepository
+	bundleUpstreams     port.BundleUpstreamRepository
 	includeUpstreamAuth bool
 }
 
@@ -27,7 +28,7 @@ type tenantGetter interface {
 }
 
 // NewBundleService creates a new BundleService.
-func NewBundleService(tenants tenantGetter, policies port.PolicyRepository, upstreams port.UpstreamRepository, options ...BundleServiceOption) *BundleService {
+func NewBundleService(tenants tenantGetter, policies port.PolicyRepository, upstreams port.UpstreamRepository, options ...BundleServiceOption) (*BundleService, error) {
 	s := &BundleService{
 		tenants:             tenants,
 		policies:            policies,
@@ -37,7 +38,10 @@ func NewBundleService(tenants tenantGetter, policies port.PolicyRepository, upst
 	for _, option := range options {
 		option(s)
 	}
-	return s
+	if s.bundleUpstreams == nil {
+		return nil, fmt.Errorf("bundle upstream repository is required")
+	}
+	return s, nil
 }
 
 // BundleServiceOption customizes bundle construction.
@@ -47,6 +51,14 @@ type BundleServiceOption func(*BundleService)
 func WithBundleUpstreamAuth(include bool) BundleServiceOption {
 	return func(s *BundleService) {
 		s.includeUpstreamAuth = include
+	}
+}
+
+// WithBundleUpstreamRepository uses a bundle-specific upstream repository that
+// returns auth metadata without decrypting auth secrets.
+func WithBundleUpstreamRepository(repo port.BundleUpstreamRepository) BundleServiceOption {
+	return func(s *BundleService) {
+		s.bundleUpstreams = repo
 	}
 }
 
@@ -65,7 +77,7 @@ func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*
 		return nil, fmt.Errorf("listing bundle policies: %w", err)
 	}
 
-	upstreams, err := s.upstreams.ListByTenant(ctx, tenantID)
+	upstreams, err := s.listBundleUpstreams(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing bundle upstreams: %w", err)
 	}
@@ -90,6 +102,13 @@ func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*
 		Policies:    policies,
 		Upstreams:   upstreams,
 	}, nil
+}
+
+func (s *BundleService) listBundleUpstreams(ctx context.Context, tenantID string) ([]domain.Upstream, error) {
+	if s.bundleUpstreams == nil {
+		return nil, fmt.Errorf("bundle upstream repository is not configured")
+	}
+	return s.bundleUpstreams.ListBundleByTenant(ctx, tenantID)
 }
 
 // CachedBundleProvider refreshes bundles on demand and serves last-known-good state on failures.
@@ -277,8 +296,7 @@ type bundleUpstreamHashInput struct {
 type bundleUpstreamAuthHashInput struct {
 	Type      domain.UpstreamAuthType `json:"type"`
 	Username  string                  `json:"username,omitempty"`
-	Secret    string                  `json:"secret,omitempty"`
-	UpdatedAt time.Time               `json:"updated_at,omitempty"`
+	UpdatedAt time.Time               `json:"updated_at"`
 }
 
 func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []domain.Upstream) (string, error) {
@@ -320,7 +338,6 @@ func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []
 			auth = bundleUpstreamAuthHashInput{
 				Type:      upstreams[i].Auth.Type,
 				Username:  upstreams[i].Auth.Username,
-				Secret:    upstreams[i].Auth.Secret,
 				UpdatedAt: upstreams[i].Auth.UpdatedAt,
 			}
 		}

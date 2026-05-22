@@ -160,6 +160,7 @@ sequenceDiagram
             oci->>token: token request with configured Basic credentials
             token-->>oci: bearer token
             oci->>registry: retry with bearer token
+            oci->>oci: cache bearer token until expiry for same repository/auth principal
         else static bearer token
             oci->>registry: request with configured bearer token
         else unauthenticated
@@ -176,8 +177,11 @@ sequenceDiagram
 - OCI upstream auth is configured on the upstream, not supplied by package-manager clients.
 - Supported v1 auth modes are unauthenticated, Basic/PAT, and static bearer token.
 - Client `Authorization` headers are not forwarded to upstream registries.
+- OCI Bearer challenge handling follows the distribution-spec flow: the first request may receive `401 WWW-Authenticate`, the proxy requests the scoped bearer token, retries the registry request, and reuses the token until expiry for the same repository/auth principal.
 - OCI artifact cache entries are scoped by `tenant_id`, `upstream_id`, artifact kind, and immutable digest. Digest matches must not be reused across tenants or upstreams.
 - In split mode, mTLS verifies proxy and control-plane identity, and the control plane checks the proxy certificate identity against `bundle.tls.authorized_clients` for the requested tenant before credentials are delivered.
+- Bundle-delivered upstream auth secrets are encrypted per proxy to the requesting mTLS certificate public key. The proxy keeps version-2 envelopes in the runtime bundle cache and decrypts them with its local private key only while constructing outbound registry auth.
+- Split-mode proxy runtime rejects plaintext bundle auth secrets; all-in-one mode keeps legacy-compatible plaintext handling for local in-process flows.
 - See [mTLS Configuration](./mtls.md) for concrete split-mode certificate and tenant authorization examples.
 
 ## UX rules

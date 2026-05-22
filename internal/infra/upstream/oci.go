@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
@@ -25,6 +27,12 @@ var ociAcceptHeaders = strings.Join([]string{
 
 var bearerChallengeParamRE = regexp.MustCompile(`([A-Za-z]+)="([^"]*)"`)
 
+const (
+	defaultBearerTokenCacheMaxEntries = 128
+	defaultBearerTokenTTL             = time.Minute
+	bearerTokenExpirySkew             = 15 * time.Second
+)
+
 var forwardedResponseHeaders = [...]string{
 	"Docker-Content-Digest",
 	"Content-Type",
@@ -34,12 +42,35 @@ var forwardedResponseHeaders = [...]string{
 
 // OCIClient implements port.UpstreamClient for OCI-compatible registries.
 type OCIClient struct {
-	httpClient *http.Client
+	httpClient     *http.Client
+	secretResolver authSecretResolver
+	bearerTokens   *bearerTokenCache
+}
+
+type authSecretResolver interface {
+	ResolveSecret([]byte) ([]byte, error)
+}
+
+// OCIClientOption customizes OCI upstream client behavior.
+type OCIClientOption func(*OCIClient)
+
+// WithAuthSecretResolver resolves encrypted upstream auth secrets at request time.
+func WithAuthSecretResolver(resolver authSecretResolver) OCIClientOption {
+	return func(c *OCIClient) {
+		c.secretResolver = resolver
+	}
 }
 
 // NewOCIClient creates a new OCIClient.
-func NewOCIClient(httpClient *http.Client) *OCIClient {
-	return &OCIClient{httpClient: httpClient}
+func NewOCIClient(httpClient *http.Client, options ...OCIClientOption) *OCIClient {
+	c := &OCIClient{
+		httpClient:   httpClient,
+		bearerTokens: newBearerTokenCache(defaultBearerTokenCacheMaxEntries),
+	}
+	for _, option := range options {
+		option(c)
+	}
+	return c
 }
 
 // repoPath builds the repository path from namespace and name (e.g. "library/nginx").
@@ -204,20 +235,38 @@ func extractHeaders(resp *http.Response) map[string]string {
 	return headers
 }
 
-func applyRegistryAuth(req *http.Request, auth *domain.UpstreamAuth) {
+func (c *OCIClient) applyRegistryAuth(req *http.Request, auth *domain.UpstreamAuth) error {
 	if auth == nil {
-		return
+		return nil
 	}
+	secret, err := c.resolveAuthSecret(auth)
+	if err != nil {
+		return err
+	}
+
 	switch auth.Type {
 	case domain.UpstreamAuthBearerToken:
-		req.Header.Set("Authorization", "Bearer "+auth.Secret)
+		req.Header.Set("Authorization", "Bearer "+string(secret))
 	case domain.UpstreamAuthBasic:
-		req.SetBasicAuth(auth.Username, auth.Secret)
+		req.SetBasicAuth(auth.Username, string(secret))
 	}
+	return nil
 }
 
 func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*http.Response, error) {
-	applyRegistryAuth(req, upstream.Auth)
+	cacheKey, canUseCachedBearer := bearerTokenCacheKey(req, upstream)
+	if canUseCachedBearer {
+		if token, ok := c.bearerTokens.Get(cacheKey); ok {
+			req.Header.Set("Authorization", "Bearer "+token)
+		} else if err := c.applyRegistryAuth(req, upstream.Auth); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := c.applyRegistryAuth(req, upstream.Auth); err != nil {
+			return nil, err
+		}
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -226,7 +275,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 		return resp, nil
 	}
 
-	token, ok, err := c.fetchBearerToken(req.Context(), resp.Header.Get("WWW-Authenticate"), upstream.Auth)
+	token, ttl, ok, err := c.fetchBearerToken(req.Context(), resp.Header.Get("WWW-Authenticate"), upstream.Auth)
 	if err != nil {
 		resp.Body.Close()
 		return nil, err
@@ -241,23 +290,30 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 	retry.Header = req.Header.Clone()
 	retry.Header.Set("Authorization", "Bearer "+token)
 
-	return c.httpClient.Do(retry)
+	retryResp, err := c.httpClient.Do(retry)
+	if err != nil {
+		return nil, err
+	}
+	if canUseCachedBearer && retryResp.StatusCode != http.StatusUnauthorized {
+		c.bearerTokens.Set(cacheKey, token, ttl)
+	}
+	return retryResp, nil
 }
 
-func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth *domain.UpstreamAuth) (string, bool, error) {
+func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth *domain.UpstreamAuth) (string, time.Duration, bool, error) {
 	params, ok := parseBearerChallenge(challenge)
 	if !ok {
-		return "", false, nil
+		return "", 0, false, nil
 	}
 
 	realm, ok := params["realm"]
 	if !ok || realm == "" {
-		return "", false, fmt.Errorf("bearer challenge missing realm")
+		return "", 0, false, fmt.Errorf("bearer challenge missing realm")
 	}
 
 	tokenURL, err := url.Parse(realm)
 	if err != nil {
-		return "", false, fmt.Errorf("parsing bearer token realm: %w", err)
+		return "", 0, false, fmt.Errorf("parsing bearer token realm: %w", err)
 	}
 
 	query := tokenURL.Query()
@@ -271,38 +327,62 @@ func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL.String(), nil)
 	if err != nil {
-		return "", false, fmt.Errorf("creating bearer token request: %w", err)
+		return "", 0, false, fmt.Errorf("creating bearer token request: %w", err)
 	}
 	if auth != nil && auth.Type == domain.UpstreamAuthBasic {
-		req.SetBasicAuth(auth.Username, auth.Secret)
+		secret, err := c.resolveAuthSecret(auth)
+		if err != nil {
+			return "", 0, false, err
+		}
+		req.SetBasicAuth(auth.Username, string(secret))
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", false, err
+		return "", 0, false, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false, fmt.Errorf("unexpected bearer token status: %d", resp.StatusCode)
+		return "", 0, false, fmt.Errorf("unexpected bearer token status: %d", resp.StatusCode)
 	}
 
 	var payload struct {
 		Token       string `json:"token"`
 		AccessToken string `json:"access_token"`
+		ExpiresIn   int64  `json:"expires_in"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", false, fmt.Errorf("decoding bearer token response: %w", err)
+		return "", 0, false, fmt.Errorf("decoding bearer token response: %w", err)
 	}
 
+	ttl := defaultBearerTokenTTL
+	if payload.ExpiresIn > 0 {
+		ttl = time.Duration(payload.ExpiresIn) * time.Second
+	}
 	if payload.Token != "" {
-		return payload.Token, true, nil
+		return payload.Token, ttl, true, nil
 	}
 	if payload.AccessToken != "" {
-		return payload.AccessToken, true, nil
+		return payload.AccessToken, ttl, true, nil
 	}
 
-	return "", false, fmt.Errorf("bearer token response missing token")
+	return "", 0, false, fmt.Errorf("bearer token response missing token")
+}
+
+func (c *OCIClient) resolveAuthSecret(auth *domain.UpstreamAuth) ([]byte, error) {
+	if auth == nil || auth.Secret == "" {
+		return nil, nil
+	}
+	raw := []byte(auth.Secret)
+	if c.secretResolver == nil {
+		return raw, nil
+	}
+	secret, err := c.secretResolver.ResolveSecret(raw)
+	if err != nil {
+		return nil, fmt.Errorf("resolving upstream auth secret: %w", err)
+	}
+	return secret, nil
 }
 
 func parseBearerChallenge(challenge string) (map[string]string, bool) {
@@ -329,4 +409,116 @@ func parseBearerChallenge(challenge string) (map[string]string, bool) {
 	}
 
 	return params, true
+}
+
+func bearerTokenCacheKey(req *http.Request, upstream domain.Upstream) (string, bool) {
+	if req == nil || req.URL == nil {
+		return "", false
+	}
+	auth := upstream.Auth
+	if auth != nil && auth.Type == domain.UpstreamAuthBearerToken {
+		return "", false
+	}
+
+	repository, ok := repositoryFromOCIPath(req.URL.Path)
+	if !ok {
+		return "", false
+	}
+
+	principal := "anonymous"
+	if auth != nil {
+		principal = string(auth.Type) + ":" + auth.Username
+	}
+
+	return upstream.TenantID + "|" + upstream.ID + "|" + req.URL.Scheme + "://" + req.URL.Host + "|" + repository + "|" + principal, true
+}
+
+func repositoryFromOCIPath(path string) (string, bool) {
+	const prefix = "/v2/"
+	after, ok := strings.CutPrefix(path, prefix)
+	if !ok {
+		return "", false
+	}
+	for _, marker := range []string{"/manifests/", "/blobs/"} {
+		repository, _, found := strings.Cut(after, marker)
+		if found && repository != "" {
+			return repository, true
+		}
+	}
+	return "", false
+}
+
+type bearerTokenCache struct {
+	mu         sync.Mutex
+	now        func() time.Time
+	maxEntries int
+	entries    map[string]cachedBearerToken
+}
+
+type cachedBearerToken struct {
+	token     string
+	expiresAt time.Time
+}
+
+func newBearerTokenCache(maxEntries int) *bearerTokenCache {
+	if maxEntries <= 0 {
+		maxEntries = defaultBearerTokenCacheMaxEntries
+	}
+	return &bearerTokenCache{
+		now:        time.Now,
+		maxEntries: maxEntries,
+		entries:    make(map[string]cachedBearerToken),
+	}
+}
+
+func (c *bearerTokenCache) Get(key string) (string, bool) {
+	if c == nil || key == "" {
+		return "", false
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	entry, ok := c.entries[key]
+	if !ok {
+		return "", false
+	}
+	if !entry.expiresAt.After(c.now()) {
+		delete(c.entries, key)
+		return "", false
+	}
+	return entry.token, true
+}
+
+func (c *bearerTokenCache) Set(key, token string, ttl time.Duration) {
+	if c == nil || key == "" || token == "" {
+		return
+	}
+	if ttl <= 0 {
+		ttl = defaultBearerTokenTTL
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := c.now()
+	if len(c.entries) >= c.maxEntries {
+		for entryKey, entry := range c.entries {
+			if !entry.expiresAt.After(now) {
+				delete(c.entries, entryKey)
+			}
+		}
+	}
+	if len(c.entries) >= c.maxEntries {
+		c.entries = make(map[string]cachedBearerToken)
+	}
+
+	expiresAt := now.Add(ttl)
+	if ttl > bearerTokenExpirySkew {
+		expiresAt = expiresAt.Add(-bearerTokenExpirySkew)
+	}
+	c.entries[key] = cachedBearerToken{
+		token:     token,
+		expiresAt: expiresAt,
+	}
 }

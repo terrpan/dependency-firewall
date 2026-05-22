@@ -2,16 +2,26 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
 )
 
 func TestProxyHealthChecker_UsesProxyResponse(t *testing.T) {
@@ -68,10 +78,107 @@ func TestRegisterProxyRoutes_UsesBundleBackedTenantLookup(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestOCIClientOptions_ProxyModeUsesStrictResolver(t *testing.T) {
+	t.Parallel()
+
+	certFile, keyFile := writeTestCertificate(t)
+	cfg := &config.Config{
+		Runtime: config.RuntimeConfig{Mode: config.RuntimeModeProxy},
+		Bundle: config.BundleConfig{TLS: config.BundleTLSConfig{
+			Mode:     "mtls",
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		}},
+	}
+
+	options, err := ociClientOptions(cfg)
+	require.NoError(t, err)
+
+	client := upstream.NewOCIClient(http.DefaultClient, options...)
+	auth := &domain.UpstreamAuth{Type: domain.UpstreamAuthBearerToken, Secret: "plaintext-token"}
+	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("strict resolver should reject plaintext before sending request")
+	}))
+	defer registry.Close()
+
+	_, err = client.FetchMetadata(context.Background(), domain.Upstream{BaseURL: registry.URL, Auth: auth}, domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: "acme",
+		Name:      "app",
+		Version:   "1.0.0",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hybrid secret envelope is required")
+}
+
+func TestOCIClientOptions_AllInOneModeUsesLegacyCompatibleResolver(t *testing.T) {
+	t.Parallel()
+
+	certFile, keyFile := writeTestCertificate(t)
+	cfg := &config.Config{
+		Runtime: config.RuntimeConfig{Mode: config.RuntimeModeAllInOne},
+		Bundle: config.BundleConfig{TLS: config.BundleTLSConfig{
+			Mode:     "mtls",
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		}},
+	}
+
+	options, err := ociClientOptions(cfg)
+	require.NoError(t, err)
+
+	client := upstream.NewOCIClient(http.DefaultClient, options...)
+	auth := &domain.UpstreamAuth{Type: domain.UpstreamAuthBearerToken, Secret: "plaintext-token"}
+	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer plaintext-token", r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"schemaVersion":2}`))
+	}))
+	defer registry.Close()
+
+	resp, err := client.FetchMetadata(context.Background(), domain.Upstream{BaseURL: registry.URL, Auth: auth}, domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: "acme",
+		Name:      "app",
+		Version:   "1.0.0",
+	})
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+}
+
 type staticBundleProvider struct {
 	bundle *domain.TenantBundle
 }
 
 func (p staticBundleProvider) GetTenantBundle(context.Context, string) (*domain.TenantBundle, error) {
 	return p.bundle, nil
+}
+
+func writeTestCertificate(t *testing.T) (string, string) {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test-proxy"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "cert.pem")
+	keyFile := filepath.Join(dir, "key.pem")
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	require.NoError(t, os.WriteFile(certFile, certPEM, 0o600))
+
+	keyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: keyBytes})
+	require.NoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
+
+	return certFile, keyFile
 }

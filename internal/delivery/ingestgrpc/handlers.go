@@ -13,7 +13,7 @@ func (s *Server) RecordDecision(ctx context.Context, req *RecordDecisionRequest)
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "decision is required")
 	}
-	decision, err := req.Decision.toDomain()
+	decision, err := req.Decision.ToDomain()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid decision: %v", err)
 	}
@@ -31,7 +31,7 @@ func (s *Server) GetDecisionByArtifact(ctx context.Context, req *GetDecisionByAr
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
-	decision, err := s.service.GetDecisionByArtifact(ctx, req.TenantID, req.Artifact.toDomain())
+	decision, err := s.service.GetDecisionByArtifact(ctx, req.TenantID, req.Artifact.ToDomain())
 	if err != nil {
 		return nil, toStatusError(err)
 	}
@@ -71,7 +71,7 @@ func (s *Server) RecordAuditEvent(ctx context.Context, req *RecordAuditEventRequ
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "event is required")
 	}
-	event, err := req.Event.toDomain()
+	event, err := req.Event.ToDomain()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid event: %v", err)
 	}

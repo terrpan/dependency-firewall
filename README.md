@@ -141,6 +141,8 @@ The Valkey configuration surface is unchanged by the client migration: keep usin
 
 Authenticated OCI upstreams store Basic/PAT or static bearer-token credentials server-side. Secrets are encrypted in PostgreSQL with `secrets.upstream_auth_key` and are never returned from the API. Split `control-plane` and `proxy` modes require `bundle.tls.mode=mtls`; the control plane also requires `bundle.tls.authorized_clients` so each proxy certificate identity is authorized for explicit tenant IDs before bundles or ingest operations can access tenant data.
 
+In split mode, upstream auth secrets are additionally encrypted per proxy in the bundle gRPC response. The control plane encrypts each bundle secret to the requesting proxy's mTLS certificate public key, and the proxy keeps that version-2 envelope in its runtime bundle cache. OCI upstream requests decrypt the envelope with the local proxy private key only while constructing outbound registry auth. Legacy plaintext bundle secrets are still accepted by the proxy for local/backward-compatible flows, but mTLS bundle delivery emits encrypted envelopes.
+
 OCI artifact cache entries are scoped by `tenant_id`, `upstream_id`, artifact kind, and immutable digest. A digest match from one upstream is not reused for another upstream.
 
 See [mTLS Configuration](./docs/mtls.md) for split-mode certificate, identity, and tenant authorization examples.

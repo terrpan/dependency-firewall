@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -30,12 +31,14 @@ type dependencies struct {
 	pool         *pgxpool.Pool
 	valkeyClient valkeygo.Client
 
-	tenantRepo         port.TenantRepository
-	policyRepo         port.PolicyRepository
-	policyRevisionRepo port.PolicyRevisionRepository
-	decisionRepo       port.DecisionRepository
-	auditRepo          *postgres.AuditEventRepository
-	upstreamRepo       port.UpstreamRepository
+	tenantRepo          port.TenantRepository
+	policyRepo          port.PolicyRepository
+	policyRevisionRepo  port.PolicyRevisionRepository
+	decisionRepo        port.DecisionRepository
+	auditRepo           *postgres.AuditEventRepository
+	upstreamRepo        port.UpstreamRepository
+	bundleUpstreamRepo  port.BundleUpstreamRepository
+	authSecretRewrapper port.UpstreamAuthSecretRewrapper
 
 	decisionCache port.DecisionCache
 	metadataCache port.MetadataCache
@@ -89,7 +92,10 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		deps.policyRevisionRepo = postgres.NewPolicyRevisionRepository(pool)
 		deps.decisionRepo = postgres.NewDecisionRepository(pool)
 		deps.auditRepo = postgres.NewAuditEventRepository(pool)
-		deps.upstreamRepo = postgres.NewUpstreamRepository(pool, secretCodec)
+		upstreamRepo := postgres.NewUpstreamRepository(pool, secretCodec)
+		deps.upstreamRepo = upstreamRepo
+		deps.bundleUpstreamRepo = upstreamRepo
+		deps.authSecretRewrapper = upstreamRepo
 	}
 
 	auditRecorders := make([]port.AuditEventRecorder, 0, 2)
@@ -114,7 +120,12 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 	deps.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
 	deps.enrichmentService = service.NewEnrichmentService(deps.enricher, deps.metadataCache, logger, deps.auditService)
 
-	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)))
+	ociOptions, err := ociClientOptions(cfg)
+	if err != nil {
+		deps.close()
+		return nil, err
+	}
+	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), ociOptions...)
 	deps.ociClient = baseOCIClient
 	if cfg.OCICache.Enabled {
 		artifactCache, err := newOCIArtifactCache(cfg.OCICache)
@@ -127,6 +138,29 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(30 * time.Second)))
 
 	return deps, nil
+}
+
+func ociClientOptions(cfg *config.Config) ([]upstream.OCIClientOption, error) {
+	if cfg.Bundle.TLS.Mode != "mtls" {
+		return nil, nil
+	}
+	if cfg.Runtime.Mode != config.RuntimeModeProxy && cfg.Runtime.Mode != config.RuntimeModeAllInOne {
+		return nil, nil
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.Bundle.TLS.CertFile, cfg.Bundle.TLS.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("loading proxy certificate private key for upstream auth: %w", err)
+	}
+	if cert.PrivateKey == nil {
+		return nil, fmt.Errorf("proxy certificate private key is missing")
+	}
+	resolver := secrets.NewHybridPrivateKeyResolver(cert.PrivateKey)
+	if cfg.Runtime.Mode == config.RuntimeModeProxy {
+		resolver = secrets.NewStrictHybridPrivateKeyResolver(cert.PrivateKey)
+	}
+	return []upstream.OCIClientOption{
+		upstream.WithAuthSecretResolver(resolver),
+	}, nil
 }
 
 func upstreamSecretCodec(cfg *config.Config) (*secrets.AESGCMCodec, error) {

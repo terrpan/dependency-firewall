@@ -173,7 +173,7 @@ flowchart TB
 
 ## Split-mode control-plane security
 
-Split mode treats the proxy/control-plane gRPC connection as a tenant data boundary. mTLS authenticates both processes, then the control plane authorizes the proxy certificate identity for the requested tenant before serving bundles or accepting ingest writes.
+Split mode treats the proxy/control-plane gRPC connection as a tenant data boundary. mTLS authenticates both processes, then the control plane authorizes the proxy certificate identity for the requested tenant before serving bundles or accepting ingest writes. When bundles contain upstream auth secrets, delivery encrypts each secret to the requesting proxy certificate public key; proxy-side bundle infrastructure keeps the envelope in the runtime cache, and OCI upstream infrastructure decrypts it only while constructing outbound registry auth.
 
 ```mermaid
 flowchart LR
@@ -196,7 +196,7 @@ flowchart LR
     authz -.->|deny cross-tenant request| tenantB
 ```
 
-The authorization decision uses the decoded RPC request's `tenant_id`: bundle requests use the requested tenant, and ingest requests use the tenant embedded in the decision or audit payload. Delivery packages own extraction from their wire request types; the shared gRPC infrastructure only enforces the configured identity-to-tenant map.
+The authorization decision uses the decoded RPC request's `tenant_id`: bundle requests use the requested tenant, and ingest requests use the tenant embedded in the decision or audit payload. Delivery packages own extraction from their wire request types; the shared gRPC infrastructure only enforces the configured identity-to-tenant map. Bundle secret encryption stays in `internal/delivery/bundlegrpc`, while hybrid crypto primitives live in `internal/infra/secrets` and proxy-side decryption lives in `internal/infra/upstream`.
 
 ## Control-plane Huma boundary
 
@@ -351,6 +351,20 @@ sequenceDiagram
 - request correlation uses a human-readable `X-Request-ID`
 - audit sink failure is configurable and defaults to fail-closed
 - future external shipping must remain compatible with tenant-scoped routing without changing core service signatures
+
+### Future audit performance
+
+Durable audit writes currently sit on the request path. In split proxy mode, each persisted audit event can require proxy-side fanout, a gRPC ingest call to the control plane, and an individual PostgreSQL insert. This preserves strict fail-closed behavior, but it can add avoidable latency on high-volume OCI pulls where one client operation fans out into manifest and blob requests.
+
+Future optimization should preserve OCI/security semantics while reducing request-path work:
+
+- keep critical audit events synchronous when `audit.failure_mode=fail_closed`, especially request denials, authorization denials, security errors, and durable decision persistence failures
+- move informational lifecycle events such as request received, evaluation started, artifact normalized, policies loaded, request allowed, and upstream fetch started to async audit, tracing, or sampled logging
+- add a bounded in-process async audit queue for non-critical events, with explicit backpressure behavior instead of unbounded goroutines
+- batch proxy-to-control-plane audit ingest and PostgreSQL writes so one pull does not create one gRPC round trip and one insert per audit event
+- avoid duplicate hot-path sinks by allowing durable PostgreSQL audit without also writing every audit event to stdout
+
+Any async mode must document its loss/backpressure behavior and should remain opt-in for deployments that require strict audit durability before a request can proceed.
 
 ## Deferred goal: graph-backed npm dependency context
 

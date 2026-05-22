@@ -2,18 +2,30 @@ package bundlegrpc
 
 import (
 	"context"
+	"crypto"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
+	"github.com/danielterry/dependency-firewall/internal/infra/secrets"
+	bundlewire "github.com/danielterry/dependency-firewall/internal/wire/bundlegrpc"
 )
 
-const serviceName = "dependencyfirewall.bundle.v1.BundleService"
+const serviceName = bundlewire.ServiceName
+
+type GetTenantBundleRequest = bundlewire.GetTenantBundleRequest
+type GetTenantBundleResponse = bundlewire.GetTenantBundleResponse
+type Bundle = bundlewire.Bundle
+type BundleTenant = bundlewire.BundleTenant
+type BundlePolicy = bundlewire.BundlePolicy
+type BundleUpstream = bundlewire.BundleUpstream
+type BundleUpstreamAuth = bundlewire.BundleUpstreamAuth
 
 type bundleService interface {
 	GetTenantBundle(context.Context, *GetTenantBundleRequest) (*GetTenantBundleResponse, error)
@@ -21,81 +33,24 @@ type bundleService interface {
 
 // Server serves tenant bundles over gRPC.
 type Server struct {
-	provider port.TenantBundleProvider
+	provider        port.TenantBundleProvider
+	secretRewrapper port.UpstreamAuthSecretRewrapper
 }
 
 // NewServer creates a new Server.
-func NewServer(provider port.TenantBundleProvider) *Server {
-	return &Server{provider: provider}
-}
-
-type GetTenantBundleRequest struct {
-	TenantID string `json:"tenant_id"`
-}
-
-type GetTenantBundleResponse struct {
-	Bundle Bundle `json:"bundle"`
-}
-
-type Bundle struct {
-	Tenant      BundleTenant     `json:"tenant"`
-	TenantID    string           `json:"tenant_id"`
-	Revision    string           `json:"revision"`
-	GeneratedAt string           `json:"generated_at"`
-	Policies    []BundlePolicy   `json:"policies"`
-	Upstreams   []BundleUpstream `json:"upstreams"`
-}
-
-type BundleTenant struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-}
-
-type BundlePolicy struct {
-	ID            string              `json:"id"`
-	TenantID      string              `json:"tenant_id"`
-	UpstreamID    string              `json:"upstream_id,omitempty"`
-	Name          string              `json:"name"`
-	Type          domain.PolicyType   `json:"type"`
-	Action        domain.PolicyAction `json:"action"`
-	SchemaVersion int                 `json:"schema_version"`
-	Config        json.RawMessage     `json:"config"`
-	Priority      int                 `json:"priority"`
-	Enabled       bool                `json:"enabled"`
-	Version       int                 `json:"version"`
-	CreatedAt     string              `json:"created_at"`
-	UpdatedAt     string              `json:"updated_at"`
-}
-
-type BundleUpstream struct {
-	ID           string               `json:"id"`
-	TenantID     string               `json:"tenant_id"`
-	Name         string               `json:"name"`
-	Ecosystem    domain.EcosystemType `json:"ecosystem"`
-	BaseURL      string               `json:"base_url"`
-	Capabilities []string             `json:"capabilities"`
-	Auth         *BundleUpstreamAuth  `json:"auth,omitempty"`
-	CreatedAt    string               `json:"created_at"`
-	UpdatedAt    string               `json:"updated_at"`
-}
-
-type BundleUpstreamAuth struct {
-	Type      domain.UpstreamAuthType `json:"type"`
-	Username  string                  `json:"username,omitempty"`
-	Secret    string                  `json:"secret,omitempty"`
-	UpdatedAt string                  `json:"updated_at,omitempty"`
+func NewServer(provider port.TenantBundleProvider, secretRewrapper port.UpstreamAuthSecretRewrapper) (*Server, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("bundle provider is required")
+	}
+	if secretRewrapper == nil {
+		return nil, fmt.Errorf("upstream auth secret rewrapper is required")
+	}
+	return &Server{provider: provider, secretRewrapper: secretRewrapper}, nil
 }
 
 // TenantIDFromRequest returns the tenant id carried by bundle gRPC requests.
 func TenantIDFromRequest(req any) string {
-	switch typed := req.(type) {
-	case *GetTenantBundleRequest:
-		return typed.TenantID
-	default:
-		return ""
-	}
+	return bundlewire.TenantIDFromRequest(req)
 }
 
 // Register registers the bundle service on the given gRPC registrar.
@@ -123,7 +78,7 @@ func (s *Server) GetTenantBundle(ctx context.Context, req *GetTenantBundleReques
 		return nil, err
 	}
 
-	response, err := toBundleResponse(bundle)
+	response, err := s.toBundleResponse(ctx, bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -158,22 +113,14 @@ func (s *Server) getTenantBundleHandler(
 
 // GetTenantBundle invokes the remote bundle service using the given client connection.
 func GetTenantBundle(ctx context.Context, conn grpc.ClientConnInterface, tenantID string) (*domain.TenantBundle, error) {
-	response := &GetTenantBundleResponse{}
-	err := conn.Invoke(
-		ctx,
-		"/"+serviceName+"/GetTenantBundle",
-		&GetTenantBundleRequest{TenantID: tenantID},
-		response,
-		grpc.ForceCodec(jsonCodec{}),
-	)
+	response, err := bundlewire.FetchTenantBundleResponse(ctx, conn, tenantID)
 	if err != nil {
 		return nil, err
 	}
-
-	return response.Bundle.toDomain()
+	return response.Bundle.ToDomain()
 }
 
-func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, error) {
+func (s *Server) toBundleResponse(ctx context.Context, bundle *domain.TenantBundle) (*GetTenantBundleResponse, error) {
 	tenant := bundle.Tenant
 	if tenant.ID == "" {
 		tenant.ID = bundle.TenantID
@@ -184,12 +131,12 @@ func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, er
 			Tenant: BundleTenant{
 				ID:        tenant.ID,
 				Name:      tenant.Name,
-				CreatedAt: tenant.CreatedAt.UTC().Format(timeLayout),
-				UpdatedAt: tenant.UpdatedAt.UTC().Format(timeLayout),
+				CreatedAt: tenant.CreatedAt.UTC().Format(bundlewire.TimeLayout),
+				UpdatedAt: tenant.UpdatedAt.UTC().Format(bundlewire.TimeLayout),
 			},
 			TenantID:    tenant.ID,
 			Revision:    bundle.Revision,
-			GeneratedAt: bundle.GeneratedAt.UTC().Format(timeLayout),
+			GeneratedAt: bundle.GeneratedAt.UTC().Format(bundlewire.TimeLayout),
 			Policies:    make([]BundlePolicy, 0, len(bundle.Policies)),
 			Upstreams:   make([]BundleUpstream, 0, len(bundle.Upstreams)),
 		},
@@ -213,22 +160,48 @@ func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, er
 			Priority:      bundle.Policies[i].Priority,
 			Enabled:       bundle.Policies[i].Enabled,
 			Version:       bundle.Policies[i].Version,
-			CreatedAt:     bundle.Policies[i].CreatedAt.UTC().Format(timeLayout),
-			UpdatedAt:     bundle.Policies[i].UpdatedAt.UTC().Format(timeLayout),
+			CreatedAt:     bundle.Policies[i].CreatedAt.UTC().Format(bundlewire.TimeLayout),
+			UpdatedAt:     bundle.Policies[i].UpdatedAt.UTC().Format(bundlewire.TimeLayout),
 		})
 	}
 
+	var peerPublicKey crypto.PublicKey
 	for i := range bundle.Upstreams {
 		effectiveCapabilities := bundle.Upstreams[i].EffectiveCapabilities()
 		var auth *BundleUpstreamAuth
 		if bundle.Upstreams[i].Auth != nil {
+			secret := ""
+			if bundle.Upstreams[i].Auth.Configured() {
+				// SECURITY: bundle domain memory must not carry plaintext upstream
+				// auth secrets; decrypt and re-encrypt in one rewrapper operation.
+				if bundle.Upstreams[i].Auth.Secret != "" {
+					return nil, fmt.Errorf("%w: bundle upstream auth secret must not be present in domain bundle", domain.ErrUpstreamAuthInvalid)
+				}
+				if peerPublicKey == nil {
+					var err error
+					peerPublicKey, err = peerCertificatePublicKey(ctx)
+					if err != nil {
+						return nil, err
+					}
+				}
+				encrypted, err := s.encryptUpstreamAuthSecret(
+					ctx,
+					bundle.TenantID,
+					bundle.Upstreams[i].ID,
+					peerPublicKey,
+				)
+				if err != nil {
+					return nil, err
+				}
+				secret = string(encrypted)
+			}
 			auth = &BundleUpstreamAuth{
 				Type:     bundle.Upstreams[i].Auth.Type,
 				Username: bundle.Upstreams[i].Auth.Username,
-				Secret:   bundle.Upstreams[i].Auth.Secret,
+				Secret:   secret,
 			}
 			if !bundle.Upstreams[i].Auth.UpdatedAt.IsZero() {
-				auth.UpdatedAt = bundle.Upstreams[i].Auth.UpdatedAt.UTC().Format(timeLayout)
+				auth.UpdatedAt = bundle.Upstreams[i].Auth.UpdatedAt.UTC().Format(bundlewire.TimeLayout)
 			}
 		}
 		response.Bundle.Upstreams = append(response.Bundle.Upstreams, BundleUpstream{
@@ -239,147 +212,39 @@ func toBundleResponse(bundle *domain.TenantBundle) (*GetTenantBundleResponse, er
 			BaseURL:      bundle.Upstreams[i].BaseURL,
 			Capabilities: domain.UpstreamCapabilityStrings(effectiveCapabilities),
 			Auth:         auth,
-			CreatedAt:    bundle.Upstreams[i].CreatedAt.UTC().Format(timeLayout),
-			UpdatedAt:    bundle.Upstreams[i].UpdatedAt.UTC().Format(timeLayout),
+			CreatedAt:    bundle.Upstreams[i].CreatedAt.UTC().Format(bundlewire.TimeLayout),
+			UpdatedAt:    bundle.Upstreams[i].UpdatedAt.UTC().Format(bundlewire.TimeLayout),
 		})
 	}
 
 	return response, nil
 }
 
-const timeLayout = "2006-01-02T15:04:05.999999999Z07:00"
+func (s *Server) encryptUpstreamAuthSecret(ctx context.Context, tenantID, upstreamID string, publicKey crypto.PublicKey) ([]byte, error) {
+	return s.secretRewrapper.RewrapUpstreamAuthSecret(ctx, tenantID, upstreamID, func(plaintext []byte) ([]byte, error) {
+		return secrets.EncryptForPublicKey(publicKey, plaintext)
+	})
+}
 
-func (b Bundle) toDomain() (*domain.TenantBundle, error) {
-	generatedAt, err := parseBundleTime(b.GeneratedAt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing bundle generated_at: %w", err)
-	}
-	tenant, err := b.Tenant.toDomain()
+func peerCertificatePublicKey(ctx context.Context) (crypto.PublicKey, error) {
+	cert, err := peerCertificate(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	result := &domain.TenantBundle{
-		Tenant:      tenant,
-		TenantID:    b.TenantID,
-		Revision:    b.Revision,
-		GeneratedAt: generatedAt,
-		Policies:    make([]domain.Policy, 0, len(b.Policies)),
-		Upstreams:   make([]domain.Upstream, 0, len(b.Upstreams)),
+	if cert.PublicKey == nil {
+		return nil, fmt.Errorf("peer certificate public key is missing")
 	}
-	if result.TenantID == "" {
-		result.TenantID = result.Tenant.ID
-	}
-	if result.Tenant.ID == "" {
-		result.Tenant.ID = result.TenantID
-	}
-
-	for i := range b.Policies {
-		policyDef, err := b.Policies[i].toDomain()
-		if err != nil {
-			return nil, err
-		}
-		result.Policies = append(result.Policies, *policyDef)
-	}
-
-	for i := range b.Upstreams {
-		upstream, err := b.Upstreams[i].toDomain()
-		if err != nil {
-			return nil, err
-		}
-		result.Upstreams = append(result.Upstreams, *upstream)
-	}
-
-	return result, nil
+	return cert.PublicKey, nil
 }
 
-func (t BundleTenant) toDomain() (domain.Tenant, error) {
-	createdAt, err := parseBundleTime(t.CreatedAt)
-	if err != nil {
-		return domain.Tenant{}, fmt.Errorf("parsing tenant created_at: %w", err)
+func peerCertificate(ctx context.Context) (*x509.Certificate, error) {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("peer certificate is required for encrypted upstream auth")
 	}
-	updatedAt, err := parseBundleTime(t.UpdatedAt)
-	if err != nil {
-		return domain.Tenant{}, fmt.Errorf("parsing tenant updated_at: %w", err)
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok || len(tlsInfo.State.PeerCertificates) == 0 {
+		return nil, fmt.Errorf("peer certificate is required for encrypted upstream auth")
 	}
-
-	return domain.Tenant{
-		ID:        t.ID,
-		Name:      t.Name,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
-	}, nil
-}
-
-func (p BundlePolicy) toDomain() (*domain.Policy, error) {
-	createdAt, err := parseBundleTime(p.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing policy created_at: %w", err)
-	}
-	updatedAt, err := parseBundleTime(p.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing policy updated_at: %w", err)
-	}
-	config, err := corepolicy.DecodeConfigJSON(p.Type, p.SchemaVersion, p.Config)
-	if err != nil {
-		return nil, fmt.Errorf("decoding policy config: %w", err)
-	}
-
-	return &domain.Policy{
-		ID:            p.ID,
-		TenantID:      p.TenantID,
-		UpstreamID:    p.UpstreamID,
-		Name:          p.Name,
-		Type:          p.Type,
-		Action:        p.Action,
-		SchemaVersion: p.SchemaVersion,
-		Config:        config,
-		Priority:      p.Priority,
-		Enabled:       p.Enabled,
-		Version:       p.Version,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
-	}, nil
-}
-
-func (u BundleUpstream) toDomain() (*domain.Upstream, error) {
-	createdAt, err := parseBundleTime(u.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing upstream created_at: %w", err)
-	}
-	updatedAt, err := parseBundleTime(u.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing upstream updated_at: %w", err)
-	}
-
-	upstream := &domain.Upstream{
-		ID:           u.ID,
-		TenantID:     u.TenantID,
-		Name:         u.Name,
-		Ecosystem:    u.Ecosystem,
-		BaseURL:      u.BaseURL,
-		Capabilities: domain.ParseUpstreamCapabilities(u.Capabilities),
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
-	}
-	if u.Auth != nil && u.Auth.Type != "" && u.Auth.Type != domain.UpstreamAuthNone {
-		authUpdatedAt, err := parseBundleTime(u.Auth.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("parsing upstream auth updated_at: %w", err)
-		}
-		upstream.Auth = &domain.UpstreamAuth{
-			Type:      u.Auth.Type,
-			Username:  u.Auth.Username,
-			Secret:    u.Auth.Secret,
-			UpdatedAt: authUpdatedAt,
-		}
-	}
-	return upstream, nil
-}
-
-func parseBundleTime(raw string) (time.Time, error) {
-	if raw == "" {
-		return time.Time{}, nil
-	}
-	return time.Parse(timeLayout, raw)
+	return tlsInfo.State.PeerCertificates[0], nil
 }

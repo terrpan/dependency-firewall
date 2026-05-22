@@ -56,6 +56,7 @@ sequenceDiagram
     participant crypto as AES-GCM secret codec
     participant db as PostgreSQL upstreams
     participant bundle as BundleService
+    participant wrap as per-proxy envelope crypto
     participant proxy as Authorized proxy
     participant registry as OCI registry
 
@@ -68,18 +69,23 @@ sequenceDiagram
     api-->>ui: response with auth status only
 
     proxy->>bundle: GetTenantBundle over authorized mTLS
-    bundle->>repo: load tenant upstreams
-    repo->>crypto: decrypt configured auth
-    crypto-->>repo: usable secret in memory
-    bundle-->>proxy: bundle for authorized tenant
+    bundle->>repo: load tenant upstream metadata without auth secret decrypt
+    bundle->>repo: rewrap each configured auth secret
+    repo->>crypto: decrypt one stored secret
+    repo->>wrap: encrypt to proxy mTLS public key
+    wrap-->>bundle: version-2 encrypted envelope
+    bundle-->>proxy: bundle for authorized tenant with encrypted auth envelopes
+    proxy->>proxy: cache encrypted auth envelopes
+    proxy->>proxy: decrypt envelope with proxy private key for outbound auth
     proxy->>registry: upstream request using server-side auth
 ```
 
 Secret rules:
-- plaintext credentials only exist in request memory, repository decrypt/encrypt memory, proxy bundle memory, and outbound registry requests
+- plaintext credentials only exist in request memory, repository decrypt/encrypt memory, callback-scoped bundle rewrap memory, outbound proxy request construction, and outbound registry requests
 - PostgreSQL stores encrypted secret envelopes, not plaintext credentials
+- split-mode proxy bundle caches store per-proxy encrypted auth envelopes, not plaintext credentials
 - control-plane API responses and UI details never include password, PAT, or bearer token values
-- split-mode bundles can include usable auth only after mTLS peer verification and tenant authorization
+- split-mode bundles include version-2 envelopes encrypted to the requesting proxy certificate public key; usable plaintext auth appears only during proxy-side outbound auth construction
 
 ### audit_events
 
