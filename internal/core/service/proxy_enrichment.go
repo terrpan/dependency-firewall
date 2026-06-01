@@ -21,7 +21,7 @@ func (s *AccessService) enrichArtifact(ctx context.Context, req domain.AccessReq
 		return nil, err
 	}
 
-	enrichCtx, enrichSpan := tracer.Start(ctx, "access.enrich_artifact")
+	enrichCtx, enrichSpan := serviceTracer().Start(ctx, "access.enrich_artifact")
 	metadata, err := s.enrichment.EnrichWithCorrelation(enrichCtx, req.TenantID, req.RequestID, req.Artifact)
 	if err != nil {
 		recordSpanError(enrichSpan, err)

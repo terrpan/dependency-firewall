@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/core/policy/condition"
 )
 
 func TestTypeCatalog_CoversSupportedPolicyTypes(t *testing.T) {
@@ -33,12 +32,25 @@ func TestTypeCatalog_CoversSupportedPolicyTypes(t *testing.T) {
 		_, err := newConfigForType(descriptor.Type, descriptor.CurrentSchemaVersion)
 		require.NoError(t, err, "catalog type %q must have a config decoder", descriptor.Type)
 
-		_, err = condition.ForType(descriptor.Type)
+		_, err = conditionForType(descriptor.Type)
 		require.NoError(t, err, "catalog type %q must have a condition evaluator", descriptor.Type)
+
+		requiresMetadata := RequiresExternalMetadata(descriptor.Type)
+		if descriptor.Type == domain.PolicyTypeCVSSThreshold ||
+			descriptor.Type == domain.PolicyTypeMinimumAge ||
+			descriptor.Type == domain.PolicyTypeMaximumAge ||
+			descriptor.Type == domain.PolicyTypeScorecard ||
+			descriptor.Type == domain.PolicyTypeLicense ||
+			descriptor.Type == domain.PolicyTypeLicenseAllowlist {
+			assert.True(t, requiresMetadata, "policy type %q should require external metadata", descriptor.Type)
+		} else {
+			assert.False(t, requiresMetadata, "policy type %q should not require external metadata", descriptor.Type)
+		}
 	}
 
-	require.Len(t, seen, len(knownPolicyTypes))
-	for _, policyType := range knownPolicyTypes {
+	require.Len(t, seen, len(policyDefinitions))
+	for i := range policyDefinitions {
+		policyType := policyDefinitions[i].descriptor.Type
 		_, ok := seen[policyType]
 		assert.True(t, ok, "supported policy type %q is missing from the catalog", policyType)
 	}

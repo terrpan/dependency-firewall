@@ -15,6 +15,35 @@
 - New npm and OCI client setup should use explicit upstream-specific routes or hostnames.
 - Legacy tenant-only routes and hostnames remain available and resolve to the most recently updated upstream for that tenant and ecosystem.
 
+For complete upstream/ecosystem extension guidance, see `docs/adding-upstream.md`.
+
+## Protocol adapter extension checklist
+
+Use this checklist when adding a new proxy protocol adapter or significantly extending npm/OCI behavior.
+
+1. Add/update delivery parsing under `internal/delivery/<protocol>/`.
+2. Resolve `tenant_id` and `upstream_id` from route/host shape.
+3. Normalize request into `domain.AccessRequest`.
+4. Call `AccessService.Evaluate` before upstream fetch.
+5. Keep deny and allow responses protocol-compatible.
+6. Keep audit flow aligned with current handlers and shared helper boundaries in `internal/delivery/proxyflow/`.
+7. Keep upstream fetch and cache operations tenant/upstream-scoped.
+8. Add protocol-focused tests for resolution + deny/allow behavior.
+
+### Required invariants
+
+- Do not bypass `AccessService` with direct policy or repository calls.
+- Keep deny-wins behavior and policy evaluation ordering unchanged.
+- Keep enrichment conditional on policy metadata requirements.
+- Keep split-mode tenant authorization and mTLS expectations unchanged.
+- Keep cache isolation by both `tenant_id` and `upstream_id`.
+
+### Expected test paths
+
+- `internal/delivery/<protocol>/*_test.go`
+- `internal/core/service/proxy_test.go`
+- `internal/core/policy/*_test.go` when compatibility or policy metadata is affected
+
 ## Split-mode auth and authorization
 
 ```mermaid

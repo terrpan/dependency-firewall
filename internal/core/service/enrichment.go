@@ -62,7 +62,7 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	tenantID, correlationID string,
 	artifact domain.ArtifactIdentity,
 ) (*domain.ArtifactMetadata, error) {
-	ctx, span := tracer.Start(ctx, "enrichment.fetch_metadata")
+	ctx, span := serviceTracer().Start(ctx, "enrichment.fetch_metadata")
 	span.SetAttributes(
 		attribute.String("tenant.id", tenantID),
 		attribute.String("artifact.ecosystem", string(artifact.Ecosystem)),
@@ -73,7 +73,7 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	}
 	defer span.End()
 
-	cacheCtx, cacheSpan := tracer.Start(ctx, "enrichment.metadata_cache_lookup")
+	cacheCtx, cacheSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_lookup")
 	cached, err := s.metadataCache.Get(cacheCtx, tenantID, artifact)
 	if err != nil {
 		recordSpanErrorIfUnexpected(cacheSpan, err)
@@ -113,7 +113,7 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 		return nil, auditErr
 	}
 
-	enrichCtx, enrichSpan := tracer.Start(ctx, "enrichment.query_sources")
+	enrichCtx, enrichSpan := serviceTracer().Start(ctx, "enrichment.query_sources")
 	metadata, err := s.enricher.Enrich(enrichCtx, artifact)
 	if err != nil {
 		recordSpanError(enrichSpan, err)
@@ -146,7 +146,7 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 
 	ttl := s.cacheTTL(artifact)
 	if metadata != nil {
-		writeCtx, writeSpan := tracer.Start(ctx, "enrichment.metadata_cache_store")
+		writeCtx, writeSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_store")
 		if cacheErr := s.metadataCache.Set(writeCtx, tenantID, artifact, metadata, ttl); cacheErr != nil {
 			recordSpanError(writeSpan, cacheErr)
 			s.logger.WarnContext(ctx, "failed to cache metadata",

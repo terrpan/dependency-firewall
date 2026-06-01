@@ -11,7 +11,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var tracer = otel.Tracer("github.com/danielterry/dependency-firewall/internal/core/service")
+const serviceTracerName = "github.com/danielterry/dependency-firewall/internal/core/service"
+
+func serviceTracer() trace.Tracer {
+	return otel.Tracer(serviceTracerName)
+}
 
 func accessRequestAttributes(req domain.AccessRequest) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{

@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -15,11 +16,18 @@ func ValidatePolicy(p domain.Policy) error {
 	if strings.TrimSpace(p.Name) == "" {
 		return invalidPolicyf("name is required")
 	}
-	if _, ok := knownPolicyTypes[string(p.Type)]; !ok {
+	definition, ok := policyDefinitionFor(p.Type)
+	if !ok {
 		return invalidPolicyf("unknown policy type %q", p.Type)
 	}
 	if _, ok := validActions[string(p.Action)]; !ok {
 		return invalidPolicyf("invalid action %q, must be %q or %q", p.Action, domain.PolicyActionAllow, domain.PolicyActionDeny)
+	}
+	if !slices.Contains(definition.descriptor.SupportedActions, p.Action) {
+		if len(definition.descriptor.SupportedActions) == 1 {
+			return invalidPolicyf("policy type %q requires action %q", p.Type, definition.descriptor.SupportedActions[0])
+		}
+		return invalidPolicyf("policy type %q does not support action %q", p.Type, p.Action)
 	}
 	schemaVersion, err := normalizeSchemaVersion(p.Type, p.SchemaVersion)
 	if err != nil {
@@ -33,15 +41,6 @@ func ValidatePolicy(p domain.Policy) error {
 	}
 	if !configTypeMatchesPolicy(p.Type, p.Config) {
 		return invalidPolicyf("config type %T does not match policy type %q", p.Config, p.Type)
-	}
-	if p.Type == domain.PolicyTypeLicenseAllowlist && p.Action != domain.PolicyActionDeny {
-		return invalidPolicyf("policy type %q requires action %q", p.Type, domain.PolicyActionDeny)
-	}
-	if p.Type == domain.PolicyTypeScorecard && p.Action != domain.PolicyActionDeny {
-		return invalidPolicyf("policy type %q requires action %q", p.Type, domain.PolicyActionDeny)
-	}
-	if p.Type == domain.PolicyTypeNamespaceAllowlist && p.Action != domain.PolicyActionDeny {
-		return invalidPolicyf("policy type %q requires action %q", p.Type, domain.PolicyActionDeny)
 	}
 	if err := p.Config.Validate(); err != nil {
 		return invalidPolicyf("%v", err)

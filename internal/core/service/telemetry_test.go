@@ -199,6 +199,7 @@ func TestAccessService_DecisionCacheLookupSpanStatus(t *testing.T) {
 				&spyUpstreamClient{},
 				&spyUpstreamRepository{},
 				slog.New(slog.NewTextHandler(io.Discard, nil)),
+				nil,
 			)
 			req := domain.AccessRequest{
 				TenantID: "tenant-1",
@@ -228,13 +229,10 @@ func setupServiceTracing(t *testing.T) (*tracetest.InMemoryExporter, *sdktrace.T
 		sdktrace.WithSyncer(exporter),
 	)
 	previousProvider := otel.GetTracerProvider()
-	previousTracer := tracer
 	otel.SetTracerProvider(provider)
-	tracer = provider.Tracer("github.com/danielterry/dependency-firewall/internal/core/service")
 	t.Cleanup(func() {
 		require.NoError(t, provider.Shutdown(context.Background()))
 		otel.SetTracerProvider(previousProvider)
-		tracer = previousTracer
 	})
 	return exporter, provider
 }

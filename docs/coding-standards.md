@@ -6,6 +6,7 @@
 - Prefer explicit constructors such as NewService or NewRepository.
 - Keep interfaces small and place them near the consuming code.
 - Avoid global mutable state.
+- Configure tracing through providers and explicit construction patterns; do not mutate package-level tracer variables in tests.
 - Prefer standard library facilities unless a dependency provides clear value.
 
 ## Layering standards
@@ -45,4 +46,4 @@
 - Service tests should use mocked ports.
 - Repository tests must verify tenant scoping.
 - Use testcontainers or similar for integration tests against PostgreSQL and Valkey.
-- Use testify package for tests 
+- Use testify package for tests

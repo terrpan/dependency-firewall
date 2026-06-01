@@ -256,6 +256,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -342,6 +343,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -410,6 +412,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			upstreamClient,
 			upstreamRepo,
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -489,6 +492,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			upstreamClient,
 			upstreamRepo,
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		requestUpstream := domain.Upstream{
@@ -553,6 +557,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -606,6 +611,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -659,6 +665,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -709,6 +716,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -747,6 +755,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -787,6 +796,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 				&spyUpstreamClient{},
 				&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 				slog.New(slog.NewTextHandler(io.Discard, nil)),
+				nil,
 			)
 
 			decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -843,6 +853,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 				&spyUpstreamClient{},
 				&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 				slog.New(slog.NewTextHandler(io.Discard, nil)),
+				nil,
 			)
 
 			decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
@@ -897,6 +908,7 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			&spyUpstreamClient{},
 			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
 			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
 		)
 
 		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{

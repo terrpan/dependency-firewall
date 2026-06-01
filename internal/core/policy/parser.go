@@ -9,19 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var knownPolicyTypes = map[string]domain.PolicyType{
-	string(domain.PolicyTypeCVSSThreshold):      domain.PolicyTypeCVSSThreshold,
-	string(domain.PolicyTypeMinimumAge):         domain.PolicyTypeMinimumAge,
-	string(domain.PolicyTypeMaximumAge):         domain.PolicyTypeMaximumAge,
-	string(domain.PolicyTypeBlockMutableTag):    domain.PolicyTypeBlockMutableTag,
-	string(domain.PolicyTypeScorecard):          domain.PolicyTypeScorecard,
-	string(domain.PolicyTypeLicense):            domain.PolicyTypeLicense,
-	string(domain.PolicyTypeLicenseAllowlist):   domain.PolicyTypeLicenseAllowlist,
-	string(domain.PolicyTypeAllowlist):          domain.PolicyTypeAllowlist,
-	string(domain.PolicyTypeNamespaceAllowlist): domain.PolicyTypeNamespaceAllowlist,
-	string(domain.PolicyTypeBlocklist):          domain.PolicyTypeBlocklist,
-}
-
 var validActions = map[string]domain.PolicyAction{
 	string(domain.PolicyActionAllow): domain.PolicyActionAllow,
 	string(domain.PolicyActionDeny):  domain.PolicyActionDeny,
@@ -95,7 +82,7 @@ func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, e
 		return domain.Policy{}, fmt.Errorf("action is required")
 	}
 
-	policyType, ok := knownPolicyTypes[def.Type]
+	policyType, ok := parsePolicyType(def.Type)
 	if !ok {
 		return domain.Policy{}, fmt.Errorf("unknown policy type %q", def.Type)
 	}

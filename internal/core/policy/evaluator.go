@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/core/policy/condition"
 )
 
 // Evaluator evaluates policies against an access request.
@@ -42,7 +41,7 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 	hasDeny := false
 
 	for _, p := range enabled {
-		cond, err := condition.ForType(p.Type)
+		cond, err := conditionForType(p.Type)
 		if err != nil {
 			er := domain.EvaluationReason{
 				PolicyID:   p.ID,

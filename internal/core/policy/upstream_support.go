@@ -43,10 +43,11 @@ func ValidateUpstreamCompatibility(policyType domain.PolicyType, upstream domain
 
 // SupportedPolicyTypesForUpstream lists the policy types an upstream can satisfy.
 func SupportedPolicyTypesForUpstream(upstream domain.Upstream) []domain.PolicyType {
-	result := make([]domain.PolicyType, 0, len(policyTypeCatalog))
-	for _, descriptor := range policyTypeCatalog {
-		if err := ValidateUpstreamCompatibility(descriptor.Type, upstream); err == nil {
-			result = append(result, descriptor.Type)
+	result := make([]domain.PolicyType, 0, len(policyDefinitions))
+	for i := range policyDefinitions {
+		policyType := policyDefinitions[i].descriptor.Type
+		if err := ValidateUpstreamCompatibility(policyType, upstream); err == nil {
+			result = append(result, policyType)
 		}
 	}
 	return result

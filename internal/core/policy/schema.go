@@ -8,12 +8,11 @@ import (
 )
 
 func typeDescriptorFor(policyType domain.PolicyType) (domain.PolicyTypeDescriptor, bool) {
-	for _, descriptor := range policyTypeCatalog {
-		if descriptor.Type == policyType {
-			return descriptor, true
-		}
+	definition, ok := policyDefinitionFor(policyType)
+	if !ok {
+		return domain.PolicyTypeDescriptor{}, false
 	}
-	return domain.PolicyTypeDescriptor{}, false
+	return cloneDescriptor(definition.descriptor), true
 }
 
 func currentSchemaVersionForType(policyType domain.PolicyType) (int, error) {

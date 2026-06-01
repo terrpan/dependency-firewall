@@ -18,6 +18,8 @@ type contextKey string
 const tenantContextKey contextKey = "tenant"
 const upstreamContextKey contextKey = "upstream"
 
+type tenantPathParser func(path string) (tenantID string, upstreamID string, rewrittenPath string, ok bool)
+
 // TenantResolver extracts tenant ID from requests and adds it to context.
 type TenantResolver struct {
 	tenantLookup tenantLookup
@@ -85,42 +87,59 @@ func ContextWithUpstreamID(ctx context.Context, upstreamID string) context.Conte
 // It injects the tenant ID as X-Tenant-ID and stores the optional upstream ID in
 // the request context before rewriting the path to /npm/{package...}.
 func NPMTenantFromPath() func(http.Handler) http.Handler {
+	return tenantFromPath("/npm/t/", parseNPMTenantPath)
+}
+
+func tenantFromPath(prefix string, parser tenantPathParser) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !strings.HasPrefix(r.URL.Path, "/npm/t/") {
+			if !strings.HasPrefix(r.URL.Path, prefix) {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			ctx := r.Context()
-			tenantID, remainder, hasRemainder := strings.Cut(strings.TrimPrefix(r.URL.Path, "/npm/t/"), "/")
-			if tenantID == "" {
+			tenantID, upstreamID, rewrittenPath, ok := parser(strings.TrimPrefix(r.URL.Path, prefix))
+			if !ok {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			r.Header.Set("X-Tenant-ID", tenantID)
-
-			packagePath := remainder
-			if hasRemainder && strings.HasPrefix(remainder, "u/") {
-				upstreamRemainder := strings.TrimPrefix(remainder, "u/")
-				upstreamID, nextPath, _ := strings.Cut(upstreamRemainder, "/")
-				if upstreamID != "" {
-					ctx = ContextWithUpstreamID(ctx, upstreamID)
-					annotateSpan(ctx, attribute.String("upstream.id", upstreamID))
-					packagePath = nextPath
-				}
+			if upstreamID != "" {
+				ctx = ContextWithUpstreamID(ctx, upstreamID)
+				annotateSpan(ctx, attribute.String("upstream.id", upstreamID))
 			}
-
-			if packagePath != "" {
-				r.URL.Path = "/npm/" + packagePath
-			} else {
-				r.URL.Path = "/npm/"
-			}
+			r.URL.Path = rewrittenPath
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func parseNPMTenantPath(path string) (tenantID string, upstreamID string, rewrittenPath string, ok bool) {
+	tenantID, remainder, hasRemainder := strings.Cut(path, "/")
+	if tenantID == "" {
+		return "", "", "", false
+	}
+
+	packagePath := remainder
+	if hasRemainder && strings.HasPrefix(remainder, "u/") {
+		upstreamRemainder := strings.TrimPrefix(remainder, "u/")
+		parsedUpstreamID, nextPath, _ := strings.Cut(upstreamRemainder, "/")
+		if parsedUpstreamID != "" {
+			upstreamID = parsedUpstreamID
+			packagePath = nextPath
+		}
+	}
+
+	if packagePath != "" {
+		rewrittenPath = "/npm/" + packagePath
+	} else {
+		rewrittenPath = "/npm/"
+	}
+
+	return tenantID, upstreamID, rewrittenPath, true
 }
 
 // OCITenantFromHost extracts tenant and optional upstream IDs from OCI hosts.

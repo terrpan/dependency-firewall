@@ -4,34 +4,39 @@
 
 Add a new policy type in core without breaking layering, schema handling, or the generated control-plane metadata.
 
+For upstream protocol/ecosystem extension work, use `docs/adding-upstream.md`.
+
 ## Checklist
 
 ### 1. Define the domain type and typed config
 
-Update `internal/core/domain/types.go`:
+Update domain model files under `internal/core/domain/`:
 
-- add the new `domain.PolicyType` constant
-- add a typed config struct that implements `domain.PolicyConfig`
+- add the new `domain.PolicyType` constant in `internal/core/domain/policy.go`
+- add a typed config struct that implements `domain.PolicyConfig` in a focused file under `internal/core/domain/`, named `policy_config_<concept>.go` (one file per policy domain concept; see existing `policy_config_cvss.go`, `policy_config_age.go`, `policy_config_mutable_tag.go`, `policy_config_namespace_list.go`, `policy_config_scorecard.go`, `policy_config_license.go`)
 - keep validation on the config struct explicit
 
 If the new policy needs new upstream compatibility signals, add them in `internal/core/domain/upstream_capability.go`.
 
-### 2. Wire parsing and typed config decoding
+### 2. Register the policy in one place
 
-Update the core policy package:
+Add a small provider function in the closest `internal/core/policy/catalog_*.go` file, or create a new focused catalog file when the policy starts a new family.
 
-- `internal/core/policy/parser.go`
-  - add the new type to `knownPolicyTypes`
-- `internal/core/policy/config.go`
-  - add decode support for the new config type and schema version
-- `internal/core/policy/dsl.go`
-  - make sure YAML/JSON import definitions still map cleanly into the typed config shape
+- descriptor metadata (summary, help, schemas, supported actions/ecosystems, required capabilities)
+- condition evaluator
+- config constructor(s) by schema version
+- config type matcher
+- `requiresExternalMetadata` flag (true only when runtime enrichment is required)
+
+Then add that provider to `policyDefinitionProviders` in `internal/core/policy/catalog.go`. `parser.go`, config decode, condition lookup, schema checks, and action compatibility all read from this registry.
+
+Keep `internal/core/policy/dsl.go` aligned only when the policy document shape itself changes.
 
 If you change an existing stored config shape, add an explicit PostgreSQL migration instead of runtime compatibility code.
 
-### 3. Register catalog metadata
+### 3. Keep catalog metadata complete
 
-Update `internal/core/policy/catalog.go`:
+Within the policy definition provider, make sure these descriptor fields are complete:
 
 - `Summary`
 - `Description`
@@ -52,7 +57,7 @@ This catalog drives:
 
 ### 4. Implement the evaluator
 
-Add the condition implementation under `internal/core/policy/condition/` and register it in `internal/core/policy/condition/condition.go`.
+Add the condition implementation under `internal/core/policy/condition/` and reference it from the policy definition entry in `internal/core/policy/catalog.go`.
 
 The evaluator must stay pure:
 

@@ -65,7 +65,7 @@ func (s *AuditService) Record(ctx context.Context, event domain.AuditEvent) erro
 		}
 	}
 
-	ctx, span := tracer.Start(ctx, "audit.record")
+	ctx, span := serviceTracer().Start(ctx, "audit.record")
 	span.SetAttributes(
 		attribute.String("tenant.id", event.TenantID),
 		attribute.String("audit.event_type", string(event.EventType)),
@@ -112,7 +112,7 @@ func (s *AuditService) ListByTenant(ctx context.Context, filter domain.AuditEven
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	ctx, span := tracer.Start(ctx, "audit.list")
+	ctx, span := serviceTracer().Start(ctx, "audit.list")
 	span.SetAttributes(attribute.String("tenant.id", filter.TenantID))
 	defer span.End()
 

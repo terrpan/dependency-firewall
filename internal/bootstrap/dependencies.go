@@ -98,27 +98,10 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		deps.authSecretRewrapper = upstreamRepo
 	}
 
-	auditRecorders := make([]port.AuditEventRecorder, 0, 2)
-	if cfg.Audit.Enabled && cfg.Audit.Slog {
-		auditRecorders = append(auditRecorders, auditinfra.NewSlogRecorder(logger))
-	}
-	if cfg.Audit.Enabled && cfg.Audit.Postgres {
-		auditRecorders = append(auditRecorders, deps.auditRepo)
-	}
-	deps.auditService = service.NewAuditService(
-		auditinfra.NewFanoutRecorder(auditRecorders...),
-		deps.auditRepo,
-		logger,
-		cfg.Audit.Enabled,
-		parseAuditFailureMode(cfg.Audit.FailureMode),
-		parseAuditDetailLevel(cfg.Audit.DetailLevel),
-	)
-
 	osvEnricher := osv.NewClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger)
 	scorecardClient := scorecard.NewClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger)
 	npmEnricher := npm.NewMetadataEnricher(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger, scorecardClient)
 	deps.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
-	deps.enrichmentService = service.NewEnrichmentService(deps.enricher, deps.metadataCache, logger, deps.auditService)
 
 	ociOptions, err := ociClientOptions(cfg)
 	if err != nil {
@@ -185,6 +168,57 @@ func (d *dependencies) close() {
 	if d.pool != nil {
 		d.pool.Close()
 	}
+}
+
+// installRuntimeServices wires the audit and enrichment services for one
+// logical runtime (control-plane or proxy). Each runtime calls this exactly
+// once with the appropriate audit read-side repository and write-side recorder
+// for its mode.
+func installRuntimeServices(
+	cfg *config.Config,
+	logger *slog.Logger,
+	deps *dependencies,
+	auditRepo port.AuditEventRepository,
+	postgresRecorder port.AuditEventRecorder,
+) {
+	deps.auditService = newAuditService(cfg, logger, auditRepo, postgresRecorder)
+	deps.enrichmentService = newEnrichmentService(deps, logger)
+}
+
+func newAuditService(
+	cfg *config.Config,
+	logger *slog.Logger,
+	repo port.AuditEventRepository,
+	postgresRecorder port.AuditEventRecorder,
+) *service.AuditService {
+	recorders := configuredAuditRecorders(cfg, logger, postgresRecorder)
+	return service.NewAuditService(
+		auditinfra.NewFanoutRecorder(recorders...),
+		repo,
+		logger,
+		cfg.Audit.Enabled,
+		parseAuditFailureMode(cfg.Audit.FailureMode),
+		parseAuditDetailLevel(cfg.Audit.DetailLevel),
+	)
+}
+
+func configuredAuditRecorders(
+	cfg *config.Config,
+	logger *slog.Logger,
+	postgresRecorder port.AuditEventRecorder,
+) []port.AuditEventRecorder {
+	recorders := make([]port.AuditEventRecorder, 0, 2)
+	if cfg.Audit.Enabled && cfg.Audit.Slog {
+		recorders = append(recorders, auditinfra.NewSlogRecorder(logger))
+	}
+	if cfg.Audit.Enabled && cfg.Audit.Postgres && postgresRecorder != nil {
+		recorders = append(recorders, postgresRecorder)
+	}
+	return recorders
+}
+
+func newEnrichmentService(deps *dependencies, logger *slog.Logger) *service.EnrichmentService {
+	return service.NewEnrichmentService(deps.enricher, deps.metadataCache, logger, deps.auditService)
 }
 
 func parseAuditFailureMode(value string) domain.AuditFailureMode {

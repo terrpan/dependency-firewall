@@ -50,6 +50,7 @@ Policies can be scoped to one upstream with `upstream_id`. When they are, the co
 - YAML and JSON are accepted only at the control-plane boundary.
 - Imported policy documents are decoded into typed config structs before core validation, persistence, or evaluation.
 - Core policy values must not use `map[string]any`; each policy type owns an explicit config type.
+- Policy type behavior is defined in compiled policy definition providers in `internal/core/policy/catalog_*.go`, aggregated by `internal/core/policy/catalog.go` (descriptor metadata, condition evaluator, config constructors, action compatibility, and enrichment requirement).
 - Unknown config keys and wrong value types are rejected during decode and validation.
 - Declarative validators are appropriate for control-plane payload shape checks, but policy semantics still live in explicit core validation.
 - Each policy item must declare `schema_version`.
@@ -309,7 +310,7 @@ Matches artifacts whose namespace is in the configured list. Use with `action: d
   config:
     namespaces:
       - evil-corp
-  - abandoned-org
+      - abandoned-org
 ```
 
 ## Common config options
@@ -363,7 +364,7 @@ Some policy types depend on metadata from enrichment sources:
 | `namespace_allowlist` | namespace (from artifact identity) | none |
 | `blocklist` | namespace (from artifact identity) | none |
 
-The proxy loads the effective policy set before enrichment. If no enabled policy for the matched upstream needs external metadata, the request skips metadata-cache and external enrichment work entirely.
+The proxy loads the effective policy set before enrichment. If no enabled policy for the matched upstream declares `requiresExternalMetadata`, the request skips metadata-cache and external enrichment work entirely.
 
 If enrichment fails or metadata is unavailable, age, CVSS, and license conditions **skip** (no match), meaning the artifact is not blocked by that rule. Scorecard behavior follows `unavailable_scorecard_behavior`. Allowlist, namespace allowlist, blocklist, and mutable-tag policies work without external enrichment.
 

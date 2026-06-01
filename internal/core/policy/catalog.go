@@ -1,215 +1,163 @@
 package policy
 
-import "github.com/danielterry/dependency-firewall/internal/core/domain"
+import (
+	"fmt"
 
-var policyTypeCatalog = []domain.PolicyTypeDescriptor{
-	{
-		Type:                    domain.PolicyTypeCVSSThreshold,
-		Summary:                 "Block by vulnerability severity",
-		Description:             "Matches all artifacts on the scoped upstream whose maximum CVSS score is at or above the configured threshold.",
-		Help:                    "Use this to deny vulnerable artifacts tenant-wide after OSV enrichment. It does not require a package list. If CVSS metadata is unavailable, the policy skips.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityVulnerabilityLookup},
-		Example: `- name: block-critical-vulnerabilities
-  type: cvss_threshold
-  schema_version: 1
-  action: deny
-  priority: 10
-  config:
-    max_cvss: 7.0`,
-	},
-	{
-		Type:                    domain.PolicyTypeMinimumAge,
-		Summary:                 "Block newly published packages",
-		Description:             "Matches artifacts published fewer than the configured number of days ago.",
-		Help:                    "Use this to reduce exposure to fresh supply-chain attacks. Supports dry_run and exclude_packages.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityPublishTime},
-		Example: `- name: block-brand-new-packages
-  type: minimum_age
-  schema_version: 1
-  action: deny
-  priority: 20
-  config:
-    min_age_days: 7`,
-	},
-	{
-		Type:                    domain.PolicyTypeMaximumAge,
-		Summary:                 "Block outdated packages",
-		Description:             "Matches artifacts published more than the configured number of days ago.",
-		Help:                    "Use this to phase out stale dependencies. Supports dry_run and exclude_packages.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityPublishTime},
-		Example: `- name: block-outdated-packages
-  type: maximum_age
-  schema_version: 1
-  action: deny
-  priority: 25
-  config:
-    max_age_days: 730
-    dry_run: true`,
-	},
-	{
-		Type:                    domain.PolicyTypeBlockMutableTag,
-		Summary:                 "Block mutable OCI tags",
-		Description:             "Matches OCI artifacts requested by mutable tags such as latest or dev.",
-		Help:                    "Use this to require immutable image references. Best for OCI manifests and tag-based pulls.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemOCI},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityManifestDigestLookup},
-		Example: `- name: block-latest-tag
-  type: block_mutable_tag
-  schema_version: 1
-  action: deny
-  priority: 15
-  config:
-    tags:
-      - latest`,
-	},
-	{
-		Type:                    domain.PolicyTypeScorecard,
-		Summary:                 "Gate by OpenSSF Scorecard",
-		Description:             "Matches npm artifacts whose source repository Scorecard falls below the configured overall or per-check thresholds.",
-		Help:                    "Use this to require a minimum repository Scorecard before allowing a package. It can deny on the overall score, named check scores, or both. When repository identity or Scorecard data is unavailable, the configured behavior decides whether the policy denies or skips.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityScorecardLookup},
-		Example: `- name: require-secure-source-repos
-  type: scorecard
-  schema_version: 1
-  action: deny
-  priority: 15
-  config:
-    min_score: 7
-    checks:
-      binary-artifacts: 10
-      branch-protection: 7
-    unavailable_scorecard_behavior: skip`,
-	},
-	{
-		Type:                    domain.PolicyTypeLicense,
-		Summary:                 "Match specific licenses",
-		Description:             "Matches artifacts whose declared licenses contain any configured SPDX identifier.",
-		Help:                    "Use this for targeted rules such as deny GPL or warn on AGPL. If license metadata is unavailable, the policy skips.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionAllow, domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses},
-		Example: `- name: block-copyleft-licenses
-  type: license
-  schema_version: 1
-  action: deny
-  priority: 30
-  config:
-    licenses:
-      - GPL-3.0-only
-      - AGPL-3.0-only`,
-	},
-	{
-		Type:                    domain.PolicyTypeLicenseAllowlist,
-		Summary:                 "Allow only approved licenses",
-		Description:             "Denies artifacts whose declared licenses are outside the configured approved SPDX list.",
-		Help:                    "Use this for strict approved-license enforcement. This policy must use action deny and can separately deny or skip unlicensed artifacts and unavailable license metadata.",
-		CurrentSchemaVersion:    2,
-		SupportedSchemaVersions: []int{1, 2},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-		RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses},
-		Example: `- name: allow-approved-licenses
-  type: license_allowlist
-  schema_version: 2
-  action: deny
-  priority: 30
-  config:
-    licenses:
-      - MIT
-      - Apache-2.0
-      - BSD-3-Clause
-    unlicensed_behavior: deny
-    unavailable_metadata_behavior: skip`,
-	},
-	{
-		Type:                    domain.PolicyTypeAllowlist,
-		Summary:                 "Match trusted namespaces",
-		Description:             "Matches artifacts whose namespace is in the configured trusted list.",
-		Help:                    "Use this to record positive matches for internal namespaces. Allow matches do not override later deny rules.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionAllow},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
-		Example: `- name: allow-internal-packages
-  type: allowlist
-  schema_version: 1
-  action: allow
-  priority: 5
-  config:
-    namespaces:
-      - mycompany
-      - internal`,
-	},
-	{
-		Type:                    domain.PolicyTypeNamespaceAllowlist,
-		Summary:                 "Allow only approved namespaces",
-		Description:             "Denies artifacts whose namespace is outside the configured approved namespace list.",
-		Help:                    "Use this for fail-closed namespace enforcement such as allowing only official OCI namespaces like library or approved internal orgs.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
-		Example: `- name: allow-only-approved-namespaces
-  type: namespace_allowlist
-  schema_version: 1
-  action: deny
-  priority: 10
-  config:
-    namespaces:
-      - library
-      - docker`,
-	},
-	{
-		Type:                    domain.PolicyTypeBlocklist,
-		Summary:                 "Block specific namespaces",
-		Description:             "Matches artifacts whose namespace is in the configured blocked list.",
-		Help:                    "Use this to block known bad scopes, registries, or organizations explicitly.",
-		CurrentSchemaVersion:    1,
-		SupportedSchemaVersions: []int{1},
-		SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-		SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
-		Example: `- name: block-untrusted-scopes
-  type: blocklist
-  schema_version: 1
-  action: deny
-  priority: 30
-  config:
-    namespaces:
-      - evil-corp
-      - abandoned-org`,
-	},
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/danielterry/dependency-firewall/internal/core/policy/condition"
+)
+
+type configFactory func() domain.PolicyConfig
+
+type policyDefinition struct {
+	descriptor               domain.PolicyTypeDescriptor
+	requiresExternalMetadata bool
+	newConfigBySchema        map[int]configFactory
+	configMatches            func(domain.PolicyConfig) bool
+	conditionEvaluator       condition.Condition
+}
+
+type schemaConfig struct {
+	version int
+	factory configFactory
+}
+
+var policyDefinitionProviders = []func() policyDefinition{
+	cvssThresholdPolicyDefinition,
+	minimumAgePolicyDefinition,
+	maximumAgePolicyDefinition,
+	blockMutableTagPolicyDefinition,
+	scorecardPolicyDefinition,
+	licensePolicyDefinition,
+	licenseAllowlistPolicyDefinition,
+	allowlistPolicyDefinition,
+	namespaceAllowlistPolicyDefinition,
+	blocklistPolicyDefinition,
+}
+
+var policyDefinitions = collectPolicyDefinitions(policyDefinitionProviders)
+var policyDefinitionsByType = indexPolicyDefinitions(policyDefinitions)
+
+func collectPolicyDefinitions(providers []func() policyDefinition) []policyDefinition {
+	definitions := make([]policyDefinition, 0, len(providers))
+	for _, provider := range providers {
+		definitions = append(definitions, provider())
+	}
+	return definitions
+}
+
+func definePolicy(
+	descriptor domain.PolicyTypeDescriptor,
+	conditionEvaluator condition.Condition,
+	requiresExternalMetadata bool,
+	configMatches func(domain.PolicyConfig) bool,
+	schemaConfigs ...schemaConfig,
+) policyDefinition {
+	configs := make(map[int]configFactory, len(schemaConfigs))
+	for _, schemaConfig := range schemaConfigs {
+		configs[schemaConfig.version] = schemaConfig.factory
+	}
+	return policyDefinition{
+		descriptor:               descriptor,
+		requiresExternalMetadata: requiresExternalMetadata,
+		newConfigBySchema:        configs,
+		configMatches:            configMatches,
+		conditionEvaluator:       conditionEvaluator,
+	}
+}
+
+func configSchema(version int, factory configFactory) schemaConfig {
+	return schemaConfig{version: version, factory: factory}
+}
+
+func indexPolicyDefinitions(definitions []policyDefinition) map[domain.PolicyType]policyDefinition {
+	indexed := make(map[domain.PolicyType]policyDefinition, len(definitions))
+	for _, definition := range definitions {
+		policyType := definition.descriptor.Type
+		if _, exists := indexed[policyType]; exists {
+			panic(fmt.Sprintf("duplicate policy definition for type %q", policyType))
+		}
+		indexed[policyType] = definition
+	}
+	return indexed
+}
+
+func configTypeMatcher[T domain.PolicyConfig](config domain.PolicyConfig) bool {
+	_, ok := config.(T)
+	return ok
+}
+
+func policyDefinitionFor(policyType domain.PolicyType) (policyDefinition, bool) {
+	definition, ok := policyDefinitionsByType[policyType]
+	return definition, ok
+}
+
+func parsePolicyType(raw string) (domain.PolicyType, bool) {
+	policyType := domain.PolicyType(raw)
+	_, ok := policyDefinitionsByType[policyType]
+	return policyType, ok
+}
+
+func conditionForType(policyType domain.PolicyType) (condition.Condition, error) {
+	definition, ok := policyDefinitionFor(policyType)
+	if !ok {
+		return nil, fmt.Errorf("unknown policy type %q", policyType)
+	}
+	return definition.conditionEvaluator, nil
+}
+
+func newConfigForType(policyType domain.PolicyType, schemaVersion int) (domain.PolicyConfig, error) {
+	definition, ok := policyDefinitionFor(policyType)
+	if !ok {
+		return nil, invalidPolicyf("unknown policy type %q", policyType)
+	}
+	factory, ok := definition.newConfigBySchema[schemaVersion]
+	if !ok {
+		return nil, fmt.Errorf(
+			"%w: schema_version %d is not supported for policy type %q",
+			domain.ErrUnsupportedPolicySchemaVersion,
+			schemaVersion,
+			policyType,
+		)
+	}
+	return factory(), nil
+}
+
+func configTypeMatchesPolicy(policyType domain.PolicyType, config domain.PolicyConfig) bool {
+	definition, ok := policyDefinitionFor(policyType)
+	if !ok || definition.configMatches == nil {
+		return false
+	}
+	return definition.configMatches(config)
+}
+
+func typeRequiresExternalMetadata(policyType domain.PolicyType) bool {
+	definition, ok := policyDefinitionFor(policyType)
+	if !ok {
+		return false
+	}
+	return definition.requiresExternalMetadata
+}
+
+// RequiresExternalMetadata reports whether the policy type depends on external enrichment metadata.
+func RequiresExternalMetadata(policyType domain.PolicyType) bool {
+	return typeRequiresExternalMetadata(policyType)
 }
 
 // TypeCatalog returns the supported policy types and their help metadata.
 func TypeCatalog() []domain.PolicyTypeDescriptor {
-	result := make([]domain.PolicyTypeDescriptor, len(policyTypeCatalog))
-	for i := range policyTypeCatalog {
-		result[i] = policyTypeCatalog[i]
-		result[i].SupportedActions = append([]domain.PolicyAction(nil), policyTypeCatalog[i].SupportedActions...)
-		result[i].SupportedSchemaVersions = append([]int(nil), policyTypeCatalog[i].SupportedSchemaVersions...)
-		result[i].SupportedEcosystems = append([]domain.EcosystemType(nil), policyTypeCatalog[i].SupportedEcosystems...)
-		result[i].RequiredCapabilities = append([]domain.UpstreamCapability(nil), policyTypeCatalog[i].RequiredCapabilities...)
+	result := make([]domain.PolicyTypeDescriptor, len(policyDefinitions))
+	for i := range policyDefinitions {
+		result[i] = cloneDescriptor(policyDefinitions[i].descriptor)
 	}
 	return result
+}
+
+func cloneDescriptor(descriptor domain.PolicyTypeDescriptor) domain.PolicyTypeDescriptor {
+	copyValue := descriptor
+	copyValue.SupportedActions = append([]domain.PolicyAction(nil), descriptor.SupportedActions...)
+	copyValue.SupportedSchemaVersions = append([]int(nil), descriptor.SupportedSchemaVersions...)
+	copyValue.SupportedEcosystems = append([]domain.EcosystemType(nil), descriptor.SupportedEcosystems...)
+	copyValue.RequiredCapabilities = append([]domain.UpstreamCapability(nil), descriptor.RequiredCapabilities...)
+	return copyValue
 }

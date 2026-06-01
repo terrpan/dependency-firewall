@@ -200,9 +200,10 @@ func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, e
 		upstreamClient,
 		upstreamRepo,
 		slog.Default(),
+		nil,
 	)
 
-	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default())
+	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), nil)
 }
 
 func withTenant(r *http.Request) *http.Request {
@@ -529,9 +530,10 @@ func Test_handleMetadata_rewritesTarballURLsToFirewall(t *testing.T) {
 		upstreamClient,
 		upstreamRepo,
 		slog.Default(),
+		nil,
 	)
 
-	h := NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default())
+	h := NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), nil)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 

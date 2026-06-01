@@ -1,6 +1,9 @@
 package service
 
-import "github.com/danielterry/dependency-firewall/internal/core/domain"
+import (
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
+)
 
 func filterPoliciesForUpstream(policies []domain.Policy, upstreamID string) []domain.Policy {
 	if upstreamID == "" {
@@ -19,23 +22,9 @@ func filterPoliciesForUpstream(policies []domain.Policy, upstreamID string) []do
 
 func needsEnrichment(policies []domain.Policy) bool {
 	for _, policyDef := range policies {
-		if policyDef.Enabled && policyNeedsEnrichment(policyDef.Type) {
+		if policyDef.Enabled && corepolicy.RequiresExternalMetadata(policyDef.Type) {
 			return true
 		}
 	}
 	return false
-}
-
-func policyNeedsEnrichment(policyType domain.PolicyType) bool {
-	switch policyType {
-	case domain.PolicyTypeMinimumAge,
-		domain.PolicyTypeMaximumAge,
-		domain.PolicyTypeLicense,
-		domain.PolicyTypeLicenseAllowlist,
-		domain.PolicyTypeCVSSThreshold,
-		domain.PolicyTypeScorecard:
-		return true
-	default:
-		return false
-	}
 }

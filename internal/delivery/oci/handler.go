@@ -2,17 +2,16 @@
 package oci
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
+	"github.com/danielterry/dependency-firewall/internal/delivery/proxyflow"
 )
 
 // RegistryHandler handles OCI registry protocol requests.
@@ -30,12 +29,8 @@ func NewRegistryHandler(
 	upstream port.UpstreamClient,
 	upstreams port.UpstreamRepository,
 	logger *slog.Logger,
-	audits ...*service.AuditService,
+	audit *service.AuditService,
 ) *RegistryHandler {
-	var audit *service.AuditService
-	if len(audits) > 0 {
-		audit = audits[0]
-	}
 	return &RegistryHandler{
 		access:    access,
 		audit:     audit,
@@ -93,7 +88,7 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
+	upstream, err := proxyflow.ResolveUpstream(r.Context(), h.upstreams, tenant.ID, domain.EcosystemOCI)
 	if err != nil {
 		h.logger.Error("failed to look up OCI upstream",
 			"error", err,
@@ -111,29 +106,18 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 		Version:   reference,
 	}
 
-	req := domain.AccessRequest{
-		TenantID:  tenant.ID,
-		RequestID: requestIDFromContext(r.Context()),
-		Artifact:  artifact,
-		Upstream:  *upstream,
-		Timestamp: time.Now(),
-	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
+	audit := proxyflow.AuditContext{
 		TenantID:      tenant.ID,
 		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventProxyRequestReceived,
 		Source:        "delivery/oci",
 		UpstreamID:    upstream.ID,
 		Artifact:      artifact,
-		Message:       "oci manifest request received",
-		Payload: map[string]any{
-			"method":      r.Method,
-			"path":        r.URL.Path,
-			"remote_addr": r.RemoteAddr,
-			"operation":   "manifest",
-			"reference":   reference,
-			"repository":  repo,
-		},
+		Operation:     "manifest",
+	}
+	if err := proxyflow.RecordRequestReceived(r.Context(), h.audit, audit, r, "oci manifest request received", map[string]any{
+		"reference":  reference,
+		"repository": repo,
 	}); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
@@ -152,61 +136,18 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
-		if err := h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventRequestDenied,
-			Source:        "delivery/oci",
-			EntityType:    "decision",
-			EntityID:      decision.ID,
-			UpstreamID:    upstream.ID,
-			PolicyID:      decision.PolicyID,
-			Outcome:       decision.Outcome,
-			Artifact:      decision.Artifact,
-			Message:       "oci manifest request denied",
-			Payload: map[string]any{
-				"reason":    decision.Reason,
-				"operation": "manifest",
-			},
-		}); err != nil {
+		if err := proxyflow.RecordRequestDenied(r.Context(), h.audit, audit, decision, "oci manifest request denied"); err != nil {
 			writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
 		writeOCIError(w, r, "DENIED", "policy violation: "+decision.Reason, http.StatusForbidden)
 		return
 	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventRequestAllowed,
-		Source:        "delivery/oci",
-		EntityType:    "decision",
-		EntityID:      decision.ID,
-		UpstreamID:    upstream.ID,
-		PolicyID:      decision.PolicyID,
-		Outcome:       decision.Outcome,
-		Artifact:      decision.Artifact,
-		Message:       "oci manifest request allowed",
-		Payload: map[string]any{
-			"operation": "manifest",
-			"warnings":  decision.Warnings,
-		},
-	}); err != nil {
+	if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "oci manifest request allowed"); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventUpstreamFetchStarted,
-		Source:        "delivery/oci",
-		UpstreamID:    upstream.ID,
-		Artifact:      artifact,
-		Message:       "oci manifest fetch started",
-		Payload: map[string]any{
-			"operation": "manifest",
-		},
-	}); err != nil {
+	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "oci manifest fetch started"); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -218,19 +159,8 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 			writeOCIError(w, r, "MANIFEST_UNKNOWN", "manifest not found", http.StatusNotFound)
 			return
 		}
-		_ = h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventUpstreamFetchFailed,
-			Source:        "delivery/oci",
-			UpstreamID:    upstream.ID,
-			Artifact:      decision.Artifact,
-			Message:       "oci manifest fetch failed",
-			Payload: map[string]any{
-				"operation": "manifest",
-				"error":     err.Error(),
-			},
-		})
+		audit.Artifact = decision.Artifact
+		_ = proxyflow.RecordUpstreamFetchFailed(r.Context(), h.audit, audit, "oci manifest fetch failed", err)
 		h.logger.Error("upstream manifest fetch failed",
 			"error", err,
 			"tenant_id", tenant.ID,
@@ -260,28 +190,23 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		Namespace: namespace,
 		Name:      name,
 	}
-	requestID := requestIDFromContext(r.Context())
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+	requestID := proxyflow.RequestIDFromContext(r.Context())
+	blobArtifact := domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: namespace,
+		Name:      name,
+		Digest:    digest,
+	}
+	audit := proxyflow.AuditContext{
 		TenantID:      tenant.ID,
 		CorrelationID: requestID,
-		EventType:     domain.AuditEventProxyRequestReceived,
 		Source:        "delivery/oci",
-		UpstreamID:    "",
-		Artifact: domain.ArtifactIdentity{
-			Ecosystem: domain.EcosystemOCI,
-			Namespace: namespace,
-			Name:      name,
-			Digest:    digest,
-		},
-		Message: "oci blob request received",
-		Payload: map[string]any{
-			"method":      r.Method,
-			"path":        r.URL.Path,
-			"remote_addr": r.RemoteAddr,
-			"operation":   "blob",
-			"repository":  repo,
-			"digest":      digest,
-		},
+		Artifact:      blobArtifact,
+		Operation:     "blob",
+	}
+	if err := proxyflow.RecordRequestReceived(r.Context(), h.audit, audit, r, "oci blob request received", map[string]any{
+		"repository": repo,
+		"digest":     digest,
 	}); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
@@ -297,23 +222,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 	if !allowed {
-		if err := h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: requestID,
-			EventType:     domain.AuditEventRequestDenied,
-			Source:        "delivery/oci",
-			Artifact: domain.ArtifactIdentity{
-				Ecosystem: domain.EcosystemOCI,
-				Namespace: namespace,
-				Name:      name,
-				Digest:    digest,
-			},
-			Message: "oci blob request denied",
-			Payload: map[string]any{
-				"reason":    "no manifest-level allow decision for this repository",
-				"operation": "blob",
-			},
-		}); err != nil {
+		if err := proxyflow.RecordSimpleRequestDenied(r.Context(), h.audit, audit, "no manifest-level allow decision for this repository", "oci blob request denied"); err != nil {
 			writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -321,7 +230,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
-	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
+	upstream, err := proxyflow.ResolveUpstream(r.Context(), h.upstreams, tenant.ID, domain.EcosystemOCI)
 	if err != nil {
 		writeOCIError(w, r, "NAME_UNKNOWN", "no OCI upstream configured", http.StatusNotFound)
 		return
@@ -331,43 +240,12 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 	// so the upstream client can construct the correct blob URL.
 	blobUpstream := *upstream
 	blobUpstream.BaseURL = strings.TrimRight(upstream.BaseURL, "/") + "/v2/" + repo
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: requestID,
-		EventType:     domain.AuditEventRequestAllowed,
-		Source:        "delivery/oci",
-		UpstreamID:    upstream.ID,
-		Artifact: domain.ArtifactIdentity{
-			Ecosystem: domain.EcosystemOCI,
-			Namespace: namespace,
-			Name:      name,
-			Digest:    digest,
-		},
-		Message: "oci blob request allowed",
-		Payload: map[string]any{
-			"operation": "blob",
-		},
-	}); err != nil {
+	audit.UpstreamID = upstream.ID
+	if err := proxyflow.RecordSimpleRequestAllowed(r.Context(), h.audit, audit, "oci blob request allowed"); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: requestID,
-		EventType:     domain.AuditEventUpstreamFetchStarted,
-		Source:        "delivery/oci",
-		UpstreamID:    upstream.ID,
-		Artifact: domain.ArtifactIdentity{
-			Ecosystem: domain.EcosystemOCI,
-			Namespace: namespace,
-			Name:      name,
-			Digest:    digest,
-		},
-		Message: "oci blob fetch started",
-		Payload: map[string]any{
-			"operation": "blob",
-		},
-	}); err != nil {
+	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "oci blob fetch started"); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -378,24 +256,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 			writeOCIError(w, r, "BLOB_UNKNOWN", "blob not found", http.StatusNotFound)
 			return
 		}
-		_ = h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: requestID,
-			EventType:     domain.AuditEventUpstreamFetchFailed,
-			Source:        "delivery/oci",
-			UpstreamID:    upstream.ID,
-			Artifact: domain.ArtifactIdentity{
-				Ecosystem: domain.EcosystemOCI,
-				Namespace: namespace,
-				Name:      name,
-				Digest:    digest,
-			},
-			Message: "oci blob fetch failed",
-			Payload: map[string]any{
-				"operation": "blob",
-				"error":     err.Error(),
-			},
-		})
+		_ = proxyflow.RecordUpstreamFetchFailed(r.Context(), h.audit, audit, "oci blob fetch failed", err)
 		h.logger.Error("upstream blob fetch failed",
 			"error", err,
 			"tenant_id", tenant.ID,
@@ -407,31 +268,4 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 	defer resp.Body.Close()
 
 	streamResponse(w, resp)
-}
-
-func (h *RegistryHandler) recordAudit(ctx context.Context, event domain.AuditEvent) error {
-	if h.audit == nil {
-		return nil
-	}
-	return h.audit.Record(ctx, event)
-}
-
-func requestIDFromContext(ctx context.Context) string {
-	requestID, _ := middleware.RequestIDFromContext(ctx)
-	return requestID
-}
-
-func (h *RegistryHandler) resolveUpstream(ctx context.Context, tenantID string) (*domain.Upstream, error) {
-	if upstreamID, ok := middleware.UpstreamIDFromContext(ctx); ok && upstreamID != "" {
-		upstream, err := h.upstreams.GetByID(ctx, tenantID, upstreamID)
-		if err != nil {
-			return nil, err
-		}
-		if upstream.Ecosystem != domain.EcosystemOCI {
-			return nil, domain.ErrUpstreamNotFound
-		}
-		return upstream, nil
-	}
-
-	return h.upstreams.GetByEcosystem(ctx, tenantID, domain.EcosystemOCI)
 }

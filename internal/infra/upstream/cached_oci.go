@@ -19,6 +19,8 @@ type CachedOCIClient struct {
 	logger   *slog.Logger
 }
 
+type fetchOCIArtifactFunc func(context.Context, domain.Upstream) (*port.UpstreamResponse, error)
+
 type cacheReadCloser struct {
 	ctx        context.Context
 	source     io.ReadCloser
@@ -44,44 +46,42 @@ func NewCachedOCIClient(delegate port.UpstreamClient, cache port.OCIArtifactCach
 
 // FetchMetadata fetches OCI manifests, consulting the cache when a digest is available.
 func (c *CachedOCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
-	tenantID, upstreamID, cacheableScope := ociArtifactCacheScope(upstream)
-	if artifact.Digest != "" && cacheableScope {
-		cached, err := c.cache.Get(ctx, tenantID, upstreamID, port.OCIArtifactManifest, artifact.Digest)
-		if err == nil {
-			c.logger.Debug("OCI manifest cache hit",
-				"tenant_id", tenantID,
-				"upstream_id", upstreamID,
-				"digest", artifact.Digest,
-			)
-			return cached, nil
-		}
-		if !errors.Is(err, domain.ErrCacheMiss) {
-			c.logger.Warn("OCI manifest cache get failed",
-				"error", err,
-				"tenant_id", tenantID,
-				"upstream_id", upstreamID,
-				"digest", artifact.Digest,
-			)
-		}
-	}
-
-	resp, err := c.delegate.FetchMetadata(ctx, upstream, artifact)
-	if err != nil {
-		return nil, err
-	}
-	if !cacheableScope {
-		return resp, nil
-	}
-	return c.wrapResponse(ctx, tenantID, upstreamID, port.OCIArtifactManifest, artifact.Digest, resp)
+	return c.fetchWithCache(
+		ctx,
+		upstream,
+		port.OCIArtifactManifest,
+		artifact.Digest,
+		func(ctx context.Context, upstream domain.Upstream) (*port.UpstreamResponse, error) {
+			return c.delegate.FetchMetadata(ctx, upstream, artifact)
+		},
+	)
 }
 
 // FetchContent fetches OCI blobs, consulting the cache first by tenant, upstream, and digest.
 func (c *CachedOCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
+	return c.fetchWithCache(
+		ctx,
+		upstream,
+		port.OCIArtifactBlob,
+		digest,
+		func(ctx context.Context, upstream domain.Upstream) (*port.UpstreamResponse, error) {
+			return c.delegate.FetchContent(ctx, upstream, digest)
+		},
+	)
+}
+
+func (c *CachedOCIClient) fetchWithCache(
+	ctx context.Context,
+	upstream domain.Upstream,
+	kind port.OCIArtifactKind,
+	digest string,
+	fetchFn fetchOCIArtifactFunc,
+) (*port.UpstreamResponse, error) {
 	tenantID, upstreamID, cacheableScope := ociArtifactCacheScope(upstream)
-	if cacheableScope {
-		cached, err := c.cache.Get(ctx, tenantID, upstreamID, port.OCIArtifactBlob, digest)
+	if cacheableScope && shouldReadOCIArtifactFromCache(kind, digest) {
+		cached, err := c.cache.Get(ctx, tenantID, upstreamID, kind, digest)
 		if err == nil {
-			c.logger.Debug("OCI blob cache hit",
+			c.logger.Debug("OCI "+ociArtifactKindLabel(kind)+" cache hit",
 				"tenant_id", tenantID,
 				"upstream_id", upstreamID,
 				"digest", digest,
@@ -89,7 +89,7 @@ func (c *CachedOCIClient) FetchContent(ctx context.Context, upstream domain.Upst
 			return cached, nil
 		}
 		if !errors.Is(err, domain.ErrCacheMiss) {
-			c.logger.Warn("OCI blob cache get failed",
+			c.logger.Warn("OCI "+ociArtifactKindLabel(kind)+" cache get failed",
 				"error", err,
 				"tenant_id", tenantID,
 				"upstream_id", upstreamID,
@@ -98,14 +98,14 @@ func (c *CachedOCIClient) FetchContent(ctx context.Context, upstream domain.Upst
 		}
 	}
 
-	resp, err := c.delegate.FetchContent(ctx, upstream, digest)
+	resp, err := fetchFn(ctx, upstream)
 	if err != nil {
 		return nil, err
 	}
 	if !cacheableScope {
 		return resp, nil
 	}
-	return c.wrapResponse(ctx, tenantID, upstreamID, port.OCIArtifactBlob, digest, resp)
+	return c.wrapResponse(ctx, tenantID, upstreamID, kind, digest, resp)
 }
 
 // ResolveReference delegates tag resolution to the wrapped upstream client.
@@ -199,6 +199,20 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func shouldReadOCIArtifactFromCache(kind port.OCIArtifactKind, digest string) bool {
+	if kind == port.OCIArtifactBlob {
+		return true
+	}
+	return digest != ""
+}
+
+func ociArtifactKindLabel(kind port.OCIArtifactKind) string {
+	if kind == port.OCIArtifactManifest {
+		return "manifest"
+	}
+	return "blob"
 }
 
 func ociArtifactCacheScope(upstream domain.Upstream) (string, string, bool) {

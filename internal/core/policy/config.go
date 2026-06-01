@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
@@ -77,41 +76,6 @@ func DecodeConfigValue(policyType domain.PolicyType, schemaVersion int, raw any)
 	return DecodeConfigJSON(policyType, schemaVersion, payload)
 }
 
-func newConfigForType(policyType domain.PolicyType, schemaVersion int) (domain.PolicyConfig, error) {
-	switch schemaVersion {
-	case 1:
-		switch policyType {
-		case domain.PolicyTypeCVSSThreshold:
-			return &domain.CVSSThresholdPolicyConfig{}, nil
-		case domain.PolicyTypeMinimumAge:
-			return &domain.MinimumAgePolicyConfig{}, nil
-		case domain.PolicyTypeMaximumAge:
-			return &domain.MaximumAgePolicyConfig{}, nil
-		case domain.PolicyTypeBlockMutableTag:
-			return &domain.BlockMutableTagPolicyConfig{}, nil
-		case domain.PolicyTypeScorecard:
-			return &domain.ScorecardPolicyConfig{}, nil
-		case domain.PolicyTypeLicense:
-			return &domain.LicensePolicyConfig{}, nil
-		case domain.PolicyTypeLicenseAllowlist:
-			return &domain.LicenseAllowlistPolicyConfig{}, nil
-		case domain.PolicyTypeAllowlist, domain.PolicyTypeNamespaceAllowlist, domain.PolicyTypeBlocklist:
-			return &domain.NamespaceListPolicyConfig{}, nil
-		default:
-			return nil, invalidPolicyf("unknown policy type %q", policyType)
-		}
-	case 2:
-		switch policyType {
-		case domain.PolicyTypeLicenseAllowlist:
-			return &domain.LicenseAllowlistPolicyConfigV2{}, nil
-		default:
-			return nil, fmt.Errorf("%w: schema_version %d is not supported for policy type %q", domain.ErrUnsupportedPolicySchemaVersion, schemaVersion, policyType)
-		}
-	default:
-		return nil, fmt.Errorf("%w: schema_version %d is not supported for policy type %q", domain.ErrUnsupportedPolicySchemaVersion, schemaVersion, policyType)
-	}
-}
-
 func rejectDeprecatedEnforceJSON(raw []byte) error {
 	if !hasDeprecatedEnforceJSON(raw) {
 		return nil
@@ -128,45 +92,6 @@ func hasDeprecatedEnforceJSON(raw []byte) bool {
 	return hasDeprecatedEnforce
 }
 
-func configTypeMatchesPolicy(policyType domain.PolicyType, config domain.PolicyConfig) bool {
-	switch policyType {
-	case domain.PolicyTypeCVSSThreshold:
-		_, ok := config.(*domain.CVSSThresholdPolicyConfig)
-		return ok
-	case domain.PolicyTypeMinimumAge:
-		_, ok := config.(*domain.MinimumAgePolicyConfig)
-		return ok
-	case domain.PolicyTypeMaximumAge:
-		_, ok := config.(*domain.MaximumAgePolicyConfig)
-		return ok
-	case domain.PolicyTypeBlockMutableTag:
-		_, ok := config.(*domain.BlockMutableTagPolicyConfig)
-		return ok
-	case domain.PolicyTypeScorecard:
-		_, ok := config.(*domain.ScorecardPolicyConfig)
-		return ok
-	case domain.PolicyTypeLicense:
-		_, ok := config.(*domain.LicensePolicyConfig)
-		return ok
-	case domain.PolicyTypeLicenseAllowlist:
-		switch config.(type) {
-		case *domain.LicenseAllowlistPolicyConfig, *domain.LicenseAllowlistPolicyConfigV2:
-			return true
-		default:
-			return false
-		}
-	case domain.PolicyTypeAllowlist, domain.PolicyTypeNamespaceAllowlist, domain.PolicyTypeBlocklist:
-		_, ok := config.(*domain.NamespaceListPolicyConfig)
-		return ok
-	default:
-		return false
-	}
-}
-
 func invalidPolicyf(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{domain.ErrInvalidPolicy}, args...)...)
-}
-
-func isUnknownFieldError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "unknown field")
 }

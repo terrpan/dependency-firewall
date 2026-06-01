@@ -306,3 +306,8 @@ internal/delivery/   HTTP and gRPC delivery adapters
 internal/infra/      PostgreSQL, Valkey, upstream, enrichment, bundle adapters
 web/                 control-plane UI
 ```
+
+## Extension guides
+
+- Add a policy type: `docs/adding-policy-type.md`
+- Add an upstream or ecosystem: `docs/adding-upstream.md`

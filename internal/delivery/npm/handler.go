@@ -3,19 +3,18 @@ package npm
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
+	"github.com/danielterry/dependency-firewall/internal/delivery/proxyflow"
 )
 
 // RegistryHandler handles npm registry protocol requests.
@@ -33,12 +32,8 @@ func NewRegistryHandler(
 	upstream port.UpstreamClient,
 	upstreams port.UpstreamRepository,
 	logger *slog.Logger,
-	audits ...*service.AuditService,
+	audit *service.AuditService,
 ) *RegistryHandler {
-	var audit *service.AuditService
-	if len(audits) > 0 {
-		audit = audits[0]
-	}
 	return &RegistryHandler{
 		access:    access,
 		audit:     audit,
@@ -77,7 +72,7 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
+	upstream, err := proxyflow.ResolveUpstream(r.Context(), h.upstreams, tenant.ID, domain.EcosystemNPM)
 	if err != nil {
 		h.logger.Error("failed to look up npm upstream",
 			"error", err,
@@ -94,28 +89,16 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 		Version:   version,
 	}
 
-	req := domain.AccessRequest{
-		TenantID:  tenant.ID,
-		RequestID: requestIDFromContext(r.Context()),
-		Artifact:  artifact,
-		Upstream:  *upstream,
-		Timestamp: time.Now(),
-	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
+	audit := proxyflow.AuditContext{
 		TenantID:      tenant.ID,
 		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventProxyRequestReceived,
 		Source:        "delivery/npm",
 		UpstreamID:    upstream.ID,
 		Artifact:      artifact,
-		Message:       "npm metadata request received",
-		Payload: map[string]any{
-			"method":      r.Method,
-			"path":        r.URL.Path,
-			"remote_addr": r.RemoteAddr,
-			"operation":   "metadata",
-		},
-	}); err != nil {
+		Operation:     "metadata",
+	}
+	if err := proxyflow.RecordRequestReceived(r.Context(), h.audit, audit, r, "npm metadata request received", nil); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -133,23 +116,7 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
-		if err := h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventRequestDenied,
-			Source:        "delivery/npm",
-			EntityType:    "decision",
-			EntityID:      decision.ID,
-			UpstreamID:    upstream.ID,
-			PolicyID:      decision.PolicyID,
-			Outcome:       decision.Outcome,
-			Artifact:      decision.Artifact,
-			Message:       "npm metadata request denied",
-			Payload: map[string]any{
-				"reason":    decision.Reason,
-				"operation": "metadata",
-			},
-		}); err != nil {
+		if err := proxyflow.RecordRequestDenied(r.Context(), h.audit, audit, decision, "npm metadata request denied"); err != nil {
 			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -158,38 +125,11 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 	}
 
 	addWarningHeaders(w, decision)
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventRequestAllowed,
-		Source:        "delivery/npm",
-		EntityType:    "decision",
-		EntityID:      decision.ID,
-		UpstreamID:    upstream.ID,
-		PolicyID:      decision.PolicyID,
-		Outcome:       decision.Outcome,
-		Artifact:      decision.Artifact,
-		Message:       "npm metadata request allowed",
-		Payload: map[string]any{
-			"operation": "metadata",
-			"warnings":  decision.Warnings,
-		},
-	}); err != nil {
+	if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "npm metadata request allowed"); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventUpstreamFetchStarted,
-		Source:        "delivery/npm",
-		UpstreamID:    upstream.ID,
-		Artifact:      artifact,
-		Message:       "npm upstream metadata fetch started",
-		Payload: map[string]any{
-			"operation": "metadata",
-		},
-	}); err != nil {
+	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "npm upstream metadata fetch started"); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -200,19 +140,7 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 			writeNPMError(w, "package not found", http.StatusNotFound)
 			return
 		}
-		_ = h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventUpstreamFetchFailed,
-			Source:        "delivery/npm",
-			UpstreamID:    upstream.ID,
-			Artifact:      artifact,
-			Message:       "npm upstream metadata fetch failed",
-			Payload: map[string]any{
-				"operation": "metadata",
-				"error":     err.Error(),
-			},
-		})
+		_ = proxyflow.RecordUpstreamFetchFailed(r.Context(), h.audit, audit, "npm upstream metadata fetch failed", err)
 		h.logger.Error("upstream metadata fetch failed",
 			"error", err,
 			"tenant_id", tenant.ID,
@@ -253,7 +181,7 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	upstream, err := h.resolveUpstream(r.Context(), tenant.ID)
+	upstream, err := proxyflow.ResolveUpstream(r.Context(), h.upstreams, tenant.ID, domain.EcosystemNPM)
 	if err != nil {
 		writeNPMError(w, "no npm upstream configured", http.StatusNotFound)
 		return
@@ -265,28 +193,16 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 		Version:   version,
 	}
 
-	req := domain.AccessRequest{
-		TenantID:  tenant.ID,
-		RequestID: requestIDFromContext(r.Context()),
-		Artifact:  artifact,
-		Upstream:  *upstream,
-		Timestamp: time.Now(),
-	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
+	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
+	audit := proxyflow.AuditContext{
 		TenantID:      tenant.ID,
 		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventProxyRequestReceived,
 		Source:        "delivery/npm",
 		UpstreamID:    upstream.ID,
 		Artifact:      artifact,
-		Message:       "npm tarball request received",
-		Payload: map[string]any{
-			"method":      r.Method,
-			"path":        r.URL.Path,
-			"remote_addr": r.RemoteAddr,
-			"operation":   "tarball",
-		},
-	}); err != nil {
+		Operation:     "tarball",
+	}
+	if err := proxyflow.RecordRequestReceived(r.Context(), h.audit, audit, r, "npm tarball request received", nil); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -304,23 +220,7 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
-		if err := h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventRequestDenied,
-			Source:        "delivery/npm",
-			EntityType:    "decision",
-			EntityID:      decision.ID,
-			UpstreamID:    upstream.ID,
-			PolicyID:      decision.PolicyID,
-			Outcome:       decision.Outcome,
-			Artifact:      decision.Artifact,
-			Message:       "npm tarball request denied",
-			Payload: map[string]any{
-				"reason":    decision.Reason,
-				"operation": "tarball",
-			},
-		}); err != nil {
+		if err := proxyflow.RecordRequestDenied(r.Context(), h.audit, audit, decision, "npm tarball request denied"); err != nil {
 			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -329,38 +229,11 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 	}
 
 	addWarningHeaders(w, decision)
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventRequestAllowed,
-		Source:        "delivery/npm",
-		EntityType:    "decision",
-		EntityID:      decision.ID,
-		UpstreamID:    upstream.ID,
-		PolicyID:      decision.PolicyID,
-		Outcome:       decision.Outcome,
-		Artifact:      decision.Artifact,
-		Message:       "npm tarball request allowed",
-		Payload: map[string]any{
-			"operation": "tarball",
-			"warnings":  decision.Warnings,
-		},
-	}); err != nil {
+	if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "npm tarball request allowed"); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	if err := h.recordAudit(r.Context(), domain.AuditEvent{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventUpstreamFetchStarted,
-		Source:        "delivery/npm",
-		UpstreamID:    upstream.ID,
-		Artifact:      artifact,
-		Message:       "npm upstream tarball fetch started",
-		Payload: map[string]any{
-			"operation": "tarball",
-		},
-	}); err != nil {
+	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "npm upstream tarball fetch started"); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -373,19 +246,7 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 			writeNPMError(w, "tarball not found", http.StatusNotFound)
 			return
 		}
-		_ = h.recordAudit(r.Context(), domain.AuditEvent{
-			TenantID:      tenant.ID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventUpstreamFetchFailed,
-			Source:        "delivery/npm",
-			UpstreamID:    upstream.ID,
-			Artifact:      artifact,
-			Message:       "npm upstream tarball fetch failed",
-			Payload: map[string]any{
-				"operation": "tarball",
-				"error":     err.Error(),
-			},
-		})
+		_ = proxyflow.RecordUpstreamFetchFailed(r.Context(), h.audit, audit, "npm upstream tarball fetch failed", err)
 		h.logger.Error("upstream tarball fetch failed",
 			"error", err,
 			"tenant_id", tenant.ID,
@@ -398,31 +259,4 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 	defer resp.Body.Close()
 
 	streamResponse(w, resp)
-}
-
-func (h *RegistryHandler) recordAudit(ctx context.Context, event domain.AuditEvent) error {
-	if h.audit == nil {
-		return nil
-	}
-	return h.audit.Record(ctx, event)
-}
-
-func requestIDFromContext(ctx context.Context) string {
-	requestID, _ := middleware.RequestIDFromContext(ctx)
-	return requestID
-}
-
-func (h *RegistryHandler) resolveUpstream(ctx context.Context, tenantID string) (*domain.Upstream, error) {
-	if upstreamID, ok := middleware.UpstreamIDFromContext(ctx); ok && upstreamID != "" {
-		upstream, err := h.upstreams.GetByID(ctx, tenantID, upstreamID)
-		if err != nil {
-			return nil, err
-		}
-		if upstream.Ecosystem != domain.EcosystemNPM {
-			return nil, domain.ErrUpstreamNotFound
-		}
-		return upstream, nil
-	}
-
-	return h.upstreams.GetByEcosystem(ctx, tenantID, domain.EcosystemNPM)
 }

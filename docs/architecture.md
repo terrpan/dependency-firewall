@@ -455,3 +455,8 @@ Current direction:
 - keep v1 artifact-local
 - keep package-level exceptions small and explicit
 - revisit graph-backed evaluation when project-scoped dependency enforcement becomes a higher priority
+
+## Extension guides
+
+- Policy extension guide: `docs/adding-policy-type.md`
+- Upstream and ecosystem extension guide: `docs/adding-upstream.md`
