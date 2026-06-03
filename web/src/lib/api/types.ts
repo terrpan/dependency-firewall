@@ -53,8 +53,11 @@ export const policyTypes = [
 export type PolicyType = (typeof policyTypes)[number]
 export type PolicyAction = 'allow' | 'deny'
 
+export type VulnerabilitySeverity = 'none' | 'low' | 'medium' | 'high' | 'critical'
+
 export type CVSSThresholdPolicyConfig = {
-  max_cvss: number
+  max_cvss?: number
+  minimum_severity?: VulnerabilitySeverity
   dry_run?: boolean
 }
 

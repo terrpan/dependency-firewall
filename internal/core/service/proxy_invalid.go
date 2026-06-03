@@ -45,15 +45,17 @@ func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.
 		EvaluatedAt: time.Now(),
 	}
 
-	ttl := immutableDecisionTTL
-	if req.Artifact.IsMutableReference() {
-		ttl = mutableDecisionTTL
-	}
-	if cacheErr := s.decisionCache.Set(ctx, &decision, ttl); cacheErr != nil {
-		s.logger.WarnContext(ctx, "failed to cache invalid-policy decision",
-			"error", cacheErr,
-			"tenant_id", req.TenantID,
-		)
+	if shouldCacheDecision(req) {
+		ttl := immutableDecisionTTL
+		if req.Artifact.IsMutableReference() {
+			ttl = mutableDecisionTTL
+		}
+		if cacheErr := s.decisionCache.Set(ctx, &decision, ttl); cacheErr != nil {
+			s.logger.WarnContext(ctx, "failed to cache invalid-policy decision",
+				"error", cacheErr,
+				"tenant_id", req.TenantID,
+			)
+		}
 	}
 	if recordErr := s.decisions.Record(ctx, &decision); recordErr != nil {
 		_ = s.recordAudit(ctx, domain.AuditEvent{

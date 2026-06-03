@@ -91,3 +91,15 @@ func (a ArtifactIdentity) CacheKey() string {
 func (a ArtifactIdentity) IsMutableReference() bool {
 	return a.Digest == "" && a.Version != ""
 }
+
+// IsNPMDistTag reports whether an npm artifact version refers to a dist-tag
+// (e.g. "latest", "next") rather than a concrete semver version. Registry
+// version keys are always valid semver and begin with a digit, whereas
+// dist-tags are alphabetic labels.
+func (a ArtifactIdentity) IsNPMDistTag() bool {
+	if a.Ecosystem != EcosystemNPM || a.Version == "" {
+		return false
+	}
+	first := a.Version[0]
+	return first < '0' || first > '9'
+}

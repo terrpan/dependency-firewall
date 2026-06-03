@@ -35,6 +35,7 @@ Use this checklist when adding a new proxy protocol adapter or significantly ext
 - Do not bypass `AccessService` with direct policy or repository calls.
 - Keep deny-wins behavior and policy evaluation ordering unchanged.
 - Keep enrichment conditional on policy metadata requirements.
+- Keep version-sensitive enrichment and decision caching limited to requests that identify a concrete version, digest, or resolver-backed immutable reference.
 - Keep split-mode tenant authorization and mTLS expectations unchanged.
 - Keep cache isolation by both `tenant_id` and `upstream_id`.
 
@@ -138,6 +139,13 @@ For OCI, the long-term shape should prefer registry-native bearer-token challeng
 7. Persist the decision and configured durable audit events through the control-plane ingestion path.
 8. If denied, return a short registry-compatible error.
 9. If allowed, fetch from upstream and stream back to the client.
+
+### npm packuments and version-sensitive policy
+- `GET /npm/{package}` is a bare npm packument request. The URL does not identify one concrete package version even when the package-manager command was `npm install package@version`.
+- Bare packument requests must not use decision-cache lookup/write or external enrichment. This prevents stale package-wide decisions such as `npm:dompurify` from blocking the later concrete tarball request.
+- Bare packument requests that pass policy evaluation are audited as `request_forwarded`, not `request_allowed`, and their allow decisions are not persisted because the concrete version has not been enforced yet.
+- Versioned metadata requests such as `GET /npm/{package}/{version}`, dist-tag metadata requests that resolve to a concrete version, and tarball requests such as `GET /npm/{package}/-/{package}-{version}.tgz` may use normal decision caching and enrichment.
+- New ecosystems with package-document/listing endpoints should follow the same rule: do not run version-sensitive enrichment or cache decisions until the request identifies the enforceable artifact version or immutable reference.
 
 ## OCI
 

@@ -366,6 +366,8 @@ Some policy types depend on metadata from enrichment sources:
 
 The proxy loads the effective policy set before enrichment. If no enabled policy for the matched upstream declares `requiresExternalMetadata`, the request skips metadata-cache and external enrichment work entirely.
 
+Requests that do not identify a single enforceable artifact version or immutable reference also skip version-sensitive enrichment. For npm, `GET /npm/{package}` is a bare packument request, so it bypasses OSV/npm/Scorecard enrichment and decision-cache lookup/write. The later versioned metadata or tarball request is evaluated with the concrete version.
+
 If enrichment fails or metadata is unavailable, age, CVSS, and license conditions **skip** (no match), meaning the artifact is not blocked by that rule. Scorecard behavior follows `unavailable_scorecard_behavior`. Allowlist, namespace allowlist, blocklist, and mutable-tag policies work without external enrichment.
 
 ## Deferred goal: dependency-context selectors
@@ -549,17 +551,17 @@ Every policy mutation also computes a canonical tenant policy-set SHA-256.
 Request arrives
   → tenant resolved from header or URL path
   → artifact identity normalized
-  → decision cache checked (Valkey)
+  → if artifact identity is cacheable, decision cache checked (Valkey)
   → if cache HIT → return cached decision
   → load tenant policies from PostgreSQL
   → filter policies by upstream scope
   → compute canonical policy-set SHA-256
-  → if enabled policies need metadata:
+  → if enabled policies need metadata and artifact identity is version-specific:
       → metadata cache checked (Valkey)
       → if metadata cache MISS → run enrichers (OSV, npm, Scorecard as needed)
       → cache enriched metadata (30min TTL)
   → evaluate policies in priority order
-  → cache decision (5min mutable, 1hr immutable)
+  → if artifact identity is cacheable, cache decision (5min mutable, 1hr immutable)
   → record decision with policy_hash
   → return allow or deny with reason
 ```

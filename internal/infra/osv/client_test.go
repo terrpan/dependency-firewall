@@ -72,6 +72,32 @@ func TestClient_Enrich(t *testing.T) {
 			wantMaxCVSS:   new(9.8),
 		},
 		{
+			name: "database_specific severity is preferred and normalized",
+			artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "db-specific-severity",
+				Version:   "1.0.0",
+			},
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				resp := queryResponse{
+					Vulns: []osvVuln{
+						{
+							ID:      "GHSA-db-high",
+							Summary: "High vuln",
+							Severity: []osvSeverity{
+								{Type: "CVSS_V3", Score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},
+							},
+							DatabaseSpecific: osvDatabaseSpecific{Severity: "MODERATE"},
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			},
+			wantVulnCount: 1,
+			wantMaxCVSS:   new(9.8),
+		},
+		{
 			name: "empty vulns response returns metadata with nil MaxCVSS",
 			artifact: domain.ArtifactIdentity{
 				Ecosystem: domain.EcosystemNPM,
@@ -152,6 +178,15 @@ func TestClient_Enrich(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			assert.Len(t, result.Vulnerabilities, tc.wantVulnCount)
+			if tc.name == "successful query returns vulnerabilities with vector CVSS scores" {
+				require.Len(t, result.Vulnerabilities, 2)
+				assert.Equal(t, string(domain.SeverityCritical), result.Vulnerabilities[0].Severity)
+				assert.Equal(t, string(domain.SeverityMedium), result.Vulnerabilities[1].Severity)
+			}
+			if tc.name == "database_specific severity is preferred and normalized" {
+				require.Len(t, result.Vulnerabilities, 1)
+				assert.Equal(t, string(domain.SeverityMedium), result.Vulnerabilities[0].Severity)
+			}
 
 			if tc.wantMaxCVSS != nil {
 				require.NotNil(t, result.MaxCVSS)
@@ -180,6 +215,45 @@ func TestParseCVSSScore(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.InDelta(t, tt.want, parseCVSSScore(tt.input), 0.01)
+		})
+	}
+}
+
+func TestSeverityFromScore(t *testing.T) {
+	tests := []struct {
+		name  string
+		score float64
+		want  string
+	}{
+		{name: "critical", score: 9.1, want: string(domain.SeverityCritical)},
+		{name: "high", score: 7.5, want: string(domain.SeverityHigh)},
+		{name: "medium", score: 4.2, want: string(domain.SeverityMedium)},
+		{name: "low", score: 0.1, want: string(domain.SeverityLow)},
+		{name: "unknown", score: 0, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, severityFromScore(tt.score))
+		})
+	}
+}
+
+func TestNormalizeDatabaseSeverity(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "moderate", input: "MODERATE", want: string(domain.SeverityMedium)},
+		{name: "medium", input: "medium", want: string(domain.SeverityMedium)},
+		{name: "high", input: "HIGH", want: string(domain.SeverityHigh)},
+		{name: "unknown", input: "IMPORTANT", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, normalizeDatabaseSeverity(tt.input))
 		})
 	}
 }

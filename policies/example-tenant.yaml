@@ -5,6 +5,7 @@ policies:
     action: deny
     config:
       max_cvss: 7.0
+      minimum_severity: "high"
     enabled: true
 
   - name: block-new-packages

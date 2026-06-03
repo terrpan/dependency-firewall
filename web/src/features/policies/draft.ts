@@ -8,6 +8,7 @@ import type {
   PolicyUpsertInput,
   TypedPolicy,
   TypedPolicyVersion,
+  VulnerabilitySeverity,
 } from '../../lib/api'
 import {
   getDefinition,
@@ -37,7 +38,10 @@ export type PolicyDraftState = {
   schemaVersion: string
   priority: string
   enabled: boolean
+  useCVSSThreshold: boolean
+  useMinimumSeverity: boolean
   numericValue: string
+  minimumSeverity: VulnerabilitySeverity | ''
   listValue: string
   excludePackages: string
   dryRun: boolean
@@ -59,7 +63,10 @@ export function createEmptyPolicyDraft(): PolicyDraftState {
     schemaVersion: '1',
     priority: '',
     enabled: true,
+    useCVSSThreshold: false,
+    useMinimumSeverity: false,
     numericValue: '',
+    minimumSeverity: '',
     listValue: '',
     excludePackages: '',
     dryRun: false,
@@ -84,8 +91,11 @@ export function createPolicyDraftForType(
     schemaVersion: String(descriptor?.current_schema_version ?? 1),
     priority: String(definition.defaultPriority),
     enabled: true,
+    useCVSSThreshold: type === 'cvss_threshold',
+    useMinimumSeverity: false,
     numericValue:
       definition.numberDefault === undefined ? '' : String(definition.numberDefault),
+    minimumSeverity: '',
     listValue: definition.listDefault?.join('\n') ?? '',
     excludePackages: '',
     dryRun: false,
@@ -105,7 +115,10 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
     schemaVersion: String(policy.schema_version),
     priority: String(policy.priority),
     enabled: policy.enabled,
+    useCVSSThreshold: false,
+    useMinimumSeverity: false,
     numericValue: '',
+    minimumSeverity: '',
     listValue: '',
     excludePackages: '',
     dryRun: Boolean(policy.config.dry_run),
@@ -121,7 +134,10 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
     case 'cvss_threshold':
       return {
         ...baseDraft,
-        numericValue: String(policy.config.max_cvss),
+        useCVSSThreshold: policy.config.max_cvss !== undefined,
+        useMinimumSeverity: policy.config.minimum_severity !== undefined,
+        numericValue: policy.config.max_cvss === undefined ? '' : String(policy.config.max_cvss),
+        minimumSeverity: policy.config.minimum_severity ?? '',
       }
     case 'minimum_age':
       return {
@@ -287,12 +303,28 @@ function buildConfig(
 ): PolicyConfigByType[PolicyType] {
   switch (type) {
     case 'cvss_threshold': {
-      return maybeIncludeDryRun<PolicyConfigByType['cvss_threshold']>(
-        {
-          max_cvss: resolveNumberValue(draft, type, mode),
-        },
-        draft,
-      )
+      const config = maybeIncludeDryRun<PolicyConfigByType['cvss_threshold']>({}, draft)
+
+      if (!draft.useCVSSThreshold && !draft.useMinimumSeverity) {
+        throw new Error('Enable CVSS score, minimum severity, or both.')
+      }
+
+      if (draft.useCVSSThreshold) {
+        const maxCVSS = resolveOptionalNumberValue(draft.numericValue)
+        if (maxCVSS === null) {
+          throw new Error('Maximum CVSS score is required when CVSS threshold is enabled.')
+        }
+        config.max_cvss = maxCVSS
+      }
+
+      if (draft.useMinimumSeverity) {
+        if (!draft.minimumSeverity) {
+          throw new Error('Minimum severity is required when severity threshold is enabled.')
+        }
+        config.minimum_severity = draft.minimumSeverity
+      }
+
+      return config
     }
     case 'minimum_age': {
       const config = maybeIncludeDryRun<PolicyConfigByType['minimum_age']>(
@@ -540,7 +572,11 @@ export function buildPolicyDraftPreview(
   draft: PolicyDraftState,
   descriptor?: PolicyTypeDescriptor | null,
 ): PolicyUpsertInput | null {
-  return buildPolicyInput(draft, descriptor, 'preview')
+  try {
+    return buildPolicyInput(draft, descriptor, 'preview')
+  } catch {
+    return null
+  }
 }
 
 export function buildPolicyDraftInput(
@@ -758,10 +794,18 @@ function summarizeItems(label: string, items: string[]) {
 }
 
 function summarizeLicenseAllowlistMissingBehavior(
-	label: string,
-	behavior: LicenseAllowlistMissingBehavior | undefined,
+  label: string,
+  behavior: LicenseAllowlistMissingBehavior | undefined,
 ) {
-	return `${label}: ${(behavior ?? 'deny') === 'skip' ? 'skip' : 'deny'}`
+  return `${label}: ${(behavior ?? 'deny') === 'skip' ? 'skip' : 'deny'}`
+}
+
+function formatSeverityLabel(value: string) {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'medium') {
+    return 'Moderate'
+  }
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : value
 }
 
 function summarizeScorecardThresholds(checks: Record<string, number> | undefined) {
@@ -779,7 +823,20 @@ function summarizeScorecardThresholds(checks: Record<string, number> | undefined
 export function summarizePolicyConfig(policy: PolicyRecord): string {
   switch (policy.type) {
     case 'cvss_threshold': {
-      return `Max CVSS ${policy.config.max_cvss}${policy.config.dry_run ? ' • dry run' : ''}`
+      const thresholds: string[] = []
+      if (policy.config.max_cvss !== undefined) {
+        thresholds.push(`Max CVSS ${policy.config.max_cvss}`)
+      }
+      if (policy.config.minimum_severity !== undefined) {
+        thresholds.push(`Severity >= ${formatSeverityLabel(policy.config.minimum_severity)}`)
+      }
+      if (thresholds.length === 0) {
+        thresholds.push('Vulnerability threshold')
+      }
+      if (policy.config.dry_run) {
+        thresholds.push('dry run')
+      }
+      return thresholds.join(' • ')
     }
     case 'minimum_age': {
       const excludeCount = policy.config.exclude_packages?.length ?? 0

@@ -35,15 +35,15 @@ const fallbackActionMap = {
 
 export const policyDraftDefinitions: Record<PolicyType, DraftDefinition> = {
   cvss_threshold: {
-    displayName: 'CVSS threshold',
-    summary: 'Block all artifacts on the matched upstream when the maximum CVSS score is at or above the configured ceiling.',
-    description: 'Uses OSV vulnerability enrichment, applies tenant-wide unless scoped to one upstream, and does not require a package list.',
-    defaultPriority: 10,
+    displayName: 'Vulnerability threshold',
+    summary: 'Deny artifacts when CVSS score or vulnerability severity meets the configured threshold.',
+    description: 'Uses OSV vulnerability enrichment. Configure a maximum CVSS score, a minimum severity, or both.',
     numberField: 'max_cvss',
-    numberLabel: 'Maximum CVSS score',
+    numberLabel: 'Maximum CVSS score (optional)',
     numberDefault: 7,
     numberStep: 0.1,
     numberMin: 0,
+    defaultPriority: 10,
   },
   minimum_age: {
     displayName: 'Minimum age',
@@ -174,11 +174,11 @@ export function createFallbackPolicyTypeDescriptor(type: PolicyType): PolicyType
     type === 'block_mutable_tag'
       ? ['oci']
       : type === 'cvss_threshold' ||
-          type === 'minimum_age' ||
-          type === 'maximum_age' ||
-          type === 'scorecard' ||
-          type === 'license' ||
-          type === 'license_allowlist'
+        type === 'minimum_age' ||
+        type === 'maximum_age' ||
+        type === 'scorecard' ||
+        type === 'license' ||
+        type === 'license_allowlist'
         ? ['npm']
         : ['npm', 'oci']
   const requiredCapabilities =

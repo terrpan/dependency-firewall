@@ -38,4 +38,5 @@ export type PolicyDraftFieldErrorKey =
   | 'priority'
   | 'schemaVersion'
   | 'numericValue'
+  | 'minimumSeverity'
   | 'listValue'

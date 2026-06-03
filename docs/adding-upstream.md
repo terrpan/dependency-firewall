@@ -64,6 +64,7 @@ Rules:
 - keep auth handling server-side and scoped to configured upstream credentials
 - keep error surfaces short and domain-safe
 - keep per-tenant/per-upstream isolation in cache keys and request flow
+- implement `ResolveReference` for mutable or alias references when the ecosystem has them, so policy evaluation can use a concrete version or immutable reference where possible
 - do not leak delivery concerns into infra code
 
 ### 4. Add or extend delivery adapter responsibilities
@@ -86,6 +87,8 @@ When extending upstream support, do not change these invariants unless intention
 - deny overrides allow
 - unknown policy type/evaluation errors fail closed as deny
 - enrichment runs only when enabled policies require external metadata
+- version-sensitive enrichment and decision caching only run for requests that identify a concrete artifact version, digest, or resolver-backed immutable reference
+- package-document/listing requests that do not identify a single enforceable artifact version should bypass external enrichment and decision-cache lookup/write, while still allowing artifact-only policies to run
 - policy evaluation stays local to the proxy request path (no per-request control-plane policy RPC)
 
 If behavior must change, update docs and tests in the same PR.

@@ -474,7 +474,87 @@ export function PolicyDraftModal({
               </section>
             ) : null}
 
-            {selectedDefinition.numberField ? (
+            {draft.type === 'cvss_threshold' ? (
+              <div className="policy-form-grid">
+                <label
+                  className={`policy-field policy-threshold-option${draft.useCVSSThreshold ? ' policy-threshold-option-active' : ''}${draftFieldErrors.numericValue ? ' policy-field-invalid' : ''}`}
+                >
+                  <span className="policy-threshold-toggle-label">
+                    <input
+                      checked={draft.useCVSSThreshold}
+                      onChange={(event) => {
+                        const checked = event.target.checked
+                        const nextNumericValue =
+                          checked && !draft.numericValue.trim() && selectedDefinition.numberDefault !== undefined
+                            ? String(selectedDefinition.numberDefault)
+                            : draft.numericValue
+                        onDraftChange('useCVSSThreshold', checked)
+                        onDraftChange('numericValue', nextNumericValue)
+                      }}
+                      type="checkbox"
+                    />
+                    <span>Use CVSS score threshold</span>
+                  </span>
+                  <input
+                    aria-invalid={Boolean(draftFieldErrors.numericValue)}
+                    disabled={!draft.useCVSSThreshold}
+                    min={selectedDefinition.numberMin}
+                    onChange={(event) => onDraftChange('numericValue', event.target.value)}
+                    placeholder={
+                      selectedDefinition.numberDefault === undefined ? '' : String(selectedDefinition.numberDefault)
+                    }
+                    step={selectedDefinition.numberStep}
+                    type="number"
+                    value={draft.numericValue}
+                  />
+                  <small>Enable this to deny artifacts at or above the CVSS score threshold.</small>
+                  {draftFieldErrors.numericValue ? (
+                    <p className="policy-field-error">{draftFieldErrors.numericValue}</p>
+                  ) : null}
+                </label>
+
+                <label
+                  className={`policy-field policy-threshold-option${draft.useMinimumSeverity ? ' policy-threshold-option-active' : ''}${draftFieldErrors.minimumSeverity ? ' policy-field-invalid' : ''}`}
+                >
+                  <span className="policy-threshold-toggle-label">
+                    <input
+                      checked={draft.useMinimumSeverity}
+                      onChange={(event) => {
+                        const checked = event.target.checked
+                        const nextMinimumSeverity =
+                          checked && !draft.minimumSeverity ? 'high' : draft.minimumSeverity
+                        onDraftChange('useMinimumSeverity', checked)
+                        onDraftChange('minimumSeverity', nextMinimumSeverity)
+                      }}
+                      type="checkbox"
+                    />
+                    <span>Use minimum severity threshold</span>
+                  </span>
+                  <select
+                    aria-invalid={Boolean(draftFieldErrors.minimumSeverity)}
+                    disabled={!draft.useMinimumSeverity}
+                    onChange={(event) =>
+                      onDraftChange(
+                        'minimumSeverity',
+                        event.target.value as PolicyDraftState['minimumSeverity'],
+                      )
+                    }
+                    value={draft.minimumSeverity}
+                  >
+                    <option value="">Not set</option>
+                    <option value="none">None</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Moderate</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <small>Enable this to deny artifacts with vulnerabilities at or above this severity.</small>
+                  {draftFieldErrors.minimumSeverity ? (
+                    <p className="policy-field-error">{draftFieldErrors.minimumSeverity}</p>
+                  ) : null}
+                </label>
+              </div>
+            ) : selectedDefinition.numberField ? (
               <label className={`policy-field${draftFieldErrors.numericValue ? ' policy-field-invalid' : ''}`}>
                 <span>{selectedDefinition.numberLabel}</span>
                 <input

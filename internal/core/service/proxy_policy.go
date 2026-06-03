@@ -28,3 +28,22 @@ func needsEnrichment(policies []domain.Policy) bool {
 	}
 	return false
 }
+
+func shouldEnrichArtifact(req domain.AccessRequest, policies []domain.Policy) bool {
+	if isUnversionedNPMArtifact(req.Artifact) {
+		return false
+	}
+	return needsEnrichment(policies)
+}
+
+func shouldCacheDecision(req domain.AccessRequest) bool {
+	return !isUnversionedNPMArtifact(req.Artifact)
+}
+
+func shouldPersistDecision(req domain.AccessRequest, decision *domain.Decision) bool {
+	return !(isUnversionedNPMArtifact(req.Artifact) && decision.Outcome == domain.DecisionAllow)
+}
+
+func isUnversionedNPMArtifact(artifact domain.ArtifactIdentity) bool {
+	return artifact.Ecosystem == domain.EcosystemNPM && artifact.Version == ""
+}

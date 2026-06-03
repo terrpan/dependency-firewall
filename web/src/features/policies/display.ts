@@ -72,10 +72,26 @@ function summarizeListValues(values: string[]) {
   return `${head}${suffix}`
 }
 
+function formatSeverityLabel(value: string) {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'medium') {
+    return 'Moderate'
+  }
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : value
+}
+
 export function getPolicyConfigFields(policy: PolicyDisplayRecord): Array<{ label: string; values: string[] }> {
   switch (policy.type) {
-    case 'cvss_threshold':
-      return [{ label: 'Max CVSS', values: [String(policy.config.max_cvss)] }]
+    case 'cvss_threshold': {
+      const fields: Array<{ label: string; values: string[] }> = []
+      if (policy.config.max_cvss !== undefined) {
+        fields.push({ label: 'Max CVSS', values: [String(policy.config.max_cvss)] })
+      }
+      if (policy.config.minimum_severity !== undefined) {
+        fields.push({ label: 'Minimum severity', values: [formatSeverityLabel(policy.config.minimum_severity)] })
+      }
+      return fields
+    }
     case 'minimum_age': {
       const fields = [{ label: 'Minimum age', values: [`${policy.config.min_age_days} days`] }]
       if (policy.config.exclude_packages?.length) {
@@ -118,15 +134,15 @@ export function getPolicyConfigFields(policy: PolicyDisplayRecord): Array<{ labe
         { label: 'Approved licenses', values: policy.config.licenses },
         ...(policy.schema_version >= 2
           ? [
-              {
-                label: 'When unlicensed',
-                values: [formatLicenseAllowlistBehaviorLabel(policy.config.unlicensed_behavior)],
-              },
-              {
-                label: 'When metadata unavailable',
-                values: [formatLicenseAllowlistBehaviorLabel(policy.config.unavailable_metadata_behavior)],
-              },
-            ]
+            {
+              label: 'When unlicensed',
+              values: [formatLicenseAllowlistBehaviorLabel(policy.config.unlicensed_behavior)],
+            },
+            {
+              label: 'When metadata unavailable',
+              values: [formatLicenseAllowlistBehaviorLabel(policy.config.unavailable_metadata_behavior)],
+            },
+          ]
           : []),
       ]
     case 'allowlist':

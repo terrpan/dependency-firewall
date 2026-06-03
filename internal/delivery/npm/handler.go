@@ -125,9 +125,23 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 	}
 
 	addWarningHeaders(w, decision)
-	if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "npm metadata request allowed"); err != nil {
-		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
-		return
+	if version == "" {
+		if err := proxyflow.RecordRequestForwarded(
+			r.Context(),
+			h.audit,
+			audit,
+			decision,
+			"bare npm packument; concrete version will be evaluated on versioned metadata or tarball request",
+			"npm metadata request forwarded",
+		); err != nil {
+			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "npm metadata request allowed"); err != nil {
+			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
+			return
+		}
 	}
 	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "npm upstream metadata fetch started"); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)

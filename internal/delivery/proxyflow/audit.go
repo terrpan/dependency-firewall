@@ -44,7 +44,10 @@ func RecordRequestDenied(ctx context.Context, recorder AuditRecorder, audit Audi
 		domain.AuditEventRequestDenied,
 		message,
 		decision,
-		map[string]any{"reason": decision.Reason},
+		map[string]any{
+			"reason":  decision.Reason,
+			"reasons": decision.Reasons,
+		},
 	))
 }
 
@@ -54,8 +57,25 @@ func RecordRequestAllowed(ctx context.Context, recorder AuditRecorder, audit Aud
 		domain.AuditEventRequestAllowed,
 		message,
 		decision,
-		map[string]any{"warnings": decision.Warnings},
+		map[string]any{
+			"warnings": decision.Warnings,
+			"reasons":  decision.Reasons,
+		},
 	))
+}
+
+func RecordRequestForwarded(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, reason, message string) error {
+	payload := map[string]any{"reason": reason}
+	if decision != nil {
+		payload["evaluation_outcome"] = decision.Outcome
+		payload["warnings"] = decision.Warnings
+		payload["reasons"] = decision.Reasons
+	}
+	event := requestAuditEvent(audit, domain.AuditEventRequestForwarded, message, nil, payload)
+	if decision != nil {
+		event.Artifact = decision.Artifact
+	}
+	return record(ctx, recorder, event)
 }
 
 func RecordSimpleRequestAllowed(ctx context.Context, recorder AuditRecorder, audit AuditContext, message string) error {

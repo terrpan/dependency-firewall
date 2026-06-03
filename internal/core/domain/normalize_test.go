@@ -366,3 +366,71 @@ func Test_ArtifactIdentity_IsMutableReference(t *testing.T) {
 		})
 	}
 }
+
+func Test_ArtifactIdentity_IsNPMDistTag(t *testing.T) {
+	tests := []struct {
+		name  string
+		input ArtifactIdentity
+		want  bool
+	}{
+		{
+			name: "npm latest tag",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "express",
+				Version:   "latest",
+			},
+			want: true,
+		},
+		{
+			name: "npm next tag",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "express",
+				Version:   "next",
+			},
+			want: true,
+		},
+		{
+			name: "npm concrete semver",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "express",
+				Version:   "4.18.2",
+			},
+			want: false,
+		},
+		{
+			name: "npm prerelease semver",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "express",
+				Version:   "5.0.0-beta.1",
+			},
+			want: false,
+		},
+		{
+			name: "npm bare package",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "express",
+			},
+			want: false,
+		},
+		{
+			name: "oci tag is not npm dist-tag",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemOCI,
+				Name:      "nginx",
+				Version:   "latest",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.input.IsNPMDistTag())
+		})
+	}
+}

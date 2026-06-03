@@ -701,6 +701,19 @@ export function PoliciesPage() {
             }
           }
         }
+      } else if (draft.type === 'cvss_threshold') {
+        const hasCVSSThreshold = draft.useCVSSThreshold
+        const hasSeverityThreshold = draft.useMinimumSeverity
+
+        if (!hasCVSSThreshold && !hasSeverityThreshold) {
+          const message = 'Enable CVSS score, minimum severity, or both.'
+          nextErrors.numericValue = message
+          nextErrors.minimumSeverity = message
+        } else if (hasCVSSThreshold && !isValidNumberString(draft.numericValue)) {
+          nextErrors.numericValue = 'Maximum CVSS score must be a valid number.'
+        } else if (hasSeverityThreshold && draft.minimumSeverity.trim().length === 0) {
+          nextErrors.minimumSeverity = 'Minimum severity is required when severity threshold is enabled.'
+        }
       } else {
         if (selectedDefinition.numberField && !isValidNumberString(draft.numericValue)) {
           nextErrors.numericValue = `${selectedDefinition.numberLabel ?? 'Config value'} is required.`

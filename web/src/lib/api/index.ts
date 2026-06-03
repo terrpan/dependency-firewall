@@ -39,4 +39,5 @@ export {
   type UpdateTenantRequest,
   type UpdateUpstreamRequest,
   type Upstream,
+  type VulnerabilitySeverity,
 } from './types.ts'

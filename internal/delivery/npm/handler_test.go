@@ -169,6 +169,15 @@ func (m *mockUpstreamRepository) Create(_ context.Context, _ *domain.Upstream) e
 func (m *mockUpstreamRepository) Update(_ context.Context, _ *domain.Upstream) error { return nil }
 func (m *mockUpstreamRepository) Delete(_ context.Context, _, _ string) error        { return nil }
 
+type mockAuditRecorder struct {
+	events []domain.AuditEvent
+}
+
+func (m *mockAuditRecorder) Record(_ context.Context, event *domain.AuditEvent) error {
+	m.events = append(m.events, *event)
+	return nil
+}
+
 // --- Helpers ---
 
 func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *RegistryHandler {
@@ -176,6 +185,15 @@ func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *RegistryHand
 }
 
 func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, enricher port.Enricher) *RegistryHandler {
+	return newTestHandlerWithEnricherAndAudit(policies, hasRecentAllow, enricher, nil)
+}
+
+func newTestHandlerWithEnricherAndAudit(
+	policies []domain.Policy,
+	hasRecentAllow bool,
+	enricher port.Enricher,
+	auditSvc *service.AuditService,
+) *RegistryHandler {
 	upstream := &domain.Upstream{
 		ID:        "up-1",
 		TenantID:  "t-1",
@@ -200,10 +218,10 @@ func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, e
 		upstreamClient,
 		upstreamRepo,
 		slog.Default(),
-		nil,
+		auditSvc,
 	)
 
-	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), nil)
+	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), auditSvc)
 }
 
 func withTenant(r *http.Request) *http.Request {
@@ -242,6 +260,42 @@ func Test_handleMetadata_unscopedPackage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 	assert.Contains(t, rr.Body.String(), "express")
+}
+
+func Test_handleMetadata_unversionedPackageLogsForwardedNotAllowed(t *testing.T) {
+	auditRecorder := &mockAuditRecorder{}
+	auditSvc := service.NewAuditService(
+		auditRecorder,
+		nil,
+		slog.Default(),
+		true,
+		domain.AuditFailureModeFailOpen,
+		domain.AuditDetailLevelSummary,
+	)
+	h := newTestHandlerWithEnricherAndAudit(nil, false, &mockEnricher{}, auditSvc)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/npm/express", nil)
+	req = withTenant(req)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var sawForwarded bool
+	for _, event := range auditRecorder.events {
+		assert.NotEqual(t, domain.AuditEventRequestAllowed, event.EventType)
+		assert.NotEqual(t, domain.AuditEventDecisionComputed, event.EventType)
+		assert.NotEqual(t, domain.AuditEventDecisionPersisted, event.EventType)
+		if event.EventType == domain.AuditEventRequestForwarded {
+			sawForwarded = true
+			assert.Equal(t, "npm metadata request forwarded", event.Message)
+			assert.Equal(t, "metadata", event.Payload["operation"])
+			assert.Contains(t, event.Payload["reason"], "bare npm packument")
+			assert.Empty(t, event.Outcome)
+		}
+	}
+	assert.True(t, sawForwarded, "expected unversioned metadata request to emit request_forwarded")
 }
 
 func Test_handleMetadata_unscopedPackageWithVersion(t *testing.T) {

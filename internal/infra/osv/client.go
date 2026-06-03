@@ -63,14 +63,19 @@ type queryResponse struct {
 }
 
 type osvVuln struct {
-	ID       string        `json:"id"`
-	Summary  string        `json:"summary"`
-	Severity []osvSeverity `json:"severity"`
+	ID               string              `json:"id"`
+	Summary          string              `json:"summary"`
+	Severity         []osvSeverity       `json:"severity"`
+	DatabaseSpecific osvDatabaseSpecific `json:"database_specific"`
 }
 
 type osvSeverity struct {
 	Type  string `json:"type"`
 	Score string `json:"score"`
+}
+
+type osvDatabaseSpecific struct {
+	Severity string `json:"severity"`
 }
 
 // Enrich fetches vulnerability metadata for the given artifact from the OSV API.
@@ -155,7 +160,7 @@ func toArtifactMetadata(resp queryResponse) *domain.ArtifactMetadata {
 	hasScore := false
 
 	for _, v := range resp.Vulns {
-		severity, score := extractSeverity(v.Severity)
+		severity, score := resolveSeverity(v)
 		vulns = append(vulns, domain.Vulnerability{
 			ID:       v.ID,
 			Severity: severity,
@@ -184,7 +189,6 @@ func extractSeverity(severities []osvSeverity) (string, float64) {
 		return "", 0
 	}
 
-	bestSeverity := severities[0].Score
 	bestScore := parseCVSSScore(severities[0].Score)
 
 	for _, severity := range severities[1:] {
@@ -192,11 +196,50 @@ func extractSeverity(severities []osvSeverity) (string, float64) {
 		if score <= bestScore {
 			continue
 		}
-		bestSeverity = severity.Score
 		bestScore = score
 	}
 
-	return bestSeverity, bestScore
+	return severityFromScore(bestScore), bestScore
+}
+
+func resolveSeverity(v osvVuln) (string, float64) {
+	severity, score := extractSeverity(v.Severity)
+	if normalized := normalizeDatabaseSeverity(v.DatabaseSpecific.Severity); normalized != "" {
+		return normalized, score
+	}
+	return severity, score
+}
+
+func normalizeDatabaseSeverity(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return string(domain.SeverityNone)
+	case "low":
+		return string(domain.SeverityLow)
+	case "moderate", "medium":
+		return string(domain.SeverityMedium)
+	case "high":
+		return string(domain.SeverityHigh)
+	case "critical":
+		return string(domain.SeverityCritical)
+	default:
+		return ""
+	}
+}
+
+func severityFromScore(score float64) string {
+	switch {
+	case score >= 9.0:
+		return string(domain.SeverityCritical)
+	case score >= 7.0:
+		return string(domain.SeverityHigh)
+	case score >= 4.0:
+		return string(domain.SeverityMedium)
+	case score > 0:
+		return string(domain.SeverityLow)
+	default:
+		return ""
+	}
 }
 
 // parseCVSSScore extracts the base score from a CVSS vector string.

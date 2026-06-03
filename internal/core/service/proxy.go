@@ -77,6 +77,13 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		return nil, err
 	}
 
+	// 1c. Resolve npm dist-tags (e.g. "latest") to concrete versions so
+	// enrichment and policy evaluation target the version actually requested.
+	req, err = s.resolveMutableNPMReference(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	// 2. Check decision cache.
 	cached, hit, err := s.lookupCachedDecision(ctx, req)
 	if err != nil {
@@ -98,7 +105,7 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	}
 
 	var metadata *domain.ArtifactMetadata
-	if needsEnrichment(policySet.effectivePolicies) {
+	if shouldEnrichArtifact(req, policySet.effectivePolicies) {
 		metadata, err = s.enrichArtifact(ctx, req)
 		if err != nil {
 			recordSpanError(span, err)
@@ -244,25 +251,27 @@ func (s *AccessService) evaluatePolicies(
 			return nil, err
 		}
 	}
-	if err := s.recordAudit(ctx, domain.AuditEvent{
-		TenantID:      req.TenantID,
-		CorrelationID: req.RequestID,
-		EventType:     domain.AuditEventDecisionComputed,
-		Source:        "core/access",
-		UpstreamID:    req.Upstream.ID,
-		PolicyID:      decision.PolicyID,
-		Outcome:       decision.Outcome,
-		Artifact:      decision.Artifact,
-		Message:       "decision computed",
-		Payload: map[string]any{
-			"reason":             decision.Reason,
-			"warnings":           decision.Warnings,
-			"reason_count":       len(decision.Reasons),
-			"metadata_available": metadata != nil,
-			"metadata_summary":   s.metadataSummary(metadata),
-		},
-	}); err != nil {
-		return nil, err
+	if shouldPersistDecision(req, &decision) {
+		if err := s.recordAudit(ctx, domain.AuditEvent{
+			TenantID:      req.TenantID,
+			CorrelationID: req.RequestID,
+			EventType:     domain.AuditEventDecisionComputed,
+			Source:        "core/access",
+			UpstreamID:    req.Upstream.ID,
+			PolicyID:      decision.PolicyID,
+			Outcome:       decision.Outcome,
+			Artifact:      decision.Artifact,
+			Message:       "decision computed",
+			Payload: map[string]any{
+				"reason":             decision.Reason,
+				"warnings":           decision.Warnings,
+				"reason_count":       len(decision.Reasons),
+				"metadata_available": metadata != nil,
+				"metadata_summary":   s.metadataSummary(metadata),
+			},
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	return &decision, nil
@@ -273,22 +282,28 @@ func (s *AccessService) finalizeDecision(
 	req domain.AccessRequest,
 	decision *domain.Decision,
 ) error {
-	parentSpan := trace.SpanFromContext(ctx)
-	ttl := immutableDecisionTTL
-	if req.Artifact.IsMutableReference() {
-		ttl = mutableDecisionTTL
+	if shouldCacheDecision(req) {
+		ttl := immutableDecisionTTL
+		if req.Artifact.IsMutableReference() {
+			ttl = mutableDecisionTTL
+		}
+		cacheWriteCtx, cacheWriteSpan := serviceTracer().Start(ctx, "access.cache_decision")
+		if cacheErr := s.decisionCache.Set(cacheWriteCtx, decision, ttl); cacheErr != nil {
+			recordSpanError(cacheWriteSpan, cacheErr)
+			s.logger.WarnContext(ctx, "failed to cache decision",
+				"error", cacheErr,
+				"tenant_id", req.TenantID,
+			)
+		}
+		cacheWriteSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
+		cacheWriteSpan.End()
 	}
-	cacheWriteCtx, cacheWriteSpan := serviceTracer().Start(ctx, "access.cache_decision")
-	if cacheErr := s.decisionCache.Set(cacheWriteCtx, decision, ttl); cacheErr != nil {
-		recordSpanError(cacheWriteSpan, cacheErr)
-		s.logger.WarnContext(ctx, "failed to cache decision",
-			"error", cacheErr,
-			"tenant_id", req.TenantID,
-		)
-	}
-	cacheWriteSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
-	cacheWriteSpan.End()
 
+	if !shouldPersistDecision(req, decision) {
+		return nil
+	}
+
+	parentSpan := trace.SpanFromContext(ctx)
 	recordCtx, recordSpan := serviceTracer().Start(ctx, "access.persist_decision")
 	if recordErr := s.decisions.Record(recordCtx, decision); recordErr != nil {
 		recordSpanError(recordSpan, recordErr)

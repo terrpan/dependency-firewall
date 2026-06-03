@@ -23,6 +23,8 @@ type spyPolicyRepository struct {
 
 func proxyIntPtr(v int) *int { return &v }
 
+func proxyFloatPtr(v float64) *float64 { return &v }
+
 func (s *spyPolicyRepository) GetByID(context.Context, string, string) (*domain.Policy, error) {
 	return nil, domain.ErrPolicyNotFound
 }
@@ -81,6 +83,8 @@ func (s *spyDecisionRepository) HasRecentAllow(context.Context, string, domain.E
 
 type spyDecisionCache struct {
 	getErr          error
+	getCalls        int
+	cachedDecision  *domain.Decision
 	lastGetTenantID string
 	lastGetArtifact domain.ArtifactIdentity
 	setCalls        int
@@ -93,8 +97,12 @@ func newSpyDecisionCache() *spyDecisionCache {
 }
 
 func (s *spyDecisionCache) Get(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+	s.getCalls++
 	s.lastGetTenantID = tenantID
 	s.lastGetArtifact = artifact
+	if s.getErr == nil {
+		return s.cachedDecision, nil
+	}
 	return nil, s.getErr
 }
 
@@ -577,6 +585,199 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		assert.Equal(t, 1, enricher.calls)
 		assert.Equal(t, 1, decisionRepo.recordCalls)
 		assert.Equal(t, decision.PolicyHash, decisionRepo.recorded[0].PolicyHash)
+	})
+
+	t.Run("npm dist-tag resolves before cache lookup and enrichment", func(t *testing.T) {
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:       "p-npm-cvss",
+					TenantID: "tenant-1",
+					Name:     "block-high-cvss",
+					Type:     domain.PolicyTypeCVSSThreshold,
+					Action:   domain.PolicyActionDeny,
+					Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: proxyFloatPtr(7.0)},
+					Priority: 10,
+					Enabled:  true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := newSpyDecisionCache()
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{
+			result: &domain.ArtifactMetadata{MaxCVSS: proxyFloatPtr(5.0)},
+		}
+		upstreamClient := &spyUpstreamClient{resolveDigest: "4.18.2"}
+		requestUpstream := domain.Upstream{
+			ID:        "up-npm",
+			TenantID:  "tenant-1",
+			Name:      "npmjs",
+			Ecosystem: domain.EcosystemNPM,
+			BaseURL:   "https://registry.npmjs.org",
+		}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			upstreamClient,
+			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
+		)
+
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "Express",
+				Version:   "latest",
+			},
+			Upstream:  requestUpstream,
+			Timestamp: time.Now(),
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+		assert.Equal(t, "4.18.2", decision.Artifact.Version)
+		assert.Equal(t, 1, upstreamClient.resolveCalls)
+		assert.Equal(t, requestUpstream.ID, upstreamClient.lastUpstream.ID)
+		assert.Equal(t, "express", upstreamClient.lastArtifact.Name)
+		assert.Equal(t, "latest", upstreamClient.lastArtifact.Version)
+		assert.Equal(t, "4.18.2", decisionCache.lastGetArtifact.Version)
+		assert.Equal(t, "4.18.2", metadataCache.lastGetArtifact.Version)
+		assert.Equal(t, "4.18.2", enricher.lastArtifact.Version)
+		assert.Equal(t, "4.18.2", metadataCache.lastSetArtifact.Version)
+		assert.Equal(t, 1, decisionRepo.recordCalls)
+	})
+
+	t.Run("npm concrete version skips dist-tag resolution", func(t *testing.T) {
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:       "p-npm-cvss",
+					TenantID: "tenant-1",
+					Name:     "block-high-cvss",
+					Type:     domain.PolicyTypeCVSSThreshold,
+					Action:   domain.PolicyActionDeny,
+					Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: proxyFloatPtr(7.0)},
+					Priority: 10,
+					Enabled:  true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := newSpyDecisionCache()
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{
+			result: &domain.ArtifactMetadata{MaxCVSS: proxyFloatPtr(5.0)},
+		}
+		upstreamClient := &spyUpstreamClient{resolveDigest: "should-not-be-used"}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			upstreamClient,
+			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
+		)
+
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "express",
+				Version:   "4.18.2",
+			},
+			Timestamp: time.Now(),
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+		assert.Equal(t, "4.18.2", decision.Artifact.Version)
+		assert.Zero(t, upstreamClient.resolveCalls)
+		assert.Equal(t, "4.18.2", enricher.lastArtifact.Version)
+		assert.Equal(t, "4.18.2", decisionCache.lastGetArtifact.Version)
+	})
+
+	t.Run("npm bare packument keeps empty version and skips dist-tag resolution, cache, and enrichment", func(t *testing.T) {
+		policyRepo := &spyPolicyRepository{
+			policies: []domain.Policy{
+				{
+					ID:       "p-npm-cvss",
+					TenantID: "tenant-1",
+					Name:     "block-high-cvss",
+					Type:     domain.PolicyTypeCVSSThreshold,
+					Action:   domain.PolicyActionDeny,
+					Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: proxyFloatPtr(7.0)},
+					Priority: 10,
+					Enabled:  true,
+				},
+			},
+		}
+		decisionRepo := &spyDecisionRepository{}
+		decisionCache := &spyDecisionCache{
+			getErr: nil,
+			cachedDecision: &domain.Decision{
+				TenantID: "tenant-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "express",
+				},
+				Outcome: domain.DecisionDeny,
+				Reason:  "stale package-wide vulnerability decision",
+			},
+		}
+		metadataCache := newSpyProxyMetadataCache()
+		enricher := &spyProxyEnricher{
+			result: &domain.ArtifactMetadata{MaxCVSS: proxyFloatPtr(9.0)},
+		}
+		upstreamClient := &spyUpstreamClient{resolveDigest: "should-not-be-used"}
+
+		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		service := NewAccessService(
+			policyRepo,
+			decisionRepo,
+			decisionCache,
+			enrichmentService,
+			policy.NewEvaluator(),
+			upstreamClient,
+			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			nil,
+		)
+
+		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
+			TenantID: "tenant-1",
+			Artifact: domain.ArtifactIdentity{
+				Ecosystem: domain.EcosystemNPM,
+				Name:      "express",
+			},
+			Timestamp: time.Now(),
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, decision)
+		assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+		assert.Empty(t, decision.Artifact.Version)
+		assert.Zero(t, upstreamClient.resolveCalls)
+		assert.Zero(t, decisionCache.getCalls)
+		assert.Empty(t, enricher.lastArtifact.Version)
+		assert.Zero(t, enricher.calls)
+		assert.Zero(t, metadataCache.setCalls)
+		assert.Zero(t, decisionCache.setCalls)
+		assert.Zero(t, decisionRepo.recordCalls)
 	})
 
 	t.Run("npm license allowlist denies unlicensed artifacts", func(t *testing.T) {

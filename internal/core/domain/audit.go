@@ -24,6 +24,7 @@ const (
 	AuditEventUpstreamFetchFailed  AuditEventType = "upstream_fetch_failed"
 	AuditEventRequestAllowed       AuditEventType = "request_allowed"
 	AuditEventRequestDenied        AuditEventType = "request_denied"
+	AuditEventRequestForwarded     AuditEventType = "request_forwarded"
 	AuditEventError                AuditEventType = "error"
 )
 

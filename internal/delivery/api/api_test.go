@@ -2047,6 +2047,7 @@ func Test_EvaluationList(t *testing.T) {
 	list = decodeJSON[[]DecisionResponse](t, resp)
 	require.Len(t, list, 1)
 	assert.Equal(t, "lodash", list[0].Artifact.Name)
+	assert.Equal(t, "4.17.20", list[0].Artifact.Version)
 	assert.Equal(t, []string{"[block_cvss] artifact has CVSS score 8.1 at or above threshold 7.0"}, list[0].Warnings)
 }
 
