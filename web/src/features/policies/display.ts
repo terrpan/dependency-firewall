@@ -72,6 +72,18 @@ function summarizeListValues(values: string[]) {
   return `${head}${suffix}`
 }
 
+function summarizeRuleValues(values: string[]) {
+  return values.length > 0 ? summarizeListValues(values) : 'none configured'
+}
+
+function actionVerb(policy: PolicyDisplayRecord) {
+  const hypothetical = !policy.enabled || policy.config.dry_run === true
+  if (policy.action === 'allow') {
+    return hypothetical ? 'Would record an allow match for' : 'Record an allow match for'
+  }
+  return hypothetical ? 'Would deny' : 'Deny'
+}
+
 function formatSeverityLabel(value: string) {
   const normalized = value.trim().toLowerCase()
   if (normalized === 'medium') {
@@ -167,6 +179,75 @@ export function getPolicyConfigDetail(policy: PolicyDisplayRecord) {
     label: primaryField.label,
     value: extraFields.length > 0 ? `${primaryValue} • +${extraFields.length} more` : primaryValue,
   }
+}
+
+export function getPolicyBehaviorSummary(policy: PolicyDisplayRecord): string {
+  const verb = actionVerb(policy)
+
+  switch (policy.type) {
+    case 'cvss_threshold': {
+      const thresholds = [
+        policy.config.max_cvss === undefined ? null : `CVSS is ${policy.config.max_cvss} or higher`,
+        policy.config.minimum_severity === undefined
+          ? null
+          : `severity is ${formatSeverityLabel(policy.config.minimum_severity)} or higher`,
+      ].filter((value): value is string => Boolean(value))
+      return `${verb} packages when ${thresholds.join(' or ') || 'the vulnerability threshold matches'}.`
+    }
+    case 'minimum_age':
+      return `${verb} packages published less than ${policy.config.min_age_days} days ago${policy.config.exclude_packages?.length ? `, except ${summarizeRuleValues(policy.config.exclude_packages)}` : ''}.`
+    case 'maximum_age':
+      return `${verb} packages published more than ${policy.config.max_age_days} days ago${policy.config.exclude_packages?.length ? `, except ${summarizeRuleValues(policy.config.exclude_packages)}` : ''}.`
+    case 'block_mutable_tag':
+      return `${verb} OCI images using mutable tags: ${summarizeRuleValues(policy.config.tags)}.`
+    case 'scorecard': {
+      const thresholds = [
+        policy.config.min_score === undefined ? null : `overall score is below ${policy.config.min_score}`,
+        policy.config.checks && Object.keys(policy.config.checks).length > 0 ? 'a named check is below its minimum' : null,
+      ].filter((value): value is string => Boolean(value))
+      return `${verb} packages when ${thresholds.join(' or ') || 'the OpenSSF Scorecard rule matches'}.`
+    }
+    case 'license':
+      return `${verb} packages declaring ${summarizeRuleValues(policy.config.licenses)}.`
+    case 'license_allowlist':
+      return `${verb} packages unless every declared license is approved: ${summarizeRuleValues(policy.config.licenses)}.`
+    case 'allowlist':
+      return `${verb} trusted namespaces: ${summarizeRuleValues(policy.config.namespaces)}. Later deny rules can still block them.`
+    case 'namespace_allowlist':
+      return `${verb} packages outside approved namespaces: ${summarizeRuleValues(policy.config.namespaces)}.`
+    case 'blocklist':
+      return `${verb} packages from blocked namespaces: ${summarizeRuleValues(policy.config.namespaces)}.`
+  }
+}
+
+export function formatPolicyActionLabel(action: string): string {
+  return action === 'allow' ? 'Allow' : action === 'deny' ? 'Deny' : action
+}
+
+export function getPolicyTargetSummary(policy: PolicyDisplayRecord): string {
+  const target = policy.target
+  if (!target) {
+    return 'All dependencies'
+  }
+
+  const scopeLabels = (target.dependency_scope ?? []).map((scope) =>
+    scope === 'direct' ? 'Direct' : scope === 'transitive' ? 'Transitive' : 'Unknown scope',
+  )
+  const typeLabels = (target.dependency_types ?? []).map((type) =>
+    type === 'prod' ? 'Production' : type === 'dev' ? 'Development' : type === 'peer' ? 'Peer' : 'Optional',
+  )
+  const parts: string[] = [
+    scopeLabels.length > 0 ? scopeLabels.join(' + ') : null,
+    typeLabels.length > 0 ? typeLabels.join(' + ') : null,
+  ].filter((value): value is string => Boolean(value))
+  if (parts.length === 0) {
+    parts.push('All dependencies')
+  }
+  if (target.on_unknown) {
+    parts.push(`Unknown graph: ${target.on_unknown === 'warn' ? 'Warn only' : target.on_unknown === 'deny' ? 'Evaluate normally' : 'Skip'}`)
+  }
+
+  return parts.join(' • ')
 }
 
 export function matchesPolicySearch(

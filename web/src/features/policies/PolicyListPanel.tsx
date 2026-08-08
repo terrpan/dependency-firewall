@@ -4,12 +4,12 @@ import { policyClass } from './styles.ts'
 import type { TypedPolicy, Upstream } from '../../lib/api/index.ts'
 import { getPolicyTypeLabel, isPolicyDryRun } from './draft.ts'
 import {
-  formatPolicyScopeCaption,
   formatPolicyScopeLabel,
   formatPolicyTimestamp,
+  formatPolicyActionLabel,
+  getPolicyBehaviorSummary,
+  getPolicyTargetSummary,
   getActionTone,
-  getEnabledTone,
-  getPolicyConfigDetail,
 } from './display.ts'
 import { policyFilterOptions, type PolicyFilter } from './filters.ts'
 
@@ -78,7 +78,8 @@ export function PolicyListPanel({
     <section className={policyClass("card policy-list-card")}>
       <div className={policyClass("policy-section-heading")}>
         <div>
-          <h3>Current tenant policies</h3>
+          <h3>Policy overview</h3>
+          {policies.length > 0 ? <p className={policyClass("muted")}>Evaluation order is shown first to last; lower priority runs first.</p> : null}
         </div>
         <div className={policyClass("policy-list-tools")}>
           {activeFilters.length > 0 || policySearch.trim() ? (
@@ -130,7 +131,7 @@ export function PolicyListPanel({
         searchHelpText="Search by policy name, type, action, upstream scope, or configuration summary."
         searchInputId="policy-search"
         searchLabel="Policy search"
-        searchPlaceholder="block_cvss, cvss_threshold, npm upstream..."
+        searchPlaceholder="licenses, namespaces, npm registry..."
         searchValue={policySearch}
       /> : null}
 
@@ -164,9 +165,15 @@ export function PolicyListPanel({
 
       <div className={policyClass("policy-list")} role="list">
         {filteredPolicies.map((policy) => {
-          const configDetail = getPolicyConfigDetail(policy)
           const isDeletePending = deletePendingPolicyId === policy.id
           const isTogglePending = togglePendingPolicyId === policy.id
+          const isDryRun = isPolicyDryRun(policy)
+          const stateLabel = !policy.enabled ? 'Disabled' : isDryRun ? 'Dry run' : 'Enforcing'
+          const stateTone = !policy.enabled
+            ? 'policy-badge-muted'
+            : isDryRun
+              ? 'policy-badge-warning'
+              : 'policy-badge-success'
 
           return (
             <article
@@ -174,6 +181,7 @@ export function PolicyListPanel({
               className={policyClass('policy-list-item', policy.id === selectedPolicyId && 'selected')}
             >
               <button
+                aria-label={`Open details for ${policy.name}`}
                 className={policyClass("policy-list-item-main")}
                 onClick={() => onOpenDetail(policy.id)}
                 type="button"
@@ -182,44 +190,28 @@ export function PolicyListPanel({
                   <div>
                     <h4>{policy.name}</h4>
                     <p className={policyClass("muted")}>{getPolicyTypeLabel(policy.type)}</p>
-                    <p className={policyClass("policy-scope-copy")}>{formatPolicyScopeCaption(policy, upstreamsByID)}</p>
                   </div>
                   <div className={policyClass("policy-list-item-badges")}>
-                    <span className={policyClass('policy-badge', getActionTone(policy.action))}>{policy.action}</span>
-                    <span className={policyClass('policy-badge', getEnabledTone(policy.enabled))}>
-                      {policy.enabled ? 'enabled' : 'disabled'}
-                    </span>
-                    {isPolicyDryRun(policy) ? <span className={policyClass("policy-badge policy-badge-muted")}>dry run</span> : null}
+                    <span className={policyClass('policy-badge', stateTone)}>{stateLabel}</span>
+                    <span className={policyClass('policy-badge', getActionTone(policy.action))}>{formatPolicyActionLabel(policy.action)}</span>
                   </div>
                 </div>
-                <div className={policyClass("policy-config-summary")}>
-                  <span className={policyClass("policy-config-label")}>{configDetail.label}</span>
-                  <span className={policyClass("policy-config-value")}>{configDetail.value}</span>
+                <div className={policyClass("policy-behavior-summary")}>
+                  <span className={policyClass("policy-config-label")}>What it does</span>
+                  <strong>{getPolicyBehaviorSummary(policy)}</strong>
                 </div>
-                <dl className={policyClass("metadata-list compact-metadata-list compact-metadata-list-dense")}>
+                <dl className={policyClass("policy-overview-grid")}>
                   <div>
-                    <dt>Scope</dt>
+                    <dt>Applies through</dt>
                     <dd>{formatPolicyScopeLabel(policy, upstreamsByID)}</dd>
                   </div>
                   <div>
-                    <dt>Priority</dt>
-                    <dd>{policy.priority}</dd>
+                    <dt>Dependencies</dt>
+                    <dd>{getPolicyTargetSummary(policy)}</dd>
                   </div>
                   <div>
-                    <dt>Schema</dt>
-                    <dd>v{policy.schema_version}</dd>
-                  </div>
-                  <div>
-                    <dt>Version</dt>
-                    <dd>{policy.version}</dd>
-                  </div>
-                  <div>
-                    <dt>Created</dt>
-                    <dd>{formatPolicyTimestamp(policy.created_at)}</dd>
-                  </div>
-                  <div>
-                    <dt>Updated</dt>
-                    <dd>{formatPolicyTimestamp(policy.updated_at)}</dd>
+                    <dt>Evaluation order</dt>
+                    <dd>Priority {policy.priority}</dd>
                   </div>
                 </dl>
               </button>
@@ -232,25 +224,27 @@ export function PolicyListPanel({
                   <button className={policyClass("policy-card-action")} onClick={() => onOpenDetail(policy.id, 'history')} type="button">
                     History
                   </button>
-                  <button
-                    className={policyClass("policy-card-action policy-card-action-danger")}
-                    disabled={policy.enabled || Boolean(deletePendingPolicyId)}
-                    onClick={() => onDelete(policy)}
-                    title={policy.enabled ? 'Disable the policy before deleting it.' : undefined}
-                    type="button"
-                  >
-                    {policy.enabled ? 'Disable first' : isDeletePending ? 'Deleting...' : 'Delete'}
-                  </button>
+                  {!policy.enabled ? (
+                    <button
+                      className={policyClass("policy-card-action policy-card-action-danger")}
+                      disabled={Boolean(deletePendingPolicyId)}
+                      onClick={() => onDelete(policy)}
+                      type="button"
+                    >
+                      {isDeletePending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  ) : null}
                 </div>
-                <div className={policyClass("policy-inline-toggle")}>
-                  <span className={policyClass("policy-inline-toggle-label")}>Enabled</span>
+                <div className={policyClass("policy-list-state-actions")}>
+                  <span className={policyClass("policy-updated-copy")}>Updated {formatPolicyTimestamp(policy.updated_at)}</span>
                   <button
-                    className={policyClass('policy-enabled-toggle', policy.enabled && 'active')}
+                    aria-label={`${policy.enabled ? 'Disable' : 'Enable'} ${policy.name}`}
+                    className={policyClass("policy-card-action policy-state-action")}
                     disabled={isTogglePending}
                     onClick={() => onTogglePolicy(policy)}
                     type="button"
                   >
-                    {isTogglePending ? 'Saving...' : policy.enabled ? 'true' : 'false'}
+                    {isTogglePending ? 'Saving...' : policy.enabled ? 'Disable' : 'Enable'}
                   </button>
                 </div>
               </div>

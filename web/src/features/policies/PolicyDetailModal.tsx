@@ -6,9 +6,11 @@ import { getPolicyTypeLabel, isPolicyDryRun } from './draft.ts'
 import {
   formatPolicyScopeLabel,
   formatPolicyTimestamp,
+  formatPolicyActionLabel,
+  getPolicyBehaviorSummary,
+  getPolicyTargetSummary,
   getActionTone,
   getEnabledTone,
-  getPolicyConfigDetail,
   getPolicyConfigFields,
 } from './display.ts'
 
@@ -66,6 +68,7 @@ export function PolicyDetailModal({
   const currentPolicyTypeLabel = policy ? getPolicyTypeLabel(policy.type) : null
   const isDeletePending = Boolean(policy && deletePendingPolicyId === policy.id)
   const isTogglePending = Boolean(policy && togglePendingPolicyId === policy.id)
+  const isCurrentPolicyDryRun = Boolean(policy && isPolicyDryRun(policy))
 
   return (
     <ModalDialog
@@ -109,35 +112,33 @@ export function PolicyDetailModal({
           <section className={policyClass("policy-current-card")}>
             <div className={policyClass("policy-current-header")}>
               <div className={policyClass("policy-list-item-badges")}>
-                <span className={policyClass('policy-badge', getActionTone(policy.action))}>{policy.action}</span>
-                <span className={policyClass('policy-badge', getEnabledTone(policy.enabled))}>
-                  {policy.enabled ? 'enabled' : 'disabled'}
+                <span className={policyClass('policy-badge', !policy.enabled ? 'policy-badge-muted' : isCurrentPolicyDryRun ? 'policy-badge-warning' : 'policy-badge-success')}>
+                  {!policy.enabled ? 'Disabled' : isCurrentPolicyDryRun ? 'Dry run' : 'Enforcing'}
                 </span>
-                {isPolicyDryRun(policy) ? (
-                  <span className={policyClass("policy-badge policy-badge-muted")}>dry run</span>
-                ) : null}
+                <span className={policyClass('policy-badge', getActionTone(policy.action))}>{formatPolicyActionLabel(policy.action)}</span>
               </div>
               <div className={policyClass("policy-current-actions")}>
                 <div className={policyClass("policy-list-item-actions")}>
-                  <button
-                    className={policyClass("policy-card-action policy-card-action-danger")}
-                    disabled={policy.enabled || Boolean(deletePendingPolicyId)}
-                    onClick={() => onDelete(policy)}
-                    title={policy.enabled ? 'Disable the policy before deleting it.' : undefined}
-                    type="button"
-                  >
-                    {policy.enabled ? 'Disable first' : isDeletePending ? 'Deleting...' : 'Delete'}
-                  </button>
+                  {!policy.enabled ? (
+                    <button
+                      className={policyClass("policy-card-action policy-card-action-danger")}
+                      disabled={Boolean(deletePendingPolicyId)}
+                      onClick={() => onDelete(policy)}
+                      type="button"
+                    >
+                      {isDeletePending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  ) : null}
                 </div>
-                <div className={policyClass("policy-inline-toggle")}>
-                  <span className={policyClass("policy-inline-toggle-label")}>Enabled</span>
+                <div className={policyClass("policy-list-state-actions")}>
                   <button
-                    className={policyClass('policy-enabled-toggle', policy.enabled && 'active')}
+                    aria-label={`${policy.enabled ? 'Disable' : 'Enable'} ${policy.name}`}
+                    className={policyClass("policy-card-action policy-state-action")}
                     disabled={isTogglePending}
                     onClick={() => onTogglePolicy(policy)}
                     type="button"
                   >
-                    {isTogglePending ? 'Saving...' : policy.enabled ? 'true' : 'false'}
+                    {isTogglePending ? 'Saving...' : policy.enabled ? 'Disable' : 'Enable'}
                   </button>
                 </div>
               </div>
@@ -150,38 +151,34 @@ export function PolicyDetailModal({
               </div>
             ) : null}
 
-            <div className={policyClass("policy-config-summary")}>
-              <span className={policyClass("policy-config-label")}>{getPolicyConfigDetail(policy).label}</span>
-              <span className={policyClass("policy-config-value")}>{getPolicyConfigDetail(policy).value}</span>
+            <div className={policyClass("policy-behavior-summary")}>
+              <span className={policyClass("policy-config-label")}>What it does</span>
+              <strong>{getPolicyBehaviorSummary(policy)}</strong>
             </div>
-            <dl className={policyClass("metadata-list compact-metadata-list")}>
+            <dl className={policyClass("policy-overview-grid")}>
               <div>
-                <dt>Policy id</dt>
-                <dd>
-                  <code>{policy.id}</code>
-                </dd>
-              </div>
-              <div>
-                <dt>Scope</dt>
+                <dt>Applies through</dt>
                 <dd>{formatPolicyScopeLabel(policy, upstreamsByID)}</dd>
               </div>
               <div>
-                <dt>Created</dt>
-                <dd>{formatPolicyTimestamp(policy.created_at)}</dd>
+                <dt>Dependencies</dt>
+                <dd>{getPolicyTargetSummary(policy)}</dd>
               </div>
               <div>
-                <dt>Schema</dt>
-                <dd>v{policy.schema_version}</dd>
-              </div>
-              <div>
-                <dt>Priority</dt>
-                <dd>{policy.priority}</dd>
-              </div>
-              <div>
-                <dt>Updated</dt>
-                <dd>{formatPolicyTimestamp(policy.updated_at)}</dd>
+                <dt>Evaluation order</dt>
+                <dd>Priority {policy.priority}</dd>
               </div>
             </dl>
+            <details className={policyClass("policy-metadata-disclosure")}>
+              <summary>Technical details</summary>
+              <dl className={policyClass("metadata-list compact-metadata-list")}>
+                <div><dt>Policy id</dt><dd><code>{policy.id}</code></dd></div>
+                <div><dt>Schema</dt><dd>v{policy.schema_version}</dd></div>
+                <div><dt>Version</dt><dd>{policy.version}</dd></div>
+                <div><dt>Created</dt><dd>{formatPolicyTimestamp(policy.created_at)}</dd></div>
+                <div><dt>Updated</dt><dd>{formatPolicyTimestamp(policy.updated_at)}</dd></div>
+              </dl>
+            </details>
           </section>
 
           {detailTab === 'overview' ? (
@@ -256,7 +253,7 @@ export function PolicyDetailModal({
                       </div>
                     </div>
                     <div className={policyClass("policy-list-item-badges")}>
-                      <span className={policyClass('policy-badge', getActionTone(version.action))}>{version.action}</span>
+                      <span className={policyClass('policy-badge', getActionTone(version.action))}>{formatPolicyActionLabel(version.action)}</span>
                       <span className={policyClass('policy-badge', getEnabledTone(version.enabled))}>
                         {version.enabled ? 'enabled' : 'disabled'}
                       </span>
