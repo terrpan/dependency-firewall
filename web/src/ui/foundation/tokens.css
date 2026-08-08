@@ -1,0 +1,55 @@
+:root {
+  color-scheme: light;
+  --color-canvas: #f4f3ef;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f8f7f4;
+  --color-surface-muted: #eeece7;
+  --color-graphite-950: #15191d;
+  --color-graphite-900: #20262c;
+  --color-graphite-800: #2d353d;
+  --color-text: #20262c;
+  --color-text-muted: #64707c;
+  --color-border: #d8d8d3;
+  --color-border-strong: #bfc3c6;
+  --color-action: #32658a;
+  --color-action-hover: #254f6d;
+  --color-action-soft: #e8f0f5;
+  --color-success: #24704b;
+  --color-success-soft: #e6f2eb;
+  --color-warning: #8a5a16;
+  --color-warning-soft: #f7eedc;
+  --color-danger: #9b3b38;
+  --color-danger-soft: #f7e9e7;
+  --shadow-sm: 0 1px 2px rgb(21 25 29 / 8%);
+  --shadow-md: 0 8px 24px rgb(21 25 29 / 10%);
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --focus-ring: 0 0 0 3px rgb(50 101 138 / 25%);
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --page-max-width: 1600px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-canvas: #171b1f;
+  --color-surface: #20262b;
+  --color-surface-subtle: #252c32;
+  --color-surface-muted: #2d353c;
+  --color-text: #edf0f1;
+  --color-text-muted: #aeb7bd;
+  --color-border: #3a434a;
+  --color-border-strong: #56616a;
+  --color-action: #78a8ca;
+  --color-action-hover: #98bdd6;
+  --color-action-soft: #263b4a;
+  --color-success: #79bd95;
+  --color-success-soft: #243b2e;
+  --color-warning: #d8ae65;
+  --color-warning-soft: #41351f;
+  --color-danger: #e08b85;
+  --color-danger-soft: #472a29;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 25%);
+  --shadow-md: 0 8px 24px rgb(0 0 0 / 28%);
+}

@@ -3,13 +3,13 @@ import { createControlPlaneApi } from '../../lib/api/index.ts'
 import { useAuth } from './useAuth.ts'
 
 export function useSessionControlPlaneApi() {
-  const { getSessionHeaders } = useAuth()
+  const { getAccessToken } = useAuth()
 
   return useMemo(
     () =>
       createControlPlaneApi({
-        getSessionHeaders,
+        getAccessToken,
       }),
-    [getSessionHeaders],
+    [getAccessToken],
   )
 }

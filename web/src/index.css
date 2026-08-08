@@ -1,6 +1,5 @@
 :root {
-  color-scheme: dark;
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -182,3 +181,83 @@ svg {
 #root {
   min-height: 100vh;
 }
+
+/* Compatibility aliases while route modules migrate to the package-ready UI boundary. */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --background: var(--color-canvas);
+  --background-gradient: var(--color-canvas);
+  --background-accent: transparent;
+  --background-radial-right: transparent;
+  --background-radial-bottom: transparent;
+  --shell-frame-background: var(--color-surface);
+  --side-nav-background: var(--color-graphite-950);
+  --shell-main-background: var(--color-canvas);
+  --topbar-background: var(--color-surface);
+  --card-background: var(--color-surface);
+  --side-card-background: var(--color-surface-subtle);
+  --surface: var(--color-surface);
+  --surface-muted: var(--color-surface-subtle);
+  --surface-highlight: var(--color-surface-muted);
+  --surface-subtle: var(--color-surface-subtle);
+  --surface-raised: var(--color-surface);
+  --nav-link-hover: var(--color-graphite-800);
+  --nav-link-active: var(--color-action);
+  --button-muted-hover: var(--color-surface-muted);
+  --code-background: var(--color-surface-muted);
+  --success-surface: var(--color-success-soft);
+  --success-border: color-mix(in srgb, var(--color-success) 35%, transparent);
+  --success-text: var(--color-success);
+  --danger-surface: var(--color-danger-soft);
+  --danger-border: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  --danger-text: var(--color-danger);
+  --warning-surface: var(--color-warning-soft);
+  --warning-border: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  --warning-text: var(--color-warning);
+  --warning-chart: var(--color-warning);
+  --border-soft: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --text-strong: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --accent: var(--color-action);
+  --accent-bright: var(--color-action);
+  --accent-border: color-mix(in srgb, var(--color-action) 38%, transparent);
+  --accent-surface: var(--color-action-soft);
+  --shadow-card: var(--shadow-sm);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-shell: none;
+}
+
+:root[data-theme='dark'] {
+  --background: var(--color-canvas);
+  --background-gradient: var(--color-canvas);
+  --shell-frame-background: var(--color-surface);
+  --side-nav-background: var(--color-graphite-950);
+  --shell-main-background: var(--color-canvas);
+  --topbar-background: var(--color-surface);
+  --card-background: var(--color-surface);
+  --side-card-background: var(--color-surface-subtle);
+  --surface: var(--color-surface);
+  --surface-muted: var(--color-surface-subtle);
+  --surface-highlight: var(--color-surface-muted);
+  --surface-subtle: var(--color-surface-subtle);
+  --surface-raised: var(--color-surface);
+  --nav-link-hover: var(--color-graphite-800);
+  --nav-link-active: var(--color-action);
+  --button-muted-hover: var(--color-surface-muted);
+  --code-background: var(--color-surface-muted);
+  --border-soft: var(--color-border);
+  --border-strong: var(--color-border-strong);
+  --text-strong: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --accent: var(--color-action);
+  --accent-bright: var(--color-action);
+  --accent-surface: var(--color-action-soft);
+  --shadow-card: var(--shadow-sm);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-shell: none;
+}
+
+body { background: var(--color-canvas); }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }

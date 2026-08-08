@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigationType } from 'react-router-dom'
+import { Activity, Building2, ExternalLink, FileCheck2, GitFork, LayoutDashboard, Menu, Moon, Server, Sun, X, type LucideIcon } from 'lucide-react'
 import { useAuth } from '../features/auth/useAuth.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
 import { docsUrl } from '../lib/config.ts'
@@ -11,15 +12,16 @@ type NavigationItem = {
   summary: string
   end?: boolean
   requiresTenant?: boolean
+  icon: LucideIcon
 }
 
 const navigationItems = [
-  { to: '/', label: 'Dashboard', summary: 'Recent activity and service status.', end: true, requiresTenant: true },
-  { to: '/tenants', label: 'Tenants', summary: 'Tenant discovery and setup.' },
-  { to: '/upstreams', label: 'Upstreams', summary: 'Registry endpoints and connection details.', requiresTenant: true },
-  { to: '/policies', label: 'Policies', summary: 'Rules, versions, and rollback history.', requiresTenant: true },
-  { to: '/evaluations', label: 'Evaluations', summary: 'Audit history and decision details.', requiresTenant: true },
-  { to: '/dependency-graphs', label: 'Dependency graphs', summary: 'Resolved npm package relationships.', requiresTenant: true },
+  { to: '/', label: 'Dashboard', summary: 'Recent activity and service status.', icon: LayoutDashboard, end: true, requiresTenant: true },
+  { to: '/tenants', label: 'Tenants', summary: 'Tenant discovery and setup.', icon: Building2 },
+  { to: '/upstreams', label: 'Upstreams', summary: 'Registry endpoints and connection details.', icon: Server, requiresTenant: true },
+  { to: '/policies', label: 'Policies', summary: 'Rules, versions, and rollback history.', icon: FileCheck2, requiresTenant: true },
+  { to: '/evaluations', label: 'Evaluations', summary: 'Audit history and decision details.', icon: Activity, requiresTenant: true },
+  { to: '/dependency-graphs', label: 'Dependency graphs', summary: 'Resolved npm package relationships.', icon: GitFork, requiresTenant: true },
 ] satisfies readonly NavigationItem[]
 
 const themeStorageKey = 'dependency-firewall-theme'
@@ -36,7 +38,7 @@ function getInitialTheme(): ThemeMode {
     return storedTheme
   }
 
-  return 'system'
+  return 'light'
 }
 
 function resolveTheme(theme: ThemeMode): 'dark' | 'light' {
@@ -139,6 +141,7 @@ export function AppShell() {
   const location = useLocation()
   const navigationType = useNavigationType()
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
+  const [navigationOpen, setNavigationOpen] = useState(false)
   const { session, status: authStatus } = useAuth()
   const { activeTenant, hasTenants, isError, isLoading, setTenantId, status, tenantId, tenants } =
     useTenant()
@@ -240,11 +243,11 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <div className="shell-frame">
-        <aside className="side-nav" aria-label="Primary">
+        {navigationOpen ? <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigationOpen(false)} type="button" /> : null}
+        <aside className={navigationOpen ? 'side-nav open' : 'side-nav'} aria-label="Primary">
           <div className="side-nav-top">
             <div className="brand-block">
-              <p className="eyebrow">Dependency Firewall</p>
-              <h1>Control plane</h1>
+              <div className="brand-heading"><span className="brand-mark" aria-hidden="true">DF</span><div><p className="eyebrow">Dependency Firewall</p><h1>Operations</h1></div><button className="mobile-nav-close" aria-label="Close navigation" onClick={() => setNavigationOpen(false)} type="button"><X size={20}/></button></div>
             </div>
 
             <label className="tenant-switcher" htmlFor="tenant-select">
@@ -286,14 +289,15 @@ export function AppShell() {
               {navigationItems.map((item) => (
                 <li key={item.to}>
                   {item.requiresTenant && status !== 'ready' ? (
-                    <span className="nav-link disabled">{item.label}</span>
+                    <span className="nav-link disabled"><item.icon size={17}/>{item.label}</span>
                   ) : (
                     <NavLink
                       className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
                       end={item.end}
+                      onClick={() => setNavigationOpen(false)}
                       to={item.to}
                     >
-                      {item.label}
+                      <item.icon size={17}/><span>{item.label}</span>
                     </NavLink>
                   )}
                 </li>
@@ -303,13 +307,15 @@ export function AppShell() {
 
           <div className="shell-utility-actions side-docs-link">
             <a className="shell-action-link" href={docsUrl} target="_blank" rel="noreferrer">
-              Docs
+              <ExternalLink size={15}/> Docs
             </a>
           </div>
         </aside>
 
         <div className="shell-main">
           <header className="shell-utility-bar">
+            <button className="mobile-nav-trigger" aria-label="Open navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)} type="button"><Menu size={20}/></button>
+            <div className="utility-context"><strong>{activeTenant?.name ?? 'Dependency Firewall'}</strong><span>Security operations console</span></div>
             <div className="account-summary">
               <span className="account-avatar" aria-hidden="true">
                 {accountName.slice(0, 1).toUpperCase()}
@@ -328,7 +334,7 @@ export function AppShell() {
                 type="button"
                 title={`Switch to ${nextTheme} theme`}
               >
-                <ThemeIcon theme={theme} />
+                {theme === 'dark' ? <Moon size={18}/> : <Sun size={18}/>}<span className="sr-only"><ThemeIcon theme={theme}/></span>
               </button>
             </div>
           </header>
