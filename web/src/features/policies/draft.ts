@@ -1,10 +1,15 @@
 import type {
+  DependencyScope,
+  DependencyType,
+  DependencyUnknownAction,
   LicenseAllowlistMissingBehavior,
+  PolicyTarget,
   PolicyAction,
   PolicyConfigByType,
   ScorecardUnavailableBehavior,
   PolicyType,
   PolicyTypeDescriptor,
+  PolicyUpsertBase,
   PolicyUpsertInput,
   TypedPolicy,
   TypedPolicyVersion,
@@ -48,11 +53,19 @@ export type PolicyDraftState = {
   unlicensedBehavior: LicenseAllowlistMissingBehavior
   unavailableMetadataBehavior: LicenseAllowlistMissingBehavior
   scorecardUnavailableBehavior: ScorecardUnavailableBehavior
+  targetEnabled: boolean
+  targetDependencyScopes: DependencyScope[]
+  targetDependencyTypes: DependencyType[]
+  targetOnUnknown: DependencyUnknownAction
 }
 
 type PreviewMode = 'preview' | 'strict'
 
 type PolicyRecord = TypedPolicy | TypedPolicyVersion
+
+const dependencyScopes = ['direct', 'transitive', 'unknown'] satisfies DependencyScope[]
+const dependencyTypes = ['prod', 'dev', 'peer', 'optional'] satisfies DependencyType[]
+const unknownActions = ['warn', 'deny', 'skip'] satisfies DependencyUnknownAction[]
 
 export function createEmptyPolicyDraft(): PolicyDraftState {
   return {
@@ -73,6 +86,10 @@ export function createEmptyPolicyDraft(): PolicyDraftState {
     unlicensedBehavior: 'deny',
     unavailableMetadataBehavior: 'deny',
     scorecardUnavailableBehavior: 'deny',
+    targetEnabled: false,
+    targetDependencyScopes: [],
+    targetDependencyTypes: [],
+    targetOnUnknown: 'warn',
   }
 }
 
@@ -102,11 +119,16 @@ export function createPolicyDraftForType(
     unlicensedBehavior: 'deny',
     unavailableMetadataBehavior: 'deny',
     scorecardUnavailableBehavior: 'deny',
+    targetEnabled: false,
+    targetDependencyScopes: [],
+    targetDependencyTypes: [],
+    targetOnUnknown: 'warn',
   }
 }
 
 export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftState {
   const action: PolicyAction = policy.action === 'allow' ? 'allow' : 'deny'
+  const target = normalizePolicyTarget(policy.target)
   const baseDraft = {
     type: policy.type,
     upstreamId: policy.upstream_id ?? '',
@@ -128,6 +150,10 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
       policy.type === 'license_allowlist' ? policy.config.unavailable_metadata_behavior ?? 'deny' : 'deny',
     scorecardUnavailableBehavior:
       policy.type === 'scorecard' ? policy.config.unavailable_scorecard_behavior ?? 'deny' : 'deny',
+    targetEnabled: Boolean(target),
+    targetDependencyScopes: target?.dependency_scope ?? [],
+    targetDependencyTypes: target?.dependency_types ?? [],
+    targetOnUnknown: target?.on_unknown ?? 'warn',
   } satisfies PolicyDraftState
 
   switch (policy.type) {
@@ -188,6 +214,28 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
         ...baseDraft,
         listValue: policy.config.namespaces.join('\n'),
       }
+  }
+}
+
+function normalizePolicyTarget(target: PolicyRecord['target']): PolicyTarget | undefined {
+  if (!target) {
+    return undefined
+  }
+
+  const dependency_scope = (target.dependency_scope ?? []).filter((value): value is DependencyScope =>
+    dependencyScopes.includes(value as DependencyScope),
+  )
+  const dependency_types = (target.dependency_types ?? []).filter((value): value is DependencyType =>
+    dependencyTypes.includes(value as DependencyType),
+  )
+  const on_unknown = unknownActions.includes(target.on_unknown as DependencyUnknownAction)
+    ? (target.on_unknown as DependencyUnknownAction)
+    : 'warn'
+
+  return {
+    ...(dependency_scope.length > 0 ? { dependency_scope } : {}),
+    ...(dependency_types.length > 0 ? { dependency_types } : {}),
+    on_unknown,
   }
 }
 
@@ -452,7 +500,11 @@ function buildPolicyInput(
   const priority = resolvePriority(draft, draft.type, mode)
   const enabled = draft.enabled
   const upstreamID = draft.upstreamId.trim()
-  const baseInput = upstreamID ? { upstream_id: upstreamID } : {}
+  const target = buildPolicyTarget(draft)
+  const baseInput: Partial<Pick<PolicyUpsertBase, 'upstream_id' | 'target'>> = {
+    ...(upstreamID ? { upstream_id: upstreamID } : {}),
+    ...(target ? { target } : {}),
+  }
 
   switch (draft.type) {
     case 'cvss_threshold':
@@ -565,6 +617,18 @@ function buildPolicyInput(
         enabled,
         config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['blocklist'],
       }
+  }
+}
+
+function buildPolicyTarget(draft: PolicyDraftState): PolicyTarget | undefined {
+  if (!draft.targetEnabled) {
+    return undefined
+  }
+
+  return {
+    ...(draft.targetDependencyScopes.length > 0 ? { dependency_scope: draft.targetDependencyScopes } : {}),
+    ...(draft.targetDependencyTypes.length > 0 ? { dependency_types: draft.targetDependencyTypes } : {}),
+    on_unknown: draft.targetOnUnknown,
   }
 }
 
@@ -686,8 +750,10 @@ export function formatPolicyDraftJsonPreview(policy: PolicyUpsertInput | null): 
 
 function buildPolicyRecordPreview(policy: PolicyRecord): PolicyUpsertInput {
   const action: PolicyAction = policy.action === 'allow' ? 'allow' : 'deny'
+  const target = normalizePolicyTarget(policy.target)
   const basePreview = {
     ...(policy.upstream_id ? { upstream_id: policy.upstream_id } : {}),
+    ...(target ? { target } : {}),
     name: policy.name,
     action,
     schema_version: policy.schema_version,

@@ -34,6 +34,11 @@ export type PolicyImportResult =
 export type Evaluation =
   paths['/api/v1/evaluations']['get']['responses'][200]['content']['application/json'][number]
 
+export type DependencyGraphRoot =
+  paths['/api/v1/dependency-graphs']['get']['responses'][200]['content']['application/json'][number]
+export type DependencyGraph =
+  paths['/api/v1/dependency-graphs/{id}']['get']['responses'][200]['content']['application/json']
+
 export type CacheClearResult =
   paths['/api/v1/cache/decisions']['delete']['responses'][200]['content']['application/json']
 
@@ -52,6 +57,16 @@ export const policyTypes = [
 
 export type PolicyType = (typeof policyTypes)[number]
 export type PolicyAction = 'allow' | 'deny'
+
+export type DependencyScope = 'direct' | 'transitive' | 'unknown'
+export type DependencyType = 'prod' | 'dev' | 'peer' | 'optional'
+export type DependencyUnknownAction = 'warn' | 'deny' | 'skip'
+
+export type PolicyTarget = {
+  dependency_scope?: DependencyScope[]
+  dependency_types?: DependencyType[]
+  on_unknown?: DependencyUnknownAction
+}
 
 export type VulnerabilitySeverity = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
@@ -131,12 +146,13 @@ type TypedEntity<T extends { type: string; config: unknown }> = Omit<T, 'type' |
 export type TypedPolicy = TypedEntity<Policy>
 export type TypedPolicyVersion = TypedEntity<PolicyVersion>
 
-type PolicyUpsertBase = {
+export type PolicyUpsertBase = {
   name: string
   schema_version: number
   priority?: number
   enabled?: boolean
   upstream_id?: string
+  target?: PolicyTarget
 }
 
 export type PolicyUpsertInput = PolicyUpsertBase & {

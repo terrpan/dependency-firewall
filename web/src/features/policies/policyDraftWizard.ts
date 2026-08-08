@@ -18,6 +18,11 @@ export const policyWizardSteps = [
     description: 'Set the name and defaults.',
   },
   {
+    id: 'set-target',
+    label: 'Set target',
+    description: 'Scope the rule by npm dependency context.',
+  },
+  {
     id: 'configure-rule',
     label: 'Configure rule',
     description: 'Add the rule values.',
@@ -39,4 +44,5 @@ export type PolicyDraftFieldErrorKey =
   | 'schemaVersion'
   | 'numericValue'
   | 'minimumSeverity'
+  | 'target'
   | 'listValue'
