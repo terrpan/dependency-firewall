@@ -6,8 +6,8 @@ test('renders the light operations shell and attaches bearer auth', async ({ pag
   let authorization = ''
   page.on('request', request => { if (request.url().includes('/api/v1/')) authorization = request.headers().authorization ?? authorization })
   await page.goto('/')
-  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
-  await expect(page.getByText('Acme Engineering').first()).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Primary' })).toBeVisible()
+  await expect(page.locator('.tenant-active strong')).toHaveText('Acme Engineering')
   await expect.poll(() => authorization).toBe('Bearer playwright-access-token')
   await page.screenshot({ path: testInfo.outputPath('light-dashboard.png'), fullPage: true })
 })
@@ -17,7 +17,7 @@ test('mobile drawer is keyboard-accessible', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Open navigation' }).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Primary' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('mobile-navigation.png'), fullPage: true })
 })
 
@@ -28,10 +28,20 @@ test('persists and renders dark theme', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('dark-shell.png'), fullPage: true })
 })
 
-for (const state of ['anonymous', 'unauthorized', 'expired'] as const) {
-  test(`supports the ${state} auth adapter`, async ({ page }) => {
-    await installAuth(page, state)
-    await page.goto('/tenants')
-    await expect(page.getByText('Authentication not configured')).toBeVisible()
-  })
-}
+test('allows provider-free local anonymous mode', async ({ page }) => {
+  await installAuth(page, 'anonymous')
+  await page.goto('/tenants')
+  await expect(page.getByText('Authentication not configured')).toBeVisible()
+})
+
+test('renders unauthorized state', async ({ page }) => {
+  await installAuth(page, 'unauthorized')
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
+})
+
+test('renders expired-session state', async ({ page }) => {
+  await installAuth(page, 'expired')
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Session expired' })).toBeVisible()
+})

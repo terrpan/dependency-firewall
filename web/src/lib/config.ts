@@ -1,5 +1,7 @@
+const runtimeEnv = import.meta.env ?? ({} as ImportMetaEnv)
+
 function readEnv(key: keyof ImportMetaEnv, fallback: string) {
-  const value = import.meta.env[key]
+  const value = runtimeEnv[key]
 
   if (!value) {
     return fallback
@@ -10,7 +12,7 @@ function readEnv(key: keyof ImportMetaEnv, fallback: string) {
 }
 
 function normalizeDevTelemetryExporterUrl(value: string) {
-  if (!import.meta.env.DEV) {
+  if (!runtimeEnv.DEV) {
     return value
   }
 
@@ -27,7 +29,7 @@ function normalizeDevTelemetryExporterUrl(value: string) {
 }
 
 function readBooleanEnv(key: keyof ImportMetaEnv, fallback: boolean) {
-  const value = import.meta.env[key]
+  const value = runtimeEnv[key]
   if (!value) {
     return fallback
   }
@@ -49,7 +51,7 @@ function readBooleanEnv(key: keyof ImportMetaEnv, fallback: boolean) {
 }
 
 function readNumberEnv(key: keyof ImportMetaEnv, fallback: number) {
-  const value = import.meta.env[key]
+  const value = runtimeEnv[key]
   if (!value) {
     return fallback
   }
@@ -89,7 +91,7 @@ export const firewallRootUrl = trimTrailingSlash(
   readEnv(
     'VITE_FIREWALL_ROOT_URL',
     controlPlaneRootUrl ||
-      (import.meta.env.DEV
+      (runtimeEnv.DEV
         ? 'http://localhost:8080'
         : typeof window !== 'undefined'
           ? window.location.origin
@@ -101,7 +103,7 @@ export const openApiUrl = readEnv('VITE_OPENAPI_URL', joinUrlPath(controlPlaneRo
 export const telemetryEnabled = readBooleanEnv('VITE_OTEL_ENABLED', false)
 export const telemetryExporterUrl = readEnv(
   'VITE_OTEL_EXPORTER_URL',
-  import.meta.env.DEV ? '/otlp/v1/traces' : 'http://localhost:4318/v1/traces',
+  runtimeEnv.DEV ? '/otlp/v1/traces' : 'http://localhost:4318/v1/traces',
 )
 export const normalizedTelemetryExporterUrl = normalizeDevTelemetryExporterUrl(telemetryExporterUrl)
 export const telemetryServiceName = readEnv('VITE_OTEL_SERVICE_NAME', 'dependency-firewall-web')
