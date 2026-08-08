@@ -12,6 +12,8 @@ import {
 } from './request.ts'
 import type {
   CacheClearResult,
+  DependencyGraph,
+  DependencyGraphRoot,
   CreatePolicyRequest,
   CreateTenantRequest,
   CreateUpstreamRequest,
@@ -348,6 +350,25 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
             offset: options?.offset,
             search: options?.search,
           },
+          tenantScoped: true,
+          ...options,
+        })
+      },
+    },
+    dependencyGraphs: {
+      list(options?: RequestOptions & { limit?: number }) {
+        return request<DependencyGraphRoot[]>({
+          method: 'GET',
+          path: '/dependency-graphs',
+          query: { limit: options?.limit },
+          tenantScoped: true,
+          ...options,
+        })
+      },
+      get(id: string, options?: RequestOptions) {
+        return request<DependencyGraph>({
+          method: 'GET',
+          path: `/dependency-graphs/${id}`,
           tenantScoped: true,
           ...options,
         })

@@ -8,6 +8,9 @@ const DashboardPage = lazy(() => import('../pages/DashboardPage.tsx').then(({ Da
 const EvaluationsPage = lazy(() =>
   import('../pages/EvaluationsPage.tsx').then(({ EvaluationsPage }) => ({ default: EvaluationsPage })),
 )
+const DependencyGraphsPage = lazy(() =>
+  import('../pages/DependencyGraphsPage.tsx').then(({ DependencyGraphsPage }) => ({ default: DependencyGraphsPage })),
+)
 const NotFoundPage = lazy(() => import('../pages/NotFoundPage.tsx').then(({ NotFoundPage }) => ({ default: NotFoundPage })))
 const PoliciesPage = lazy(() => import('../pages/PoliciesPage.tsx').then(({ PoliciesPage }) => ({ default: PoliciesPage })))
 const TenantsPage = lazy(() => import('../pages/TenantsPage.tsx').then(({ TenantsPage }) => ({ default: TenantsPage })))
@@ -41,6 +44,10 @@ export const router = createBrowserRouter([
       {
         path: 'evaluations',
         element: <RouteElement Page={EvaluationsPage} />,
+      },
+      {
+        path: 'dependency-graphs',
+        element: <RouteElement Page={DependencyGraphsPage} />,
       },
       {
         path: '*',

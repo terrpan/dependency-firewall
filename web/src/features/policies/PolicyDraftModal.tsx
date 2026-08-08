@@ -1,6 +1,6 @@
 // PolicyDraftModal renders the guided create/edit policy workflow.
 import { ModalWizard } from '../../components/modal/index.ts'
-import type { PolicyType, PolicyTypeDescriptor, Upstream } from '../../lib/api/index.ts'
+import type { DependencyScope, DependencyType, PolicyType, PolicyTypeDescriptor, Upstream } from '../../lib/api/index.ts'
 import {
   getPolicyTypeLabel,
   getSupportedActions,
@@ -80,6 +80,26 @@ function getPolicyEffectCopy(
     summary,
     description: description && description !== summary ? description : null,
   }
+}
+
+const dependencyScopeOptions: { value: DependencyScope; label: string }[] = [
+  { value: 'direct', label: 'Direct' },
+  { value: 'transitive', label: 'Transitive' },
+]
+
+const dependencyTypeOptions: { value: DependencyType; label: string }[] = [
+  { value: 'prod', label: 'Production' },
+  { value: 'dev', label: 'Development' },
+  { value: 'peer', label: 'Peer' },
+  { value: 'optional', label: 'Optional' },
+]
+
+function toggleValue<T extends string>(values: readonly T[], value: T, checked: boolean): T[] {
+  if (checked) {
+    return values.includes(value) ? [...values] : [...values, value]
+  }
+
+  return values.filter((item) => item !== value)
 }
 
 export function PolicyDraftModal({
@@ -465,7 +485,100 @@ export function PolicyDraftModal({
           </div>
         ) : null}
 
-        {currentStep === 3 && draft.type && selectedDescriptor && selectedDefinition ? (
+        {currentStep === 3 && draft.type && selectedUpstream ? (
+          <div className="policy-form-stack">
+            <section className="policy-summary-card policy-effect-card">
+              <h4>Dependency target</h4>
+              <p className="muted">
+                Targeting is available for npm policies. When enabled, graph context is resolved asynchronously and unknown context follows the selected fallback.
+              </p>
+            </section>
+
+            {selectedUpstream.ecosystem === 'npm' ? (
+              <>
+                <label className="policy-field checkbox-field">
+                  <input
+                    checked={draft.targetEnabled}
+                    onChange={(event) => onDraftChange('targetEnabled', event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>Apply this policy only for selected dependency context</span>
+                </label>
+
+                {draft.targetEnabled ? (
+                  <>
+                    <div className="policy-form-grid">
+                      <fieldset className="policy-field">
+                        <span>Dependency scope</span>
+                        {dependencyScopeOptions.map((option) => (
+                          <label key={option.value} className="checkbox-field">
+                            <input
+                              checked={draft.targetDependencyScopes.includes(option.value)}
+                              onChange={(event) =>
+                                onDraftChange(
+                                  'targetDependencyScopes',
+                                  toggleValue(draft.targetDependencyScopes, option.value, event.target.checked),
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        ))}
+                        <small>Leave both unchecked to match any dependency scope once context is known.</small>
+                      </fieldset>
+
+                      <fieldset className="policy-field">
+                        <span>Dependency type</span>
+                        {dependencyTypeOptions.map((option) => (
+                          <label key={option.value} className="checkbox-field">
+                            <input
+                              checked={draft.targetDependencyTypes.includes(option.value)}
+                              onChange={(event) =>
+                                onDraftChange(
+                                  'targetDependencyTypes',
+                                  toggleValue(draft.targetDependencyTypes, option.value, event.target.checked),
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        ))}
+                        <small>Leave all unchecked to match any dependency type once context is known.</small>
+                      </fieldset>
+                    </div>
+
+                    <label className="policy-field">
+                      <span>When graph context is unknown</span>
+                      <select
+                        onChange={(event) =>
+                          onDraftChange(
+                            'targetOnUnknown',
+                            event.target.value as PolicyDraftState['targetOnUnknown'],
+                          )
+                        }
+                        value={draft.targetOnUnknown}
+                      >
+                        <option value="warn">Warn only</option>
+                        <option value="deny">Evaluate normally</option>
+                        <option value="skip">Skip this policy</option>
+                      </select>
+                      <small>Unknown is used before async graph resolution completes or when graph evidence conflicts.</small>
+                    </label>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <section className="policy-summary-card">
+                <h4>Not available for this upstream</h4>
+                <p className="muted">Dependency graph targeting is currently npm-only.</p>
+              </section>
+            )}
+          </div>
+        ) : null}
+
+        {currentStep === 4 && draft.type && selectedDescriptor && selectedDefinition ? (
           <div className="policy-form-stack">
             {policyEffectCopy ? (
               <section className="policy-summary-card policy-effect-card">
@@ -682,7 +795,7 @@ export function PolicyDraftModal({
           </div>
         ) : null}
 
-        {currentStep === 4 ? (
+        {currentStep === 5 ? (
           <div className="policy-review-stack">
             <section className="policy-summary-card">
               <h4>Review before {isEditingPolicy ? 'saving' : 'creating'}</h4>

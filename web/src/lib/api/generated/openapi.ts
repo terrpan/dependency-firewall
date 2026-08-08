@@ -64,6 +64,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dependency-graphs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List resolved dependency graphs
+         * @description Lists tenant-scoped npm dependency graph roots.
+         */
+        get: operations["list-dependency-graphs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dependency-graphs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a resolved dependency graph
+         * @description Returns one tenant-scoped npm dependency graph with nodes and edges.
+         */
+        get: operations["get-dependency-graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evaluations": {
         parameters: {
             query?: never;
@@ -409,6 +449,37 @@ export interface components {
             reasons: components["schemas"]["EvaluationReasonResponse"][] | null;
             warnings?: string[] | null;
         };
+        DependencyGraphEdgeResponse: {
+            child_node_id: string;
+            dependency_type: string;
+            id: string;
+            parent_node_id: string;
+        };
+        DependencyGraphNodeResponse: {
+            artifact: components["schemas"]["ArtifactIdentityResponse"];
+            dependency_types?: string[] | null;
+            id: string;
+            /** Format: int64 */
+            min_depth: number;
+        };
+        DependencyGraphResponse: {
+            edges: components["schemas"]["DependencyGraphEdgeResponse"][] | null;
+            nodes: components["schemas"]["DependencyGraphNodeResponse"][] | null;
+            root: components["schemas"]["DependencyGraphRootResponse"];
+        };
+        DependencyGraphRootResponse: {
+            created_at: string;
+            error?: string;
+            graph_hash?: string;
+            id: string;
+            package_name: string;
+            resolved_at?: string;
+            status: string;
+            tenant_id: string;
+            updated_at: string;
+            upstream_id: string;
+            version: string;
+        };
         DependencyResponse: {
             /** Format: int64 */
             duration_ms: number;
@@ -457,6 +528,7 @@ export interface components {
             priority?: number;
             /** Format: int64 */
             schema_version?: number;
+            target?: components["schemas"]["PolicyTarget"];
             type?: string;
             upstream_id?: string;
         };
@@ -472,6 +544,7 @@ export interface components {
             priority: number;
             /** Format: int64 */
             schema_version: number;
+            target?: components["schemas"]["PolicyTarget"];
             type: string;
             /** Format: date-time */
             updated_at: string;
@@ -482,6 +555,11 @@ export interface components {
         PolicyRollbackRequest: {
             /** Format: int64 */
             version?: number;
+        };
+        PolicyTarget: {
+            dependency_scope?: string[] | null;
+            dependency_types?: string[] | null;
+            on_unknown?: string;
         };
         PolicyTypeResponse: {
             /** Format: int64 */
@@ -507,6 +585,7 @@ export interface components {
             priority: number;
             /** Format: int64 */
             schema_version: number;
+            target?: components["schemas"]["PolicyTarget"];
             type: string;
             upstream_id?: string;
             /** Format: int64 */
@@ -730,6 +809,137 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+        };
+    };
+    "list-dependency-graphs": {
+        parameters: {
+            query?: {
+                /** @description Maximum number of graph roots */
+                limit?: number;
+            };
+            header?: {
+                /** @description Tenant identifier */
+                "X-Tenant-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DependencyGraphRootResponse"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+        };
+    };
+    "get-dependency-graph": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Tenant identifier */
+                "X-Tenant-ID"?: string;
+            };
+            path: {
+                /** @description Graph root identifier */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DependencyGraphResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };

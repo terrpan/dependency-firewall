@@ -19,6 +19,7 @@ const navigationItems = [
   { to: '/upstreams', label: 'Upstreams', summary: 'Registry endpoints and connection details.', requiresTenant: true },
   { to: '/policies', label: 'Policies', summary: 'Rules, versions, and rollback history.', requiresTenant: true },
   { to: '/evaluations', label: 'Evaluations', summary: 'Audit history and decision details.', requiresTenant: true },
+  { to: '/dependency-graphs', label: 'Dependency graphs', summary: 'Resolved npm package relationships.', requiresTenant: true },
 ] satisfies readonly NavigationItem[]
 
 const themeStorageKey = 'dependency-firewall-theme'

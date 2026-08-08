@@ -540,6 +540,14 @@ export function PoliciesPage() {
         return {
           ...currentDraft,
           upstreamId,
+          ...(nextUpstream?.ecosystem === 'npm'
+            ? {}
+            : {
+                targetEnabled: false,
+                targetDependencyScopes: [],
+                targetDependencyTypes: [],
+                targetOnUnknown: 'warn' as const,
+              }),
         }
       }
 
@@ -548,6 +556,14 @@ export function PoliciesPage() {
         return {
           ...currentDraft,
           upstreamId,
+          ...(nextUpstream.ecosystem === 'npm'
+            ? {}
+            : {
+                targetEnabled: false,
+                targetDependencyScopes: [],
+                targetDependencyTypes: [],
+                targetOnUnknown: 'warn' as const,
+              }),
         }
       }
 
@@ -681,7 +697,7 @@ export function PoliciesPage() {
       }
     }
 
-    if (step === 3 && selectedDefinition) {
+    if (step === 4 && selectedDefinition) {
       if (draft.type === 'scorecard') {
         const hasOverallThreshold = draft.numericValue.trim().length > 0
         const hasCheckThresholds = draft.listValue.trim().length > 0
