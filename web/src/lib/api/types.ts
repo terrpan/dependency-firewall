@@ -58,7 +58,7 @@ export const policyTypes = [
 export type PolicyType = (typeof policyTypes)[number]
 export type PolicyAction = 'allow' | 'deny'
 
-export type DependencyScope = 'direct' | 'transitive'
+export type DependencyScope = 'direct' | 'transitive' | 'unknown'
 export type DependencyType = 'prod' | 'dev' | 'peer' | 'optional'
 export type DependencyUnknownAction = 'warn' | 'deny' | 'skip'
 

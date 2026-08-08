@@ -63,7 +63,7 @@ type PreviewMode = 'preview' | 'strict'
 
 type PolicyRecord = TypedPolicy | TypedPolicyVersion
 
-const dependencyScopes = ['direct', 'transitive'] satisfies DependencyScope[]
+const dependencyScopes = ['direct', 'transitive', 'unknown'] satisfies DependencyScope[]
 const dependencyTypes = ['prod', 'dev', 'peer', 'optional'] satisfies DependencyType[]
 const unknownActions = ['warn', 'deny', 'skip'] satisfies DependencyUnknownAction[]
 

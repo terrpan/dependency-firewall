@@ -85,6 +85,7 @@ function getPolicyEffectCopy(
 const dependencyScopeOptions: { value: DependencyScope; label: string }[] = [
   { value: 'direct', label: 'Direct' },
   { value: 'transitive', label: 'Transitive' },
+  { value: 'unknown', label: 'Unknown context' },
 ]
 
 const dependencyTypeOptions: { value: DependencyType; label: string }[] = [
@@ -525,7 +526,7 @@ export function PolicyDraftModal({
                             <span>{option.label}</span>
                           </label>
                         ))}
-                        <small>Leave both unchecked to match any dependency scope once context is known.</small>
+                        <small>Leave all unchecked to match any dependency scope. Select unknown context to target unresolved graph evidence explicitly.</small>
                       </fieldset>
 
                       <fieldset className="policy-field">
