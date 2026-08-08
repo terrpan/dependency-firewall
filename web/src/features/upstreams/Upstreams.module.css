@@ -285,10 +285,10 @@
 .upstreams-field input,
 .upstreams-field select,
 .upstreams-secondary-button {
-  border-radius: 12px;
-  border: 1px solid var(--border-soft);
-  background: var(--surface-muted);
-  color: var(--text-strong);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .upstreams-field input,
@@ -323,7 +323,10 @@
   align-items: center;
   justify-content: center;
   width: fit-content;
-  padding: 10px 14px;
+  min-height: 36px;
+  padding: 0.45rem 0.75rem;
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
   cursor: pointer;
   transition:
     border-color 160ms ease,
@@ -333,12 +336,13 @@
 
 .upstreams-secondary-button:hover,
 .upstreams-secondary-button:focus-visible {
-  border-color: var(--border-strong);
-  background: var(--surface-highlight);
+  background: var(--color-surface-subtle);
   transform: translateY(-1px);
 }
 
 .upstreams-danger-button {
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
   color: var(--danger-text);
 }
 

@@ -40,7 +40,7 @@ export function TenantsPage() {
           {status === 'loading' ? <AsyncState status="loading" /> : null}
           {status === 'error' ? <AsyncState status="error" error={errorMessage ?? undefined} onRetry={() => void reloadTenants()} /> : null}
           {status === 'empty' ? <EmptyState title="No tenants yet" message="Create the first tenant to unlock registries, policies, and evaluations." /> : null}
-          {tenants.length ? <ResourceList aria-label="Tenants">{tenants.map(tenant => <li className={styles.item} key={tenant.id}><div><h3>{tenant.name}</h3><p>{tenant.id}</p><span className={styles.date}>Updated {new Date(tenant.updatedAt).toLocaleDateString()}</span></div><Button variant={activeTenant?.id === tenant.id ? 'primary' : 'default'} disabled={activeTenant?.id === tenant.id} onClick={() => setTenantId(tenant.id)}>{activeTenant?.id === tenant.id ? 'Active' : 'Open'}</Button></li>)}</ResourceList> : null}
+          {tenants.length ? <ResourceList aria-label="Tenants">{tenants.map(tenant => <li className={styles.item} key={tenant.id}><div><h3>{tenant.name}</h3><p>{tenant.id}</p><span className={styles.date}>Updated {new Date(tenant.updatedAt).toLocaleDateString()}</span></div>{activeTenant?.id === tenant.id ? <Badge tone="success">Active</Badge> : <Button onClick={() => setTenantId(tenant.id)}>Open</Button>}</li>)}</ResourceList> : null}
         </div>
         <Panel padding="lg">
           <form className={styles.form} onSubmit={createTenant}>

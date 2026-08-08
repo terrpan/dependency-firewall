@@ -1,8 +1,8 @@
 .button { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; min-height:36px; padding:.45rem .75rem; border:1px solid var(--color-border-strong); border-radius:var(--radius-md); background:var(--color-surface); color:var(--color-text); font-weight:600; cursor:pointer; box-shadow:var(--shadow-sm); }
 .button:hover { background:var(--color-surface-subtle); }
-.button[data-variant='primary'] { border-color:var(--color-action); background:var(--color-action); color:#fff; }
+.button[data-variant='primary'] { border-color:var(--color-action); background:var(--color-action); color:var(--color-action-contrast); }
 .button[data-variant='primary']:hover { background:var(--color-action-hover); }
-.button[data-variant='danger'] { border-color:var(--color-danger); color:var(--color-danger); }
+.button[data-variant='danger'] { border-color:var(--danger-border); background:var(--danger-surface); color:var(--danger-text); }
 .button:disabled { cursor:not-allowed; opacity:.5; box-shadow:none; }
 .iconButton { width:36px; padding:0; }
 .badge { display:inline-flex; align-items:center; width:max-content; min-height:24px; padding:.15rem .5rem; border:1px solid var(--color-border); border-radius:999px; background:var(--color-surface-subtle); color:var(--color-text-muted); font-size:.75rem; font-weight:600; }

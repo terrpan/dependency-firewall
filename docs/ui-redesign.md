@@ -48,6 +48,7 @@ All reusable values belong in `web/src/ui/foundation/tokens.css`. Components mus
 - Use foundation spacing tokens and the shared `Panel`, `ResourceList`, `MetricGrid`, and `DefinitionList` patterns before adding one-off layout values.
 - One-pixel borders and modest radii are the default. Pills are reserved for badges, compact filters, and statuses.
 - Primary actions appear once per local decision area. Secondary actions must not compete visually with the primary action.
+- Action color is semantic across routes: steel blue advances or creates, neutral surfaces cancel, refresh, or navigate, and restrained red identifies destructive actions.
 - Destructive actions require explicit wording and confirmation proportional to their impact.
 
 ## Shell and responsive behavior

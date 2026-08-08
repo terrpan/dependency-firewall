@@ -13,6 +13,7 @@
   --color-action: #32658a;
   --color-action-hover: #254f6d;
   --color-action-soft: #e8f0f5;
+  --color-action-contrast: #ffffff;
   --color-success: #24704b;
   --color-success-soft: #e6f2eb;
   --color-warning: #8a5a16;
@@ -85,6 +86,7 @@
   --color-action: #78a8ca;
   --color-action-hover: #98bdd6;
   --color-action-soft: #263b4a;
+  --color-action-contrast: #15191d;
   --color-success: #79bd95;
   --color-success-soft: #243b2e;
   --color-warning: #d8ae65;

@@ -255,6 +255,8 @@
 }
 
 .policy-card-action-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
   color: var(--danger-text);
 }
 
