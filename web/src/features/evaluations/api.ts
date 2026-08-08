@@ -10,15 +10,6 @@ function normalizeEvaluations(response: Evaluation[] | null | undefined): Evalua
   return Array.isArray(response) ? response : []
 }
 
-export function useHealth() {
-  const api = useTenantControlPlaneApi()
-
-  return useQuery({
-    queryKey: ['health'],
-    queryFn: ({ signal }) => api.health.get({ signal }),
-  })
-}
-
 export function useRecentEvaluations(limit = dashboardEvaluationsLimit) {
   const api = useTenantControlPlaneApi()
   const { tenantId } = useTenant()

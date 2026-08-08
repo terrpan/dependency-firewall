@@ -53,8 +53,7 @@
 
 .metric-value,
 .evaluation-title,
-.evaluation-reason,
-.dependency-item strong {
+.evaluation-reason {
   color: var(--text-strong);
 }
 
@@ -63,8 +62,7 @@
   line-height: 1.05;
 }
 
-.evaluation-list,
-.dependency-list {
+.evaluation-list {
   display: grid;
   gap: var(--space-card);
   margin: 0;
@@ -72,17 +70,13 @@
   list-style: none;
 }
 
-.evaluation-item,
-.dependency-item {
+.evaluation-item {
+  display: grid;
+  gap: var(--space-item);
   padding: 20px;
   border-radius: 20px;
   border: 1px solid var(--border-soft);
   background: var(--surface-muted);
-}
-
-.evaluation-item {
-  display: grid;
-  gap: var(--space-item);
 }
 
 .evaluation-list-compact .evaluation-item {
@@ -90,8 +84,7 @@
   padding: 18px;
 }
 
-.evaluation-header,
-.dependency-item {
+.evaluation-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -164,13 +157,6 @@
   min-width: 0;
 }
 
-.dependency-meta {
-  display: grid;
-  justify-items: end;
-  gap: 8px;
-  text-align: right;
-}
-
 @media (max-width: 1180px) {
   .evaluations-layout {
     grid-template-columns: 1fr;
@@ -179,7 +165,6 @@
 
 @media (max-width: 640px) {
   .evaluation-item,
-  .dependency-item,
   .metric-card {
     padding: 16px;
   }
@@ -188,13 +173,7 @@
     padding: 14px;
   }
 
-  .evaluation-header,
-  .dependency-item {
+  .evaluation-header {
     flex-direction: column;
-  }
-
-  .dependency-meta {
-    justify-items: start;
-    text-align: left;
   }
 }

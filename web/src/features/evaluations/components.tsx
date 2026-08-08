@@ -1,9 +1,8 @@
-import type { Evaluation, Health } from '../../lib/api/index.ts'
+import type { Evaluation } from '../../lib/api/index.ts'
 import { evaluationClass } from './styles.ts'
 import {
   formatArtifact,
   formatCachedAt,
-  formatDuration,
   formatNamespace,
   formatPolicyId,
   formatPolicyReference,
@@ -13,10 +12,7 @@ import {
   getOutcomeTone,
   hasDryRunWarning,
   getPrimaryReason,
-  getQueryErrorMessage,
-  getStatusTone,
   shortenHash,
-  summarizeDependencies,
   type Tone,
 } from './model.ts'
 
@@ -198,135 +194,5 @@ export function EvaluationList({
         )
       })}
     </ul>
-  )
-}
-
-type ControlPlaneHealthCardProps = {
-  health?: Health
-  isLoading: boolean
-  error?: unknown
-  onRetry: () => void
-  compact?: boolean
-}
-
-export function ControlPlaneHealthCard({
-  health,
-  isLoading,
-  error,
-  onRetry,
-  compact = false,
-}: ControlPlaneHealthCardProps) {
-  if (isLoading) {
-    return (
-      <section className={evaluationClass("card")}>
-        <div className={evaluationClass("section-header")}>
-          <div>
-            <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
-            {!compact ? <p className={evaluationClass("muted")}>Loading health and dependency status.</p> : null}
-          </div>
-          <StatusPill label="Loading" />
-        </div>
-        <QueryStateNotice
-          title="Checking service status"
-          message="Waiting for the control-plane health endpoint to respond."
-        />
-      </section>
-    )
-  }
-
-  if (!health || error) {
-    return (
-      <section className={evaluationClass("card")}>
-        <div className={evaluationClass("section-header")}>
-          <div>
-            <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
-            {!compact ? <p className={evaluationClass("muted")}>Health and dependency status.</p> : null}
-          </div>
-          <StatusPill label="Unavailable" tone="danger" />
-        </div>
-        <QueryStateNotice
-          title="Unable to load health status"
-          message={getQueryErrorMessage(error, 'The control-plane health endpoint did not return a response.')}
-          onAction={onRetry}
-        />
-      </section>
-    )
-  }
-
-  const { dependencies, degradedCount, total } = summarizeDependencies(health)
-
-  return (
-    <section className={evaluationClass("card")}>
-      <div className={evaluationClass("section-header")}>
-        <div>
-          <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
-          {!compact ? <p className={evaluationClass("muted")}>Health and dependency status.</p> : null}
-        </div>
-        <StatusPill label={health.status.toUpperCase()} tone={getStatusTone(health.status)} />
-      </div>
-
-      {!compact ? (
-        <dl className={evaluationClass("detail-grid")}>
-          <div>
-            <dt>Service</dt>
-            <dd>{health.service_name}</dd>
-          </div>
-          <div>
-            <dt>Version</dt>
-            <dd>{health.version}</dd>
-          </div>
-          <div>
-            <dt>Commit</dt>
-            <dd>{shortenHash(health.commit, 12)}</dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>{formatTimestamp(health.timestamp)}</dd>
-          </div>
-          <div>
-            <dt>Runtime</dt>
-            <dd>
-              {health.os}/{health.arch} · {health.go_version}
-            </dd>
-          </div>
-          <div>
-            <dt>Build time</dt>
-            <dd>{health.build_time ? formatTimestamp(health.build_time) : '—'}</dd>
-          </div>
-        </dl>
-      ) : null}
-
-      {total > 0 ? (
-        <>
-          {!compact ? (
-            <p className={evaluationClass("muted")}>
-              {degradedCount === 0
-                ? `${total} dependencies are healthy.`
-                : `${degradedCount} of ${total} dependencies need review.`}
-            </p>
-          ) : null}
-
-          <ul className={evaluationClass("dependency-list")}>
-            {dependencies.map(([name, dependency]) => (
-              <li key={name} className={evaluationClass("dependency-item")}>
-                <div>
-                  <strong>{name}</strong>
-                  <p className={evaluationClass("muted")}>
-                    {dependency.message?.trim() || `Checked ${formatRelativeTime(dependency.timestamp)}.`}
-                  </p>
-                </div>
-
-                <div className={evaluationClass("dependency-meta")}>
-                  <StatusPill label={dependency.status.toUpperCase()} tone={getStatusTone(dependency.status)} />
-                  <span className={evaluationClass("muted")}>{formatDuration(dependency.duration_ms)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : (
-        <p className={evaluationClass("muted")}>The health payload did not include dependency details.</p>
-      )}
-    </section>
   )
 }

@@ -1,6 +1,6 @@
-import { expect, installApi, installAuth, test } from './fixtures'
+import { expect, installApi, installAuth, policyOverviewFixtures, test } from './fixtures'
 
-test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page) })
+test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page, { policies: policyOverviewFixtures }) })
 
 test('renders the light operations shell and attaches bearer auth', async ({ page }, testInfo) => {
   let authorization = ''
@@ -9,6 +9,7 @@ test('renders the light operations shell and attaches bearer auth', async ({ pag
   await expect(page.getByRole('complementary', { name: 'Primary' })).toBeVisible()
   await expect(page.getByTestId('active-tenant-name')).toHaveText('Acme Engineering')
   await expect.poll(() => authorization).toBe('Bearer playwright-access-token')
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('light-dashboard.png'), fullPage: true })
 })
 
@@ -40,6 +41,7 @@ test('persists and renders dark theme', async ({ page }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem('dependency-firewall-theme', 'dark'))
   await page.goto('/')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('dark-shell.png'), fullPage: true })
 })
 

@@ -1,4 +1,4 @@
-import type { Evaluation, Health } from '../../lib/api/index.ts'
+import type { Evaluation } from '../../lib/api/index.ts'
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -58,19 +58,6 @@ export function formatRelativeTime(value?: string | null): string {
 
   const deltaDays = Math.round(deltaHours / 24)
   return deltaDays > 0 ? `${deltaDays}d ago` : `in ${Math.abs(deltaDays)}d`
-}
-
-export function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) {
-    return `${durationMs} ms`
-  }
-
-  if (durationMs < 60_000) {
-    const seconds = durationMs / 1_000
-    return `${seconds.toFixed(seconds >= 10 ? 0 : 1)} s`
-  }
-
-  return `${(durationMs / 60_000).toFixed(1)} min`
 }
 
 export function shortenHash(value?: string | null, maxLength = 12): string {
@@ -164,31 +151,6 @@ export function getOutcomeTone(outcome: string): Tone {
       : 'default'
 }
 
-export function getStatusTone(status: string): Tone {
-  const normalizedStatus = normalizeStatus(status)
-
-  if (
-    normalizedStatus.includes('down') ||
-    normalizedStatus.includes('error') ||
-    normalizedStatus.includes('fail') ||
-    normalizedStatus.includes('unhealthy') ||
-    normalizedStatus.includes('degraded')
-  ) {
-    return 'danger'
-  }
-
-  if (
-    normalizedStatus.includes('ok') ||
-    normalizedStatus.includes('up') ||
-    normalizedStatus.includes('ready') ||
-    normalizedStatus.includes('healthy')
-  ) {
-    return 'success'
-  }
-
-  return 'default'
-}
-
 export function summarizeEvaluations(evaluations: readonly Evaluation[]): EvaluationSummary {
   const summary: EvaluationSummary = {
     total: evaluations.length,
@@ -236,17 +198,6 @@ export function summarizeEvaluations(evaluations: readonly Evaluation[]): Evalua
 
   summary.uniquePolicies = policyIds.size
   return summary
-}
-
-export function summarizeDependencies(health: Health | undefined) {
-  const dependencies = Object.entries(health?.dependencies ?? {})
-  const degradedCount = dependencies.filter(([, dependency]) => getStatusTone(dependency.status) === 'danger').length
-
-  return {
-    dependencies,
-    degradedCount,
-    total: dependencies.length,
-  }
 }
 
 export function getQueryErrorMessage(error: unknown, fallback: string): string {
