@@ -21,6 +21,8 @@ The system supports four runtime modes in one codebase:
    - serves gRPC bundles for proxies
    - owns durable npm dependency graph storage and resolver job APIs
 
+The client-rendered React/Vite console is an authenticated control-plane client rather than a separate server-rendered runtime. It consumes generated OpenAPI types, preserves route-level lazy loading, and accesses authentication and tenant state through application-owned provider boundaries. Its reusable UI system is dependency-free with respect to domain features and is documented in [`ui-redesign.md`](./ui-redesign.md).
+
 3. All-in-one mode
    - local-development composition of the same control-plane and proxy boundaries
 
