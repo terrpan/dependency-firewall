@@ -13,6 +13,12 @@ type D3GraphNode = GraphNode & d3.SimulationNodeDatum
 type D3GraphLink = d3.SimulationLinkDatum<D3GraphNode> & { id: string; dependencyType: string }
 
 const dependencyTypes = ['prod', 'dev', 'peer', 'optional'] as const
+const dependencyTypeLabels: Record<(typeof dependencyTypes)[number], string> = {
+  prod: 'Production',
+  dev: 'Development',
+  peer: 'Peer',
+  optional: 'Optional',
+}
 const graphWidth = 1120
 const graphHeight = 650
 
@@ -34,6 +40,14 @@ function statusClass(status: string) {
 
 function nodeKind(node: GraphNode) {
   return node.min_depth === 0 ? 'root' : node.min_depth === 1 ? 'direct' : 'transitive'
+}
+
+function dependencyTypeLabel(type: string) {
+  return dependencyTypeLabels[type as keyof typeof dependencyTypeLabels] ?? type
+}
+
+function dependencyTypeList(types: readonly string[] | null | undefined) {
+  return (types?.length ? types : ['prod']).map(dependencyTypeLabel).join(', ')
 }
 
 function nodeRadius(node: GraphNode) {
@@ -180,7 +194,7 @@ function GraphMap({ nodes, edges, selection, onSelect }: { nodes: GraphNode[]; e
       .attr('class', graphClass('graph-node-kind'))
       .attr('x', (item) => (nodeKind(item) === 'root' ? 39 : 35))
       .attr('y', 30)
-      .text((item) => `${nodeKind(item)} · ${(item.dependency_types ?? []).join(', ') || 'prod'}`)
+      .text((item) => `${nodeKind(item)} · ${dependencyTypeList(item.dependency_types)}`)
 
     simulation.on('tick', () => {
       links.selectAll<SVGLineElement, D3GraphLink>('line')
@@ -278,7 +292,7 @@ function GraphWorkspace({ graph }: { graph: DependencyGraph }) {
   const selectedEdge = selection?.kind === 'edge' ? edges.find((edge) => edge.id === selection.id) ?? null : null
   const nodesById = new Map(nodes.map((node) => [node.id, node]))
 
-  return <><div className={graphClass("graph-toolbar")}><label className={graphClass("graph-search")}><span>Find a package</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or version" /></label><label className={graphClass("graph-depth-filter")}><span>Show through depth</span><select value={maxDepth ?? 'all'} onChange={(event) => setMaxDepth(event.target.value === 'all' ? null : Number(event.target.value))}><option value="all">All depths</option><option value="1">Root + direct</option><option value="2">Through depth 2</option><option value="3">Through depth 3</option><option value="4">Through depth 4</option></select></label><div className={graphClass("graph-type-filters")} role="group" aria-label="Dependency types">{dependencyTypes.map((type) => <button className={graphClass(activeTypes.includes(type) && 'graph-type-active')} key={type} onClick={() => setActiveTypes((current) => current.includes(type) ? current.filter((value) => value !== type) : [...current, type])} type="button">{type}</button>)}</div></div><div className={graphClass("graph-legend")}><span><i className={graphClass("graph-legend-dot graph-legend-root")} />Root package</span><span><i className={graphClass("graph-legend-dot graph-legend-direct")} />Direct dependency</span><span><i className={graphClass("graph-legend-dot graph-legend-transitive")} />Transitive dependency</span><span><i className={graphClass("graph-legend-line")} />Click a line for relationship details</span></div><div className={graphClass('graph-workspace-grid', !(selectedNode || selectedEdge) && 'graph-workspace-grid-full')}><section className={graphClass("graph-map-card")} aria-label="Dependency relationship map">{visibleNodes.length ? <GraphMap nodes={visibleNodes} edges={visibleEdges} selection={selection} onSelect={setSelection} /> : <QueryStateNotice title="No matching packages" message="Adjust the search, depth, or dependency type filters." />}</section>{(selectedNode || selectedEdge) && <aside className={graphClass("card graph-detail-card")}><p className={graphClass("eyebrow")}>{selectedEdge ? 'Selected relationship' : 'Selected package'}</p>{selectedNode ? <><h3>{packageName(selectedNode)}</h3><p className={graphClass("graph-detail-version")}>{selectedNode.artifact.version}</p><dl className={graphClass("graph-detail-list")}><div><dt>Role</dt><dd>{nodeKind(selectedNode)}</dd></div><div><dt>Depth</dt><dd>{selectedNode.min_depth === 0 ? 'Root' : selectedNode.min_depth}</dd></div><div><dt>Declared as</dt><dd>{(selectedNode.dependency_types ?? []).join(', ') || 'prod'}</dd></div><div><dt>Incoming links</dt><dd>{edges.filter((edge) => edge.child_node_id === selectedNode.id).length}</dd></div><div><dt>Outgoing links</dt><dd>{edges.filter((edge) => edge.parent_node_id === selectedNode.id).length}</dd></div></dl></> : selectedEdge ? <><h3>{packageName(nodesById.get(selectedEdge.parent_node_id) ?? nodes[0])}</h3><p className={graphClass("muted graph-detail-arrow")}>depends on</p><h3>{packageName(nodesById.get(selectedEdge.child_node_id) ?? nodes[0])}</h3><dl className={graphClass("graph-detail-list")}><div><dt>Dependency type</dt><dd>{selectedEdge.dependency_type}</dd></div><div><dt>Relationship</dt><dd>Parent to child</dd></div></dl></> : null}</aside>}</div></>
+  return <><div className={graphClass("graph-toolbar")}><label className={graphClass("graph-search")}><span>Find a package</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or version" /></label><label className={graphClass("graph-depth-filter")}><span>Show through depth</span><select value={maxDepth ?? 'all'} onChange={(event) => setMaxDepth(event.target.value === 'all' ? null : Number(event.target.value))}><option value="all">All depths</option><option value="1">Root + direct</option><option value="2">Through depth 2</option><option value="3">Through depth 3</option><option value="4">Through depth 4</option></select></label><div className={graphClass("graph-type-filters")} role="group" aria-label="Dependency types">{dependencyTypes.map((type) => <button className={graphClass(activeTypes.includes(type) && 'graph-type-active')} key={type} onClick={() => setActiveTypes((current) => current.includes(type) ? current.filter((value) => value !== type) : [...current, type])} type="button">{dependencyTypeLabels[type]}</button>)}</div></div><div className={graphClass("graph-legend")}><span><i className={graphClass("graph-legend-dot graph-legend-root")} />Root package</span><span><i className={graphClass("graph-legend-dot graph-legend-direct")} />Direct dependency</span><span><i className={graphClass("graph-legend-dot graph-legend-transitive")} />Transitive dependency</span><span><i className={graphClass("graph-legend-line")} />Click a line for relationship details</span></div><div className={graphClass('graph-workspace-grid', !(selectedNode || selectedEdge) && 'graph-workspace-grid-full')}><section className={graphClass("graph-map-card")} aria-label="Dependency relationship map">{visibleNodes.length ? <GraphMap nodes={visibleNodes} edges={visibleEdges} selection={selection} onSelect={setSelection} /> : <QueryStateNotice title="No matching packages" message="Adjust the search, depth, or dependency type filters." />}</section>{(selectedNode || selectedEdge) && <aside className={graphClass("card graph-detail-card")}><p className={graphClass("eyebrow")}>{selectedEdge ? 'Selected relationship' : 'Selected package'}</p>{selectedNode ? <><h3>{packageName(selectedNode)}</h3><p className={graphClass("graph-detail-version")}>{selectedNode.artifact.version}</p><dl className={graphClass("graph-detail-list")}><div><dt>Role</dt><dd>{nodeKind(selectedNode)}</dd></div><div><dt>Depth</dt><dd>{selectedNode.min_depth === 0 ? 'Root' : selectedNode.min_depth}</dd></div><div><dt>Declared as</dt><dd>{dependencyTypeList(selectedNode.dependency_types)}</dd></div><div><dt>Incoming links</dt><dd>{edges.filter((edge) => edge.child_node_id === selectedNode.id).length}</dd></div><div><dt>Outgoing links</dt><dd>{edges.filter((edge) => edge.parent_node_id === selectedNode.id).length}</dd></div></dl></> : selectedEdge ? <><h3>{packageName(nodesById.get(selectedEdge.parent_node_id) ?? nodes[0])}</h3><p className={graphClass("muted graph-detail-arrow")}>depends on</p><h3>{packageName(nodesById.get(selectedEdge.child_node_id) ?? nodes[0])}</h3><dl className={graphClass("graph-detail-list")}><div><dt>Dependency type</dt><dd>{dependencyTypeLabel(selectedEdge.dependency_type)}</dd></div><div><dt>Relationship</dt><dd>Parent to child</dd></div></dl></> : null}</aside>}</div></>
 }
 
 export function DependencyGraphsPage() {

@@ -269,7 +269,7 @@ export function AppShell() {
                 ) : null}
                 {tenants.map((tenant) => (
                   <option key={tenant.id} value={tenant.id}>
-                    {tenant.name} ({tenant.id})
+                    {tenant.name}
                   </option>
                 ))}
               </select>

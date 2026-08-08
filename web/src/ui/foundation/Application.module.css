@@ -1,15 +1,5 @@
 .shell-frame {
-  max-width: var(--page-max-width);
-  min-height: calc(100vh - 48px);
-  margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(264px, 288px) minmax(0, 1fr);
-  border: 1px solid var(--border-soft);
-  border-radius: 24px;
-  background: var(--shell-frame-background);
-  box-shadow: var(--shadow-shell);
-  overflow: hidden;
-  backdrop-filter: blur(22px);
 }
 
 .side-nav {
@@ -370,6 +360,11 @@
   max-width: 72ch;
 }
 
+.page-header > .page-actions {
+  display: flex;
+  max-width: none;
+}
+
 .page-header h2 {
   font-size: clamp(1.9rem, 2.8vw, 2.7rem);
   letter-spacing: -0.05em;
@@ -527,6 +522,12 @@ code {
 .page-actions {
   justify-content: space-between;
   align-items: flex-start;
+}
+
+.page-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .dashboard-body-grid,
@@ -801,48 +802,14 @@ code {
 }
 
 @media (max-width: 1180px) {
-  .shell-frame {
-    min-height: auto;
-    grid-template-columns: 1fr;
-  }
-
-  .side-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    border-right: 0;
-    border-bottom: 1px solid var(--border-soft);
-  }
-
-  .side-nav-top,
-  .nav-section {
-    grid-column: 1 / -1;
-  }
-
-  .side-nav ul {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
-
   .dashboard-body-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 960px) {
-  .app-shell {
-    padding: 16px;
-  }
-
-  .content,
-  .side-nav {
-    padding: 20px;
-  }
-
-  .shell-utility-bar {
-    padding: 14px 20px 0;
-  }
-
   .page-header,
-  .section-header,
-  .page-actions {
+  .section-header {
     flex-direction: column;
     align-items: stretch;
   }
@@ -850,38 +817,6 @@ code {
 }
 
 @media (max-width: 640px) {
-  .app-shell {
-    padding: 12px;
-  }
-
-  .shell-frame {
-    border-radius: 20px;
-  }
-
-  .side-nav,
-  .content {
-    padding: 16px;
-  }
-
-  .shell-utility-bar {
-    justify-content: flex-start;
-    padding: 12px 16px 0;
-  }
-
-  .side-nav {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
-
-  .side-nav-top,
-  .nav-section {
-    grid-column: auto;
-  }
-
-  .side-nav ul {
-    grid-template-columns: 1fr;
-  }
-
   .card,
   .tenant-switcher {
     padding: 16px;
@@ -1023,7 +958,7 @@ code {
   color: var(--text-strong);
 }
 
-/* Final shell cascade: legacy route styles remain until their owning stack layers migrate. */
+/* Solid application shell. Route-specific layout stays in each feature module. */
 .app-shell{min-height:100vh;padding:0;background:var(--color-canvas)}
 .shell-frame{max-width:none;min-height:100vh;margin:0;grid-template-columns:260px minmax(0,1fr);border:0;border-radius:0;background:var(--color-canvas);box-shadow:none;backdrop-filter:none;overflow:visible}
 .side-nav{position:sticky;top:0;align-self:start;height:100vh;padding:22px 16px;border:0;border-right:1px solid #30373d;background:var(--color-graphite-950);color:#eef1f2;z-index:30}
@@ -1031,4 +966,4 @@ code {
 .tenant-switcher{padding:13px;border-color:#3b444b;border-radius:8px;background:#20262c}.tenant-switcher select{border-color:#4a555e;border-radius:6px;background:#171b1f;color:#fff}.tenant-active{padding:10px 0 0;border:0;border-radius:0;background:transparent}.tenant-active strong{color:#fff}.tenant-switcher small,.tenant-meta{color:#aeb7bd}.nav-section-label,.tenant-switcher-label{color:#8e9aa3}
 .side-nav ul{gap:3px}.nav-link{grid-template-columns:18px 1fr;align-items:center;gap:10px;padding:9px 10px;border:0;border-radius:6px;color:#b8c1c7}.nav-link:hover,.nav-link:focus-visible{border:0;background:#2d353d;color:#fff;transform:none}.nav-link.active{border:0;background:#32658a;color:#fff;box-shadow:none}.nav-link.disabled{background:transparent;color:#727d85}.side-nav .shell-action-link{color:#c5cdd2}.side-nav .shell-action-link:hover{background:#2d353d;color:#fff}
 .shell-main{background:var(--color-canvas)}.shell-utility-bar{position:sticky;top:0;z-index:20;justify-content:flex-end;min-height:64px;padding:10px 28px;border-bottom:1px solid var(--color-border);background:var(--color-surface)}.utility-context{display:grid;margin-right:auto}.utility-context span{color:var(--color-text-muted);font-size:.78rem}.utility-context strong{font-size:.9rem}.account-summary{min-width:0;padding:5px 8px;border:0;border-radius:6px;background:transparent}.account-avatar{border:0;border-radius:6px;background:var(--color-action-soft);color:var(--color-action)}.shell-icon-button{border-radius:6px}.content{padding:28px clamp(18px,3vw,42px)}.card,.state-notice{border-radius:8px;box-shadow:var(--shadow-sm)}.page-header h2{letter-spacing:-.025em}.metric-value{font-variant-numeric:tabular-nums}.mobile-nav-trigger,.mobile-nav-close,.nav-scrim{display:none}
-@media(max-width:767px){.shell-frame{display:block}.side-nav{position:fixed;left:0;top:0;width:min(300px,86vw);transform:translateX(-105%);transition:transform 180ms ease;box-shadow:var(--shadow-md)}.side-nav.open{transform:translateX(0)}.mobile-nav-trigger,.mobile-nav-close{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--color-border);border-radius:6px;background:var(--color-surface);color:var(--color-text)}.mobile-nav-close{border-color:#46515a;background:#20262c;color:#fff}.nav-scrim{display:block;position:fixed;inset:0;border:0;background:rgb(21 25 29 / 55%);z-index:25}.shell-utility-bar{padding:10px 14px}.utility-context span,.account-summary{display:none}.content{padding:20px 14px}.page-header{align-items:flex-start}.page-actions{width:100%}}
+@media(max-width:767px){.shell-frame{display:block}.side-nav{position:fixed;left:0;top:0;width:min(300px,86vw);transform:translateX(-105%);transition:transform 180ms ease;box-shadow:var(--shadow-md)}.side-nav.open{transform:translateX(0)}.mobile-nav-trigger,.mobile-nav-close{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--color-border);border-radius:6px;background:var(--color-surface);color:var(--color-text)}.mobile-nav-close{border-color:#46515a;background:#20262c;color:#fff}.nav-scrim{display:block;position:fixed;inset:0;border:0;background:rgb(21 25 29 / 55%);z-index:25}.shell-utility-bar{padding:10px 14px}.utility-context span,.account-summary{display:none}.content{padding:20px 14px}.page-header{align-items:flex-start}.page-actions{width:100%;flex-wrap:wrap;justify-content:flex-start}}

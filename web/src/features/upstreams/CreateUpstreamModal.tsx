@@ -69,7 +69,6 @@ type CreateUpstreamModalProps = {
   onClose: () => void
   onDraftChange: (field: keyof UpstreamDraft, value: string) => void
   onCapabilityToggle: (capability: UpstreamCapability, checked: boolean) => void
-  onReset: () => void
   onSubmit: FormEventHandler<HTMLFormElement>
 }
 
@@ -103,7 +102,6 @@ export function CreateUpstreamModal({
   onClose,
   onDraftChange,
   onCapabilityToggle,
-  onReset,
   onSubmit,
 }: CreateUpstreamModalProps) {
   const wizardSteps = getCreateWizardSteps(draft)
@@ -126,14 +124,6 @@ export function CreateUpstreamModal({
           type="button"
         >
           Cancel
-        </button>
-        <button
-          className={upstreamClass("upstreams-secondary-button")}
-          disabled={isPending}
-          onClick={onReset}
-          type="button"
-        >
-          Reset
         </button>
       </div>
 
@@ -180,9 +170,6 @@ export function CreateUpstreamModal({
       description="Add the registry endpoint and optional OCI credentials."
       dismissible={!isPending}
       footer={footer}
-      headerMeta={
-        <span className={upstreamClass("status-pill status-pill-neutral")}>{tenantId ? `Tenant ${tenantId}` : 'No tenant selected'}</span>
-      }
       initialFocusRef={initialFocusRef}
       onClose={onClose}
       open={open}
@@ -205,7 +192,7 @@ export function CreateUpstreamModal({
             </div>
 
             <div className={upstreamClass('upstreams-field', Boolean(draftErrors.name) && 'upstreams-field-invalid')}>
-              <label htmlFor="upstream-name">Display name</label>
+              <label htmlFor="upstream-name">Upstream name</label>
               <input
                 aria-invalid={Boolean(draftErrors.name)}
                 id="upstream-name"
@@ -255,6 +242,9 @@ export function CreateUpstreamModal({
 
             <fieldset className={upstreamClass("upstreams-capability-group")}>
               <legend>Capability profile</legend>
+              <p className={upstreamClass("upstreams-field-hint")}>
+                Keep only the capabilities this registry can provide. They determine which policy types are available.
+              </p>
               <div className={upstreamClass("upstreams-capability-list")}>
                 {getUpstreamCapabilityDefinitions(draft.ecosystem).map((capability) => {
                   const checked = draft.capabilities.includes(capability.id)

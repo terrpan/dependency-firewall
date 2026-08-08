@@ -143,8 +143,8 @@ export function EvaluationsPage() {
         </div>
       </header>
 
-      <div className={evaluationClass("evaluations-layout")}>
-        <div className={evaluationClass("evaluations-side-stack")}>
+      <div className={evaluationClass('evaluations-layout', evaluations.length === 0 && 'evaluations-layout-single')}>
+        {evaluations.length > 0 ? <div className={evaluationClass("evaluations-side-stack")}>
           <section className={evaluationClass("card")}>
             <div className={evaluationClass("section-header")}>
               <div>
@@ -204,7 +204,7 @@ export function EvaluationsPage() {
               </>
             )}
           </section>
-        </div>
+        </div> : null}
 
         <section className={evaluationClass("card evaluations-log-card")}>
           <div className={evaluationClass("section-header")}>
@@ -213,7 +213,7 @@ export function EvaluationsPage() {
             </div>
           </div>
 
-          <SearchFilterBar
+          {evaluations.length > 0 || hasArtifactSearch || hasActiveFilters ? <SearchFilterBar
             activeFilters={activeFilters}
             clearFiltersLabel="Clear filters"
             filterGroupLabel="Evaluation filters"
@@ -244,7 +244,7 @@ export function EvaluationsPage() {
             searchLabel="Artifact search"
             searchPlaceholder="lodash, @scope/pkg, 4.17.20, sha256:..."
             searchValue={artifactSearch}
-          />
+          /> : null}
 
           {evaluationsQuery.isPending ? (
             <QueryStateNotice

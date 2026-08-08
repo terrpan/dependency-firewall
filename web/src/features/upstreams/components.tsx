@@ -158,12 +158,16 @@ export function UpstreamDetailsPanel({
             </dd>
           </div>
           <div>
-            <dt>Created</dt>
-            <dd>{formatTimestamp(upstream.created_at)}</dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>{formatTimestamp(upstream.updated_at)}</dd>
+            <dt>Record metadata</dt>
+            <dd>
+              <details className={upstreamClass("upstreams-metadata-disclosure")}>
+                <summary>Show timestamps</summary>
+                <dl>
+                  <div><dt>Created</dt><dd>{formatTimestamp(upstream.created_at)}</dd></div>
+                  <div><dt>Updated</dt><dd>{formatTimestamp(upstream.updated_at)}</dd></div>
+                </dl>
+              </details>
+            </dd>
           </div>
         </dl>
       ) : (
@@ -213,7 +217,7 @@ export function UpstreamUsagePanel({
                 {copiedUsageKey === `${upstream.id}:primary` ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre className={upstreamClass("code-block")}>{usage.primaryCode}</pre>
+            <pre aria-label={`${usage.primaryLabel} command`} className={upstreamClass("code-block")} tabIndex={0}>{usage.primaryCode}</pre>
           </div>
 
           <div className={upstreamClass("upstreams-usage-section")}>
@@ -227,7 +231,7 @@ export function UpstreamUsagePanel({
                 {copiedUsageKey === `${upstream.id}:secondary` ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre className={upstreamClass("code-block")}>{usage.secondaryCode}</pre>
+            <pre aria-label={`${usage.secondaryLabel} command`} className={upstreamClass("code-block")} tabIndex={0}>{usage.secondaryCode}</pre>
           </div>
 
           {copyErrorMessage ? (

@@ -48,6 +48,11 @@
   display: flex;
 }
 
+.stepItemCurrent,
+.stepItemInactive {
+  min-width: 0;
+}
+
 .stepButton,
 .stepCard {
   width: 100%;
@@ -195,5 +200,9 @@
 @media (max-width: 560px) {
   .stepList {
     grid-template-columns: 1fr;
+  }
+
+  .stepItemInactive {
+    display: none;
   }
 }

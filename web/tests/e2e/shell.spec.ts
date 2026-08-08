@@ -21,6 +21,21 @@ test('mobile drawer is keyboard-accessible', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('mobile-navigation.png'), fullPage: true })
 })
 
+test('keeps the navigation rail at compact desktop widths', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop-chromium', 'desktop project only')
+
+  for (const width of [1024, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/')
+
+    const navigationRail = page.getByRole('complementary', { name: 'Primary' })
+    await expect(navigationRail).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden()
+    await expect.poll(async () => Math.round((await navigationRail.boundingBox())?.x ?? -1)).toBe(0)
+    await expect.poll(async () => Math.round((await navigationRail.boundingBox())?.width ?? -1)).toBe(260)
+  }
+})
+
 test('persists and renders dark theme', async ({ page }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem('dependency-firewall-theme', 'dark'))
   await page.goto('/')

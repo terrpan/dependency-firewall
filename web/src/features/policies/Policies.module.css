@@ -837,12 +837,24 @@
   .policy-current-actions,
   .policy-list-item-footer,
   .policy-list-item-actions,
-  .wizard-actions,
-  .wizard-actions-right,
   .policy-list-item-header,
   .policy-history-item-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .wizard-actions,
+  .wizard-actions-right {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .wizard-actions-right {
+    margin-left: auto;
+  }
+
+  .wizard-actions button {
+    white-space: nowrap;
   }
 
   .policy-diff-table-header,

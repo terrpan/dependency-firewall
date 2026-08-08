@@ -94,9 +94,11 @@ export function PolicyListPanel({
           >
             Refresh
           </button>
-          <button className={policyClass("primary-button")} disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">
-            {hasCreateDraftInProgress ? 'Resume draft' : 'New policy'}
-          </button>
+          {policies.length > 0 ? (
+            <button className={policyClass("primary-button")} disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">
+              {hasCreateDraftInProgress ? 'Resume draft' : 'New policy'}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -114,7 +116,7 @@ export function PolicyListPanel({
         </div>
       ) : null}
 
-      <SearchFilterBar
+      {policies.length > 0 ? <SearchFilterBar
         activeFilters={activeFilters}
         clearFiltersLabel="Clear filters"
         filterGroupLabel="Policy filters"
@@ -130,15 +132,15 @@ export function PolicyListPanel({
         searchLabel="Policy search"
         searchPlaceholder="block_cvss, cvss_threshold, npm upstream..."
         searchValue={policySearch}
-      />
+      /> : null}
 
       {!isPoliciesError && policies.length === 0 ? (
         <div className={policyClass("policy-empty-state")}>
           <h4>No policies yet</h4>
           <p className={policyClass("muted")}>
             {upstreamsCount === 0
-              ? 'Create an upstream first, then open the guided popup to scope the first policy to it.'
-              : 'Open the guided popup to create the first policy without leaving this page.'}
+              ? 'Add an upstream first so the policy can be scoped to a registry.'
+              : 'Create a policy and choose where it applies. It stays disabled until you are ready to enforce it.'}
           </p>
           <div className={policyClass("policy-empty-actions")}>
             <button className={policyClass("primary-button")} disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">

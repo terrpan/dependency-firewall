@@ -226,12 +226,6 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
     setDraft((currentDraft) => toggleUpstreamDraftCapability(currentDraft, capability, checked))
   }
 
-  function handleDraftReset() {
-    createMutation.reset()
-    setDraft(createEmptyUpstreamDraft(draft.ecosystem))
-    setDraftErrors({})
-  }
-
   async function handleCopyUsage(code: string, key: string) {
     try {
       await navigator.clipboard.writeText(code)
@@ -362,7 +356,6 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
         onCapabilityToggle={handleCapabilityToggle}
         onClose={closeCreateModal}
         onDraftChange={handleDraftChange}
-        onReset={handleDraftReset}
         onSubmit={handleSubmit}
         open={isCreateModalOpen}
         tenantId={tenantId}

@@ -34,6 +34,7 @@ type AttentionItem = {
   detail: string
   tone?: 'danger' | 'warning' | 'success'
   to?: string
+  actionLabel?: string
 }
 
 type Segment = {
@@ -43,19 +44,12 @@ type Segment = {
 }
 
 function statusPillClassName(tone: 'default' | 'success' | 'danger' | 'warning' | undefined) {
-  if (tone === 'success') {
-    return evaluationClass('status-pill', 'status-pill-success')
-  }
-
-  if (tone === 'danger') {
-    return evaluationClass('status-pill', 'status-pill-danger')
-  }
-
-  if (tone === 'warning') {
-    return evaluationClass('status-pill', 'status-pill-warning')
-  }
-
-  return evaluationClass('status-pill')
+  return evaluationClass(
+    'status-pill',
+    tone === 'success' && 'status-pill-success',
+    tone === 'danger' && 'status-pill-danger',
+    tone === 'warning' && 'status-pill-warning',
+  )
 }
 
 function segmentClassName(tone: Segment['tone']) {
@@ -152,6 +146,7 @@ function buildAttentionItems(
       detail: getPrimaryReason(evaluation),
       tone: 'warning',
       to: '/evaluations',
+      actionLabel: 'Review',
     })
   }
 
@@ -163,6 +158,7 @@ function buildAttentionItems(
       detail: `${formatArtifact(warningEvaluation.artifact)} has ${warningEvaluation.warnings?.length ?? 0} warning tag(s).`,
       tone: 'warning',
       to: '/evaluations',
+      actionLabel: 'Review',
     })
   }
 
@@ -173,6 +169,7 @@ function buildAttentionItems(
       detail: 'Select or create a tenant before configuring upstreams and policies.',
       tone: 'warning',
       to: '/tenants',
+      actionLabel: 'Choose tenant',
     })
   } else {
     if (hasUpstreamsError) {
@@ -182,6 +179,7 @@ function buildAttentionItems(
         detail: 'The dashboard could not load configured upstreams for this tenant.',
         tone: 'warning',
         to: '/upstreams',
+        actionLabel: 'View upstreams',
       })
     } else if (upstreams.length === 0) {
       items.push({
@@ -190,6 +188,7 @@ function buildAttentionItems(
         detail: 'Add at least one registry upstream before relying on policy evaluations.',
         tone: 'warning',
         to: '/upstreams',
+        actionLabel: 'Add upstream',
       })
     }
 
@@ -200,6 +199,7 @@ function buildAttentionItems(
         detail: 'The dashboard could not load policies for this tenant.',
         tone: 'warning',
         to: '/policies',
+        actionLabel: 'View policies',
       })
     } else if (policies.length === 0) {
       items.push({
@@ -208,6 +208,7 @@ function buildAttentionItems(
         detail: 'Create tenant policies so evaluations produce useful enforcement decisions.',
         tone: 'warning',
         to: '/policies',
+        actionLabel: 'Create policy',
       })
     } else if (!policies.some((policy) => policy.enabled)) {
       items.push({
@@ -216,6 +217,7 @@ function buildAttentionItems(
         detail: 'Enable at least one policy before expecting enforcement decisions.',
         tone: 'warning',
         to: '/policies',
+        actionLabel: 'Enable policy',
       })
     }
   }
@@ -266,7 +268,6 @@ export function DashboardPage() {
   const upstreams = useMemo(() => sortUpstreams(upstreamsQuery.data ?? []), [upstreamsQuery.data])
   const policies = policiesQuery.data ?? []
   const evaluationSummary = summarizeEvaluations(recentEvaluations)
-  const headerStatusTone = healthQuery.data ? getStatusTone(healthQuery.data.status) : undefined
   const enabledPolicies = policies.filter((policy) => policy.enabled)
   const denyRate = formatPercent(evaluationSummary.denyCount, evaluationSummary.total)
   const cacheRate = formatPercent(evaluationSummary.cachedCount, evaluationSummary.total)
@@ -281,14 +282,6 @@ export function DashboardPage() {
     upstreamsQuery.isError,
     policiesQuery.isError,
   )
-
-  const headerStatusLabel = healthQuery.isPending
-    ? 'Loading status'
-    : healthQuery.isError || !healthQuery.data
-      ? 'Status unavailable'
-      : healthQuery.data.status.toUpperCase()
-
-  const headerStatusClassName = statusPillClassName(headerStatusTone)
 
   const summaryMetrics = [
     {
@@ -330,7 +323,6 @@ export function DashboardPage() {
           <p className={evaluationClass("page-summary")}>{activeTenant?.name ?? 'Selected tenant'} overview.</p>
         </div>
         <div className={evaluationClass("page-actions")}>
-          <span className={headerStatusClassName}>{headerStatusLabel}</span>
           {recentEvaluationsQuery.isFetching || upstreamsQuery.isFetching || policiesQuery.isFetching ? (
             <span className={evaluationClass("status-pill")}>Refreshing</span>
           ) : null}
@@ -350,9 +342,9 @@ export function DashboardPage() {
               <div>
                 <h3>Recent decisions</h3>
               </div>
-              <Link className={evaluationClass("route-link")} to="/evaluations">
+              {recentEvaluations.length > 0 ? <Link className={evaluationClass("route-link")} to="/evaluations">
                 Inspect
-              </Link>
+              </Link> : null}
             </div>
 
             {recentEvaluationsQuery.isPending ? (
@@ -371,8 +363,8 @@ export function DashboardPage() {
               />
             ) : recentEvaluations.length === 0 ? (
               <QueryStateNotice
-                title="No evaluations recorded"
-                message="This tenant does not have any stored evaluation history yet."
+                title="No decisions yet"
+                message="Install a package through a configured upstream to see allow and deny decisions here."
               />
             ) : (
               <>
@@ -403,7 +395,7 @@ export function DashboardPage() {
           <section className={evaluationClass("card dashboard-attention-card")}>
             <div className={evaluationClass("section-header")}>
               <div>
-                <h3>Policy activity</h3>
+                <h3>Needs attention</h3>
               </div>
             </div>
 
@@ -416,7 +408,7 @@ export function DashboardPage() {
                   </div>
                   {item.to ? (
                     <Link className={evaluationClass("route-link")} to={item.to}>
-                      Open
+                      {item.actionLabel ?? 'Open'}
                     </Link>
                   ) : null}
                 </li>
@@ -424,7 +416,7 @@ export function DashboardPage() {
             </ul>
           </section>
 
-          <section className={evaluationClass("card")}>
+          {recentEvaluations.length > 0 ? <section className={evaluationClass("card")}>
             <div className={evaluationClass("section-header")}>
               <div>
                 <h3>Recent activity</h3>
@@ -481,7 +473,7 @@ export function DashboardPage() {
                 ))}
               </div>
             )}
-          </section>
+          </section> : null}
         </div>
 
         <div className={evaluationClass("dashboard-side-stack")}>
