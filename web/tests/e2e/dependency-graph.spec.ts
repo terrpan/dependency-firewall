@@ -12,6 +12,13 @@ test('filters, selects, highlights, zooms, and deselects graph nodes', async ({ 
   await expect(edges).toHaveCount(2)
   await page.screenshot({ path: testInfo.outputPath('graph-default.png'), fullPage: true })
 
+  if (testInfo.project.name === 'desktop-chromium') {
+    const navigationRail = page.getByRole('complementary', { name: 'Primary' })
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await expect.poll(async () => Math.round((await navigationRail.boundingBox())?.y ?? -1)).toBe(0)
+    await page.evaluate(() => window.scrollTo(0, 0))
+  }
+
   const draggedNode = nodes.first()
   const connectedLine = edges.first().locator('line').first()
   const originalNodeTransform = await draggedNode.getAttribute('transform')

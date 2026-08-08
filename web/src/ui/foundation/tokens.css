@@ -5,7 +5,6 @@
   --color-surface-subtle: #f8f7f4;
   --color-surface-muted: #eeece7;
   --color-graphite-950: #15191d;
-  --color-graphite-900: #20262c;
   --color-graphite-800: #2d353d;
   --color-text: #20262c;
   --color-text-muted: #64707c;
@@ -22,7 +21,6 @@
   --color-danger-soft: #f7e9e7;
   --shadow-sm: 0 1px 2px rgb(21 25 29 / 8%);
   --shadow-md: 0 8px 24px rgb(21 25 29 / 10%);
-  --radius-sm: 4px;
   --radius-md: 7px;
   --radius-lg: 10px;
   --focus-ring: 0 0 0 3px rgb(50 101 138 / 25%);
@@ -35,12 +33,7 @@
   --space-section: 16px;
   --space-item: 14px;
 
-  /* Temporary aliases retained only until the upper route layers finish migration. */
-  --background: var(--color-canvas);
-  --background-gradient: var(--color-canvas);
-  --background-accent: transparent;
-  --background-radial-right: transparent;
-  --background-radial-bottom: transparent;
+  /* Semantic application tokens shared by route-level CSS Modules. */
   --shell-frame-background: var(--color-surface);
   --side-nav-background: var(--color-graphite-950);
   --shell-main-background: var(--color-canvas);
