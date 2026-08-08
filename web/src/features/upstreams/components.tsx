@@ -1,6 +1,7 @@
 // Upstream page panels keep registry list, detail, and usage rendering out of the route component.
 import type { Upstream } from '../../lib/api/types.ts'
 import type { UpstreamUsageGuide } from './usage.ts'
+import { upstreamClass } from './styles.ts'
 
 type UpstreamsListPanelProps = {
   upstreams: readonly Upstream[]
@@ -26,27 +27,27 @@ export function UpstreamsListPanel({
   onSelect,
 }: UpstreamsListPanelProps) {
   return (
-    <section className="card upstreams-panel">
-      <div className="upstreams-panel-header">
+    <section className={upstreamClass("card upstreams-panel")}>
+      <div className={upstreamClass("upstreams-panel-header")}>
         <div>
           <h3>Configured upstreams</h3>
         </div>
-        {isLoading ? <span className="status-pill">Loading</span> : null}
+        {isLoading ? <span className={upstreamClass("status-pill")}>Loading</span> : null}
       </div>
 
       {isError ? (
-        <div className="upstreams-feedback upstreams-feedback-error" role="alert">
+        <div className={upstreamClass("upstreams-feedback upstreams-feedback-error")} role="alert">
           <strong>Unable to load upstreams</strong>
           <p>{errorMessage}</p>
         </div>
       ) : null}
 
       {isSuccess && upstreams.length === 0 ? (
-        <div className="upstreams-empty-state">
+        <div className={upstreamClass("upstreams-empty-state")}>
           <h3>No upstreams configured yet</h3>
-          <p className="muted">Create the first upstream without leaving this page context.</p>
-          <div className="upstreams-form-actions">
-            <button className="primary-button" disabled={createDisabled} onClick={onCreate} type="button">
+          <p className={upstreamClass("muted")}>Create the first upstream without leaving this page context.</p>
+          <div className={upstreamClass("upstreams-form-actions")}>
+            <button className={upstreamClass("primary-button")} disabled={createDisabled} onClick={onCreate} type="button">
               Create upstream
             </button>
           </div>
@@ -54,20 +55,20 @@ export function UpstreamsListPanel({
       ) : null}
 
       {upstreams.length > 0 ? (
-        <div className="upstreams-list" role="list" aria-label="Configured upstreams">
+        <div className={upstreamClass("upstreams-list")} role="list" aria-label="Configured upstreams">
           {upstreams.map((upstream) => {
             const isActive = upstream.id === selectedUpstreamId
 
             return (
               <button
                 key={upstream.id}
-                className={`upstreams-list-item${isActive ? ' is-active' : ''}`}
+                className={upstreamClass('upstreams-list-item', isActive && 'is-active')}
                 onClick={() => onSelect(upstream.id)}
                 type="button"
               >
-                <div className="upstreams-selection-meta">
-                  <span className="upstreams-badge">{upstream.ecosystem}</span>
-                  {isActive ? <span className="status-pill status-pill-neutral">Selected</span> : null}
+                <div className={upstreamClass("upstreams-selection-meta")}>
+                  <span className={upstreamClass("upstreams-badge")}>{upstream.ecosystem}</span>
+                  {isActive ? <span className={upstreamClass("status-pill status-pill-neutral")}>Selected</span> : null}
                 </div>
                 <strong>{upstream.name}</strong>
                 <small>{upstream.base_url}</small>
@@ -98,16 +99,16 @@ export function UpstreamDetailsPanel({
   formatTimestamp,
 }: UpstreamDetailsPanelProps) {
   return (
-    <section className="card upstreams-panel">
-      <div className="upstreams-panel-header">
+    <section className={upstreamClass("card upstreams-panel")}>
+      <div className={upstreamClass("upstreams-panel-header")}>
         <div>
           <h3>Upstream details</h3>
         </div>
         {upstream ? (
-          <div className="upstreams-panel-actions">
-            <span className="upstreams-badge">{upstream.ecosystem}</span>
+          <div className={upstreamClass("upstreams-panel-actions")}>
+            <span className={upstreamClass("upstreams-badge")}>{upstream.ecosystem}</span>
             <button
-              className="upstreams-secondary-button upstreams-danger-button"
+              className={upstreamClass("upstreams-secondary-button upstreams-danger-button")}
               disabled={isDeleting}
               onClick={() => onDelete(upstream)}
               type="button"
@@ -119,7 +120,7 @@ export function UpstreamDetailsPanel({
       </div>
 
       {upstream ? (
-        <dl className="upstreams-detail">
+        <dl className={upstreamClass("upstreams-detail")}>
           <div>
             <dt>Name</dt>
             <dd>{upstream.name}</dd>
@@ -133,7 +134,7 @@ export function UpstreamDetailsPanel({
           <div>
             <dt>Base URL</dt>
             <dd>
-              <a className="inline-link" href={upstream.base_url} target="_blank" rel="noreferrer">
+              <a className={upstreamClass("inline-link")} href={upstream.base_url} target="_blank" rel="noreferrer">
                 {upstream.base_url}
               </a>
             </dd>
@@ -166,9 +167,9 @@ export function UpstreamDetailsPanel({
           </div>
         </dl>
       ) : (
-        <div className="upstreams-empty-state">
+        <div className={upstreamClass("upstreams-empty-state")}>
           <h3>No detail selected</h3>
-          <p className="muted">Pick an upstream from the list, or create the first one in the modal flow.</p>
+          <p className={upstreamClass("muted")}>Pick an upstream from the list, or create the first one in the modal flow.</p>
         </div>
       )}
     </section>
@@ -191,8 +192,8 @@ export function UpstreamUsagePanel({
   onCopyUsage,
 }: UpstreamUsagePanelProps) {
   return (
-    <section className="card upstreams-panel">
-      <div className="upstreams-panel-header">
+    <section className={upstreamClass("card upstreams-panel")}>
+      <div className={upstreamClass("upstreams-panel-header")}>
         <div>
           <h3>{usage?.title ?? 'Usage instructions'}</h3>
           {usage ? <p>{usage.summary}</p> : null}
@@ -200,47 +201,47 @@ export function UpstreamUsagePanel({
       </div>
 
       {upstream && usage ? (
-        <div className="upstreams-usage-guide">
-          <div className="upstreams-usage-section">
-            <div className="upstreams-usage-header">
-              <span className="upstreams-usage-label">{usage.primaryLabel}</span>
+        <div className={upstreamClass("upstreams-usage-guide")}>
+          <div className={upstreamClass("upstreams-usage-section")}>
+            <div className={upstreamClass("upstreams-usage-header")}>
+              <span className={upstreamClass("upstreams-usage-label")}>{usage.primaryLabel}</span>
               <button
-                className="upstreams-copy-button"
+                className={upstreamClass("upstreams-copy-button")}
                 onClick={() => onCopyUsage(usage.primaryCode, `${upstream.id}:primary`)}
                 type="button"
               >
                 {copiedUsageKey === `${upstream.id}:primary` ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre className="code-block">{usage.primaryCode}</pre>
+            <pre className={upstreamClass("code-block")}>{usage.primaryCode}</pre>
           </div>
 
-          <div className="upstreams-usage-section">
-            <div className="upstreams-usage-header">
-              <span className="upstreams-usage-label">{usage.secondaryLabel}</span>
+          <div className={upstreamClass("upstreams-usage-section")}>
+            <div className={upstreamClass("upstreams-usage-header")}>
+              <span className={upstreamClass("upstreams-usage-label")}>{usage.secondaryLabel}</span>
               <button
-                className="upstreams-copy-button"
+                className={upstreamClass("upstreams-copy-button")}
                 onClick={() => onCopyUsage(usage.secondaryCode, `${upstream.id}:secondary`)}
                 type="button"
               >
                 {copiedUsageKey === `${upstream.id}:secondary` ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre className="code-block">{usage.secondaryCode}</pre>
+            <pre className={upstreamClass("code-block")}>{usage.secondaryCode}</pre>
           </div>
 
           {copyErrorMessage ? (
-            <div className="upstreams-feedback upstreams-feedback-error" role="alert">
+            <div className={upstreamClass("upstreams-feedback upstreams-feedback-error")} role="alert">
               <p>{copyErrorMessage}</p>
             </div>
           ) : null}
 
-          <p className="muted">{usage.note}</p>
+          <p className={upstreamClass("muted")}>{usage.note}</p>
         </div>
       ) : (
-        <div className="upstreams-empty-state">
+        <div className={upstreamClass("upstreams-empty-state")}>
           <h3>No usage instructions yet</h3>
-          <p className="muted">Pick an upstream first so the page can show npm or Docker guidance.</p>
+          <p className={upstreamClass("muted")}>Pick an upstream first so the page can show npm or Docker guidance.</p>
         </div>
       )}
     </section>

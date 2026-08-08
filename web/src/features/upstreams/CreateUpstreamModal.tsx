@@ -1,6 +1,7 @@
 // CreateUpstreamModal renders the tenant-scoped upstream creation wizard.
 import type { FormEventHandler, RefObject } from 'react'
 import { ModalWizard, type ModalWizardStep } from '../../components/modal/index.ts'
+import { upstreamClass } from './styles.ts'
 import {
   formatUpstreamCapabilityLabel,
   getUpstreamAuthTypes,
@@ -116,10 +117,10 @@ export function CreateUpstreamModal({
       : 'Review details'
 
   const footer = (
-    <div className="upstreams-wizard-footer">
-      <div className="upstreams-form-actions">
+    <div className={upstreamClass("upstreams-wizard-footer")}>
+      <div className={upstreamClass("upstreams-form-actions")}>
         <button
-          className="upstreams-secondary-button"
+          className={upstreamClass("upstreams-secondary-button")}
           disabled={isPending}
           onClick={onClose}
           type="button"
@@ -127,7 +128,7 @@ export function CreateUpstreamModal({
           Cancel
         </button>
         <button
-          className="upstreams-secondary-button"
+          className={upstreamClass("upstreams-secondary-button")}
           disabled={isPending}
           onClick={onReset}
           type="button"
@@ -136,10 +137,10 @@ export function CreateUpstreamModal({
         </button>
       </div>
 
-      <div className="upstreams-form-actions">
+      <div className={upstreamClass("upstreams-form-actions")}>
         {currentStep > 0 ? (
           <button
-            className="upstreams-secondary-button"
+            className={upstreamClass("upstreams-secondary-button")}
             disabled={isPending}
             onClick={onBack}
             type="button"
@@ -150,7 +151,7 @@ export function CreateUpstreamModal({
 
         {!isReviewStep ? (
           <button
-            className="primary-button"
+            className={upstreamClass("primary-button")}
             disabled={!tenantId || isPending}
             form="create-upstream-form"
             type="submit"
@@ -159,7 +160,7 @@ export function CreateUpstreamModal({
           </button>
         ) : (
           <button
-            className="primary-button"
+            className={upstreamClass("primary-button")}
             disabled={isPending || !tenantId}
             form="create-upstream-form"
             type="submit"
@@ -180,7 +181,7 @@ export function CreateUpstreamModal({
       dismissible={!isPending}
       footer={footer}
       headerMeta={
-        <span className="status-pill status-pill-neutral">{tenantId ? `Tenant ${tenantId}` : 'No tenant selected'}</span>
+        <span className={upstreamClass("status-pill status-pill-neutral")}>{tenantId ? `Tenant ${tenantId}` : 'No tenant selected'}</span>
       }
       initialFocusRef={initialFocusRef}
       onClose={onClose}
@@ -189,21 +190,21 @@ export function CreateUpstreamModal({
       steps={wizardSteps}
       title="Create upstream"
     >
-      <form className="upstreams-form upstreams-modal-form" id="create-upstream-form" onSubmit={onSubmit}>
+      <form className={upstreamClass("upstreams-form upstreams-modal-form")} id="create-upstream-form" onSubmit={onSubmit}>
         {isError ? (
-          <div className="upstreams-feedback upstreams-feedback-error" role="alert">
+          <div className={upstreamClass("upstreams-feedback upstreams-feedback-error")} role="alert">
             <strong>Unable to create upstream</strong>
             <p>{createErrorMessage}</p>
           </div>
         ) : null}
 
         {activeStep.id === 'connection' ? (
-          <div className="upstreams-wizard-section">
-            <div className="upstreams-wizard-copy">
+          <div className={upstreamClass("upstreams-wizard-section")}>
+            <div className={upstreamClass("upstreams-wizard-copy")}>
               <h3>Connection details</h3>
             </div>
 
-            <div className={`upstreams-field${draftErrors.name ? ' upstreams-field-invalid' : ''}`}>
+            <div className={upstreamClass('upstreams-field', Boolean(draftErrors.name) && 'upstreams-field-invalid')}>
               <label htmlFor="upstream-name">Display name</label>
               <input
                 aria-invalid={Boolean(draftErrors.name)}
@@ -214,10 +215,10 @@ export function CreateUpstreamModal({
                 ref={initialFocusRef}
                 value={draft.name}
               />
-              {draftErrors.name ? <p className="upstreams-field-error">{draftErrors.name}</p> : null}
+              {draftErrors.name ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.name}</p> : null}
             </div>
 
-            <div className={`upstreams-field${draftErrors.ecosystem ? ' upstreams-field-invalid' : ''}`}>
+            <div className={upstreamClass('upstreams-field', Boolean(draftErrors.ecosystem) && 'upstreams-field-invalid')}>
               <label htmlFor="upstream-ecosystem">Ecosystem</label>
               <select
                 aria-invalid={Boolean(draftErrors.ecosystem)}
@@ -233,11 +234,11 @@ export function CreateUpstreamModal({
                 ))}
               </select>
               {draftErrors.ecosystem ? (
-                <p className="upstreams-field-error">{draftErrors.ecosystem}</p>
+                <p className={upstreamClass("upstreams-field-error")}>{draftErrors.ecosystem}</p>
               ) : null}
             </div>
 
-            <div className={`upstreams-field${draftErrors.baseUrl ? ' upstreams-field-invalid' : ''}`}>
+            <div className={upstreamClass('upstreams-field', Boolean(draftErrors.baseUrl) && 'upstreams-field-invalid')}>
               <label htmlFor="upstream-base-url">Base URL</label>
               <input
                 aria-invalid={Boolean(draftErrors.baseUrl)}
@@ -248,17 +249,17 @@ export function CreateUpstreamModal({
                 value={draft.baseUrl}
               />
               {draftErrors.baseUrl ? (
-                <p className="upstreams-field-error">{draftErrors.baseUrl}</p>
+                <p className={upstreamClass("upstreams-field-error")}>{draftErrors.baseUrl}</p>
               ) : null}
             </div>
 
-            <fieldset className="upstreams-capability-group">
+            <fieldset className={upstreamClass("upstreams-capability-group")}>
               <legend>Capability profile</legend>
-              <div className="upstreams-capability-list">
+              <div className={upstreamClass("upstreams-capability-list")}>
                 {getUpstreamCapabilityDefinitions(draft.ecosystem).map((capability) => {
                   const checked = draft.capabilities.includes(capability.id)
                   return (
-                    <label key={capability.id} className="upstreams-capability-option">
+                    <label key={capability.id} className={upstreamClass("upstreams-capability-option")}>
                       <input
                         checked={checked}
                         onChange={(event) => onCapabilityToggle(capability.id, event.target.checked)}
@@ -274,12 +275,12 @@ export function CreateUpstreamModal({
             </fieldset>
           </div>
         ) : isAuthStep ? (
-          <div className="upstreams-wizard-section">
-            <div className="upstreams-wizard-copy">
+          <div className={upstreamClass("upstreams-wizard-section")}>
+            <div className={upstreamClass("upstreams-wizard-copy")}>
               <h3>Authentication</h3>
             </div>
 
-            <div className={`upstreams-field upstreams-auth-type-field${draftErrors.authType ? ' upstreams-field-invalid' : ''}`}>
+            <div className={upstreamClass('upstreams-field', 'upstreams-auth-type-field', Boolean(draftErrors.authType) && 'upstreams-field-invalid')}>
               <label htmlFor="upstream-auth-type">Registry authentication</label>
               <select
                 aria-invalid={Boolean(draftErrors.authType)}
@@ -294,12 +295,12 @@ export function CreateUpstreamModal({
                   </option>
                 ))}
               </select>
-              {draftErrors.authType ? <p className="upstreams-field-error">{draftErrors.authType}</p> : null}
+              {draftErrors.authType ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authType}</p> : null}
             </div>
 
             {draft.authType === 'basic' ? (
-              <div className="upstreams-auth-detail-fields">
-                <div className={`upstreams-field${draftErrors.authUsername ? ' upstreams-field-invalid' : ''}`}>
+              <div className={upstreamClass("upstreams-auth-detail-fields")}>
+                <div className={upstreamClass('upstreams-field', Boolean(draftErrors.authUsername) && 'upstreams-field-invalid')}>
                   <label htmlFor="upstream-auth-username">Username</label>
                   <input
                     aria-invalid={Boolean(draftErrors.authUsername)}
@@ -310,11 +311,11 @@ export function CreateUpstreamModal({
                     value={draft.authUsername}
                   />
                   {draftErrors.authUsername ? (
-                    <p className="upstreams-field-error">{draftErrors.authUsername}</p>
+                    <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authUsername}</p>
                   ) : null}
                 </div>
 
-                <div className={`upstreams-field${draftErrors.authPassword ? ' upstreams-field-invalid' : ''}`}>
+                <div className={upstreamClass('upstreams-field', Boolean(draftErrors.authPassword) && 'upstreams-field-invalid')}>
                   <label htmlFor="upstream-auth-password">Password or PAT</label>
                   <input
                     aria-invalid={Boolean(draftErrors.authPassword)}
@@ -326,15 +327,15 @@ export function CreateUpstreamModal({
                     value={draft.authPassword}
                   />
                   {draftErrors.authPassword ? (
-                    <p className="upstreams-field-error">{draftErrors.authPassword}</p>
+                    <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authPassword}</p>
                   ) : null}
                 </div>
               </div>
             ) : null}
 
             {draft.authType === 'bearer_token' ? (
-              <div className="upstreams-auth-detail-fields">
-                <div className={`upstreams-field${draftErrors.authToken ? ' upstreams-field-invalid' : ''}`}>
+              <div className={upstreamClass("upstreams-auth-detail-fields")}>
+                <div className={upstreamClass('upstreams-field', Boolean(draftErrors.authToken) && 'upstreams-field-invalid')}>
                   <label htmlFor="upstream-auth-token">Bearer token</label>
                   <input
                     aria-invalid={Boolean(draftErrors.authToken)}
@@ -345,19 +346,19 @@ export function CreateUpstreamModal({
                     type="password"
                     value={draft.authToken}
                   />
-                  {draftErrors.authToken ? <p className="upstreams-field-error">{draftErrors.authToken}</p> : null}
+                  {draftErrors.authToken ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authToken}</p> : null}
                 </div>
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="upstreams-wizard-section">
-            <div className="upstreams-wizard-copy">
+          <div className={upstreamClass("upstreams-wizard-section")}>
+            <div className={upstreamClass("upstreams-wizard-copy")}>
               <h3>Review upstream</h3>
             </div>
 
-            <div className="upstreams-review-card">
-              <dl className="upstreams-detail upstreams-review-list">
+            <div className={upstreamClass("upstreams-review-card")}>
+              <dl className={upstreamClass("upstreams-detail upstreams-review-list")}>
                 <div>
                   <dt>Tenant</dt>
                   <dd>

@@ -30,7 +30,7 @@ import {
   formatUpstreamTimestamp,
 } from '../features/upstreams/model.ts'
 import { buildUpstreamUsageGuide } from '../features/upstreams/usage.ts'
-import '../features/upstreams/upstreams.css'
+import { upstreamClass } from '../features/upstreams/styles.ts'
 import { firewallRootUrl } from '../lib/config.ts'
 import type { Upstream } from '../lib/api/types.ts'
 
@@ -290,20 +290,20 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
   }
 
   return (
-    <section className="page">
-      <header className="page-header">
+    <section className={upstreamClass("page")}>
+      <header className={upstreamClass("page-header")}>
         <div>
-          <p className="eyebrow">Registry configuration</p>
+          <p className={upstreamClass("eyebrow")}>Registry configuration</p>
           <h2>Upstreams</h2>
-          <p className="page-summary">Registry endpoints for this tenant.</p>
+          <p className={upstreamClass("page-summary")}>Registry endpoints for this tenant.</p>
         </div>
-        <div className="upstreams-actions">
-          <span className="status-pill">{upstreams.length} configured</span>
-          <button className="primary-button" disabled={!tenantId || createMutation.isPending} onClick={openCreateModal} type="button">
+        <div className={upstreamClass("upstreams-actions")}>
+          <span className={upstreamClass("status-pill")}>{upstreams.length} configured</span>
+          <button className={upstreamClass("primary-button")} disabled={!tenantId || createMutation.isPending} onClick={openCreateModal} type="button">
             New upstream
           </button>
           <button
-            className="upstreams-secondary-button"
+            className={upstreamClass("upstreams-secondary-button")}
             disabled={upstreamsQuery.isPending || createMutation.isPending || deleteMutation.isPending}
             onClick={() => void upstreamsQuery.refetch()}
             type="button"
@@ -313,7 +313,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
         </div>
       </header>
 
-      <div className="upstreams-layout">
+      <div className={upstreamClass("upstreams-layout")}>
         <UpstreamsListPanel
           createDisabled={!tenantId || createMutation.isPending}
           errorMessage={listErrorMessage}
@@ -326,7 +326,7 @@ function UpstreamsPageContent({ tenantId }: UpstreamsPageContentProps) {
           upstreams={upstreams}
         />
 
-        <div className="upstreams-stack">
+        <div className={upstreamClass("upstreams-stack")}>
           <UpstreamDetailsPanel
             capabilities={selectedUpstreamCapabilities}
             formatTimestamp={formatUpstreamTimestamp}
