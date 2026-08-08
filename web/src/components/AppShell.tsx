@@ -241,7 +241,7 @@ export function AppShell() {
       : 'Authentication not configured'
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-auth-status={authStatus}>
       <div className="shell-frame">
         {navigationOpen ? <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavigationOpen(false)} type="button" /> : null}
         <aside className={navigationOpen ? 'side-nav open' : 'side-nav'} aria-label="Primary">

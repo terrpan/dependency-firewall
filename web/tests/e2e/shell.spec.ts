@@ -31,7 +31,7 @@ test('persists and renders dark theme', async ({ page }, testInfo) => {
 test('allows provider-free local anonymous mode', async ({ page }) => {
   await installAuth(page, 'anonymous')
   await page.goto('/tenants')
-  await expect(page.getByText('Authentication not configured')).toBeVisible()
+  await expect(page.locator('[data-auth-status="anonymous"]')).toBeVisible()
 })
 
 test('renders unauthorized state', async ({ page }) => {
