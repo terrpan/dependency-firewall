@@ -68,6 +68,7 @@ All reusable values belong in `web/src/ui/foundation/tokens.css`. Components mus
 - Disabled controls need an adjacent explanation when the reason is not obvious from context.
 - Success feedback confirms the completed operation without interrupting the next task.
 - Dashboards summarize tenant protection with decision, enforcement, and upstream counts once; then prioritize required setup, blocks, and warnings. Internal service health and implementation details such as cache ratios do not compete with tenant actions.
+- Tenant inventories make the active workspace unmistakable, describe context changes as switching rather than opening, and reveal the creation form on request. When no tenant exists, creation becomes the immediate inline recovery path.
 - Policy inventories lead with a plain-language effect, enforcement state, upstream scope, dependency target, and evaluation order. Schema, identifiers, versions, and timestamps are progressively disclosed in details rather than competing with the rule itself.
 - Disabled and dry-run policies describe what they would do, never what they currently enforce.
 - Dialogs have a labelled title, a predictable dismissal path, contained focus, and an action order consistent across features.

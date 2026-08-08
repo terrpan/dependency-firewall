@@ -30,12 +30,53 @@ export const policyOverviewFixtures = [
   },
 ] as const
 
-export async function installApi(page: Page, options: { policies?: readonly unknown[] } = {}) {
+export const tenantOverviewFixtures = [
+  {
+    id: 'tenant-acme',
+    name: 'Acme Engineering',
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-08T10:00:00Z',
+  },
+  {
+    id: 'tenant-platform',
+    name: 'Platform Engineering',
+    created_at: '2026-07-15T10:00:00Z',
+    updated_at: '2026-08-07T10:00:00Z',
+  },
+] as const
+
+type ApiFixtureOptions = {
+  policies?: readonly unknown[]
+  tenantListFailures?: number
+  tenants?: readonly Record<string, unknown>[]
+}
+
+export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
+  const tenantFixtures: Array<Record<string, unknown>> = (options.tenants ?? tenantOverviewFixtures.slice(0, 1))
+    .map((tenant) => ({ ...tenant }))
+  let remainingTenantListFailures = options.tenantListFailures ?? 0
+
   await page.route('**/healthz', route => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
-    if (path.endsWith('/tenants') && route.request().method() === 'POST') return route.fulfill({ json: { id: 'tenant-platform', name: 'Platform Engineering', created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z' } })
-    if (path.endsWith('/tenants')) return route.fulfill({ json: [{ id: 'tenant-acme', name: 'Acme Engineering', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-08T10:00:00Z' }] })
+    if (path.endsWith('/tenants') && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { name?: string }
+      const tenant = {
+        id: 'tenant-platform-new',
+        name: body.name?.trim() || 'Platform Engineering',
+        created_at: '2026-08-08T10:00:00Z',
+        updated_at: '2026-08-08T10:00:00Z',
+      }
+      tenantFixtures.push(tenant)
+      return route.fulfill({ json: tenant })
+    }
+    if (path.endsWith('/tenants')) {
+      if (remainingTenantListFailures > 0) {
+        remainingTenantListFailures -= 1
+        return route.fulfill({ status: 503, json: { error: 'tenant inventory unavailable' } })
+      }
+      return route.fulfill({ json: tenantFixtures })
+    }
     if (path.endsWith('/evaluations')) return route.fulfill({ json: [{
       id: 'evaluation-react',
       artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' },

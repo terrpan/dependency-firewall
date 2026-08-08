@@ -5,10 +5,12 @@ test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(
 test('tenant inventory supports selection and creation', async ({ page }) => {
   await page.goto('/tenants')
   await expect(page.getByRole('heading', { name: 'Tenants' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Tenants' })).toContainText('Acme Engineering')
+  await expect(page.getByRole('list', { name: 'Tenant workspaces' })).toContainText('Acme Engineering')
+  await page.getByRole('button', { name: 'New tenant' }).click()
   await page.getByLabel('Tenant name').fill('Platform Engineering')
   await page.getByRole('button', { name: 'Create tenant' }).click()
   await expect(page.getByText('Tenant created')).toBeVisible()
+  await expect(page.getByRole('listitem').filter({ hasText: 'Platform Engineering' })).toContainText('Active workspace')
 })
 
 test('unknown routes offer a dashboard recovery action', async ({ page }) => {
@@ -35,6 +37,7 @@ test('upstream inventory and creation wizard remain operational', async ({ page 
 
 test('uses consistent colors for equivalent actions', async ({ page }) => {
   await page.goto('/tenants')
+  await page.getByRole('button', { name: 'New tenant' }).click()
   await page.getByLabel('Tenant name').fill('Platform Engineering')
   const createTenant = page.getByRole('button', { name: 'Create tenant' })
   const primaryColors = await createTenant.evaluate(element => {
