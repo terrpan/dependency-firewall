@@ -5,6 +5,7 @@ import { useNotifications } from '../features/notifications/useNotifications.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
 import { AsyncState, Badge, Button, EmptyState, Field, Input, PageHeader, Panel, ResourceList } from '../ui/index.ts'
 import styles from './TenantsPage.module.css'
+import { applicationClass } from '../ui/foundation/applicationStyles.ts'
 
 export function TenantsPage() {
   const api = useSessionControlPlaneApi()
@@ -32,7 +33,7 @@ export function TenantsPage() {
   }
 
   return (
-    <section className="page">
+    <section className={applicationClass("page")}>
       <PageHeader eyebrow="Administration" title="Tenants" summary="Separate policy, registry, and evaluation data into explicit operational boundaries." actions={<Badge tone={status === 'error' ? 'danger' : status === 'ready' ? 'success' : 'neutral'}>{tenants.length} tenant{tenants.length === 1 ? '' : 's'}</Badge>} />
       <div className={styles.layout}>
         <div>

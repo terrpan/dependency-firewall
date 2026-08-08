@@ -7,7 +7,7 @@ test('renders the light operations shell and attaches bearer auth', async ({ pag
   page.on('request', request => { if (request.url().includes('/api/v1/')) authorization = request.headers().authorization ?? authorization })
   await page.goto('/')
   await expect(page.getByRole('complementary', { name: 'Primary' })).toBeVisible()
-  await expect(page.locator('.tenant-active strong')).toHaveText('Acme Engineering')
+  await expect(page.getByTestId('active-tenant-name')).toHaveText('Acme Engineering')
   await expect.poll(() => authorization).toBe('Bearer playwright-access-token')
   await page.screenshot({ path: testInfo.outputPath('light-dashboard.png'), fullPage: true })
 })

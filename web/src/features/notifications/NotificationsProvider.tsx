@@ -12,6 +12,7 @@ import {
   NotificationsContext,
   type NotificationsContextValue,
 } from './context.ts'
+import { applicationClass } from '../../ui/foundation/applicationStyles.ts'
 
 const notificationLifetimeMs = 4_000
 const notificationLimit = 4
@@ -79,19 +80,19 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
   return (
     <NotificationsContext.Provider value={value}>
       {children}
-      <div className="toast-stack" aria-atomic="true" aria-live="polite">
+      <div className={applicationClass("toast-stack")} aria-atomic="true" aria-live="polite">
         {notifications.map((notification) => (
           <section
             key={notification.id}
-            className={`toast toast-${notification.tone}`}
+            className={applicationClass('toast', `toast-${notification.tone}`)}
             role={notification.tone === 'error' ? 'alert' : 'status'}
           >
-            <div className="toast-body">
+            <div className={applicationClass("toast-body")}>
               <strong>{notification.title}</strong>
               {notification.description ? <p>{notification.description}</p> : null}
             </div>
             <button
-              className="toast-dismiss"
+              className={applicationClass("toast-dismiss")}
               onClick={() => dismiss(notification.id)}
               type="button"
             >
