@@ -149,6 +149,24 @@ func TestConfigValidate(t *testing.T) {
 		require.NoError(t, cfg.Validate())
 	})
 
+	t.Run("dependency graph worker mode does not require database settings", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeDependencyGraphWorker
+		cfg.Database = DatabaseConfig{}
+		cfg.Bundle.TLS = validProxyTLSConfig()
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("dependency graph worker mode requires mtls bundle mode", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeDependencyGraphWorker
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bundle.tls.mode")
+	})
+
 	t.Run("control-plane mode requires database settings", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Runtime.Mode = RuntimeModeControlPlane

@@ -15,6 +15,38 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+func TestNPMClient_ListManifestDependencyNames(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/morgan/1.10.0", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"name":"morgan","version":"1.10.0",
+			"dependencies":{"debug":"2.6.9","on-finished":"~2.3.0"},
+			"optionalDependencies":{"fsevents":"^2.0.0"},
+			"peerDependencies":{"react":">=16"}
+		}`))
+	}))
+	defer srv.Close()
+
+	client := NewNPMClient(srv.Client())
+	names, err := client.ListManifestDependencyNames(context.Background(), domain.Upstream{BaseURL: srv.URL}, domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemNPM,
+		Name:      "morgan",
+		Version:   "1.10.0",
+	})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"debug", "on-finished", "fsevents", "react"}, names)
+}
+
+func TestNPMClient_ListManifestDependencyNames_RequiresVersion(t *testing.T) {
+	client := NewNPMClient(&http.Client{})
+	_, err := client.ListManifestDependencyNames(context.Background(), domain.Upstream{BaseURL: "http://localhost"}, domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemNPM,
+		Name:      "morgan",
+	})
+	require.Error(t, err)
+}
+
 func TestNPMClient_GetManifest_ScopedPackage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// url.PathEscape keeps @ as-is (valid path char) but encodes / as %2F.

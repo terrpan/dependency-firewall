@@ -24,9 +24,8 @@ oci_cache:
     prefix: ""
 
 database:
-  # Used by all-in-one and control-plane modes.
-  # Proxy mode reads tenant runtime from bundles and writes decisions/audit
-  # through the control plane instead of opening PostgreSQL directly.
+  # Used by all-in-one and control-plane modes. Proxy and dependency-graph-worker
+  # modes use control-plane gRPC instead of opening PostgreSQL directly.
   dsn: "postgres://firewall:firewall@localhost:5432/firewall?sslmode=disable"
   max_open_conns: 25
   max_idle_conns: 5
@@ -64,6 +63,18 @@ audit:
 
 health:
   proxy_url: ""
+
+dependency_graph:
+  # Resolver jobs normally run in runtime.mode=dependency-graph-worker, where the
+  # worker talks to the control plane over mTLS and is the only service that needs
+  # Node/npm. Set run_in_process true only for local all-in-one/control-plane
+  # compatibility.
+  enabled: true
+  run_in_process: false
+  poll_interval: 5s
+  timeout: 2m
+  concurrency: 2
+  retry_delay: 5m
 
 bundle:
   listen_addr: ":9090"

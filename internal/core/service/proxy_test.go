@@ -96,7 +96,7 @@ func newSpyDecisionCache() *spyDecisionCache {
 	return &spyDecisionCache{getErr: domain.ErrCacheMiss}
 }
 
-func (s *spyDecisionCache) Get(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (s *spyDecisionCache) Get(_ context.Context, tenantID string, artifact domain.ArtifactIdentity, _ string) (*domain.Decision, error) {
 	s.getCalls++
 	s.lastGetTenantID = tenantID
 	s.lastGetArtifact = artifact

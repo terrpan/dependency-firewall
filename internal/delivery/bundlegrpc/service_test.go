@@ -41,6 +41,25 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 		TenantID:    "tenant-1",
 		Revision:    "rev-1",
 		GeneratedAt: now,
+		Policies: []domain.Policy{{
+			ID:            "policy-1",
+			TenantID:      "tenant-1",
+			UpstreamID:    "upstream-1",
+			Name:          "targeted cvss",
+			Type:          domain.PolicyTypeCVSSThreshold,
+			Action:        domain.PolicyActionDeny,
+			SchemaVersion: 1,
+			Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: testFloat64Ptr(7)},
+			Target: &domain.PolicyTarget{
+				DependencyScopes: []domain.DependencyScope{domain.DependencyScopeDirect, domain.DependencyScopeTransitive},
+				OnUnknown:        domain.DependencyUnknownWarn,
+			},
+			Priority:  10,
+			Enabled:   true,
+			Version:   4,
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now,
+		}},
 		Upstreams: []domain.Upstream{{
 			ID:        "upstream-1",
 			TenantID:  "tenant-1",
@@ -59,6 +78,10 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, bundle.Tenant, restored.Tenant)
 	assert.Equal(t, bundle.TenantID, restored.TenantID)
+	require.Len(t, restored.Policies, 1)
+	require.NotNil(t, restored.Policies[0].Target)
+	assert.Equal(t, []domain.DependencyScope{domain.DependencyScopeDirect, domain.DependencyScopeTransitive}, restored.Policies[0].Target.DependencyScopes)
+	assert.Equal(t, domain.DependencyUnknownWarn, restored.Policies[0].Target.OnUnknown)
 	require.Len(t, restored.Upstreams, 1)
 	assert.Nil(t, restored.Upstreams[0].Auth)
 }
@@ -252,4 +275,8 @@ func bundleResponseForTest(bundle *domain.TenantBundle) (*GetTenantBundleRespons
 		return nil, err
 	}
 	return server.toBundleResponse(context.Background(), bundle)
+}
+
+func testFloat64Ptr(value float64) *float64 {
+	return &value
 }

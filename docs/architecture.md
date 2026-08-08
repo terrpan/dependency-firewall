@@ -6,7 +6,7 @@ Build a multi-tenant dependency firewall that acts as a policy-aware proxy for n
 
 ## Top-level shape
 
-The system supports three runtime modes in one codebase:
+The system supports four runtime modes in one codebase:
 
 1. Proxy mode
    - registry-compatible proxy endpoints for package managers
@@ -19,9 +19,17 @@ The system supports three runtime modes in one codebase:
    - the React UI consumes generated TypeScript types from the Huma/OpenAPI document
    - Huma is used only on control-plane endpoints where code explicitly uses it
    - serves gRPC bundles for proxies
+   - owns durable npm dependency graph storage and resolver job APIs
 
 3. All-in-one mode
    - local-development composition of the same control-plane and proxy boundaries
+
+4. Dependency-graph-worker mode
+   - isolated npm resolver process
+   - claims graph jobs and submits results through control-plane gRPC
+   - only runtime that needs Node/npm in split deployments
+   - does not receive PostgreSQL credentials
+   - uses the `bundle` config only for mTLS transport to the control plane, not for tenant bundle delivery
 
 ## System context
 
@@ -45,6 +53,8 @@ flowchart LR
         deliveryAPI --> core
         controlplane --> postgres[(PostgreSQL)]
         core --> valkey[(Valkey)]
+        graphWorker[npm dependency graph worker] --> ingest
+        graphWorker --> upstreams
         ociProxy --> ociCache[(tenant/upstream-aware OCI artifact cache)]
         core --> osv[OSV API]
         core --> scorecard[Scorecard API]
@@ -65,6 +75,7 @@ flowchart LR
 - OCI delivery should support both direct registry-hostname usage in hosted deployments and optional Docker mirror usage for transparent local development
 - bundle gRPC delivery is control-plane only and serves proxy-ready tenant bundles
 - ingest gRPC delivery is control-plane only and persists proxy-emitted decisions and audit events
+- ingest gRPC delivery also accepts idempotent async npm dependency graph resolve requests from split-mode proxies
 - bundle and ingest gRPC use mTLS in split control-plane/proxy mode
 - control-plane gRPC authorizes proxy certificate identities against tenant IDs before serving bundles or accepting ingest writes
 - protocol-specific response rendering
@@ -79,6 +90,7 @@ flowchart LR
 - request normalization
 - policy evaluation
 - enrichment orchestration
+- npm dependency context lookup and async graph resolve enqueue orchestration
 - tenant-aware decision making
 - upstream-aware policy selection
 - upstream capability compatibility validation for policy authoring and upstream updates
@@ -89,8 +101,10 @@ flowchart LR
 
 ### Infrastructure
 - PostgreSQL repositories
+- PostgreSQL dependency graph and resolver job repository
 - encrypted upstream auth secret storage for OCI registry credentials
 - Valkey cache implementations
+- Valkey dependency context cache implementation
 - tenant and upstream-aware OCI artifact cache implementations
 - OSV and Scorecard-backed enrichers
 - upstream registry clients
@@ -249,6 +263,7 @@ sequenceDiagram
     participant delivery as delivery/npm or delivery/oci
     participant access as core.AccessService
     participant dcache as Valkey decision cache
+    participant graph as dependency context cache / queue
     participant enrich as core.EnrichmentService
     participant bundle as tenant bundle provider
     participant ingest as control-plane proxy ingest service
@@ -261,16 +276,25 @@ sequenceDiagram
     delivery->>audit: record request_received
     delivery->>access: Evaluate(access request)
     access->>access: normalize artifact identity
-    access->>dcache: lookup decision
+    access->>bundle: load tenant bundle
+    bundle-->>access: policies + upstreams
+    access->>access: filter policies by upstream scope
+    access->>access: compute policy-set SHA-256
+    opt npm concrete version and target-aware policies enabled
+        access->>graph: lookup dependency context
+        alt graph miss
+            graph->>ingest: enqueue async resolve request
+            graph-->>access: unknown context
+        else graph hit
+            graph-->>access: direct/transitive context
+        end
+    end
+    access->>dcache: lookup decision by artifact + context hash
 
     alt decision cache hit
         dcache-->>access: cached decision
         access->>audit: record cache hit
     else decision cache miss
-        access->>bundle: load tenant bundle
-        bundle-->>access: policies + upstreams
-        access->>access: filter policies by upstream scope
-        access->>access: compute policy-set SHA-256
         opt enabled policies require external metadata
             access->>enrich: load metadata
             enrich-->>access: metadata

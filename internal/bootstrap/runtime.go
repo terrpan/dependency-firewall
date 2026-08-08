@@ -24,6 +24,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *slog.Logger, info Buil
 	case config.RuntimeModeProxy:
 		info.ServiceName = "dependency-firewall-proxy"
 		return RunProxy(ctx, cfg, logger, info)
+	case config.RuntimeModeDependencyGraphWorker:
+		info.ServiceName = "dependency-firewall-dependency-graph-worker"
+		return RunDependencyGraphWorker(ctx, cfg, logger, info)
 	default:
 		info.ServiceName = "dependency-firewall"
 		return RunAllInOne(ctx, cfg, logger, info)

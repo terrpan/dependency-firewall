@@ -19,6 +19,12 @@ func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, re
 	if err := validateRequest(req); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	if err := req.Target.Validate(); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if req.Target != nil {
+		req.Target.Normalize()
+	}
 	config, err := corepolicy.DecodeConfigJSON(req.Type, req.SchemaVersion, req.Config)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -30,6 +36,7 @@ func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, re
 		Type:          req.Type,
 		Action:        req.Action,
 		SchemaVersion: req.SchemaVersion,
+		Target:        req.Target,
 		Config:        config,
 		Priority:      req.Priority,
 		Enabled:       req.Enabled,
@@ -137,6 +144,12 @@ func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string
 	if err := validateRequest(req); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	if err := req.Target.Validate(); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if req.Target != nil {
+		req.Target.Normalize()
+	}
 
 	config, err := corepolicy.DecodeConfigJSON(req.Type, req.SchemaVersion, req.Config)
 	if err != nil {
@@ -150,6 +163,7 @@ func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string
 		Type:          req.Type,
 		Action:        req.Action,
 		SchemaVersion: req.SchemaVersion,
+		Target:        req.Target,
 		Config:        config,
 		Priority:      req.Priority,
 		Enabled:       req.Enabled,

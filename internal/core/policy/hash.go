@@ -11,14 +11,15 @@ import (
 )
 
 type hashablePolicy struct {
-	UpstreamID    string              `json:"upstream_id,omitempty"`
-	Name          string              `json:"name"`
-	Type          domain.PolicyType   `json:"type"`
-	Action        domain.PolicyAction `json:"action"`
-	SchemaVersion int                 `json:"schema_version"`
-	Priority      int                 `json:"priority"`
-	Enabled       bool                `json:"enabled"`
-	Config        any                 `json:"config"`
+	UpstreamID    string               `json:"upstream_id,omitempty"`
+	Name          string               `json:"name"`
+	Type          domain.PolicyType    `json:"type"`
+	Action        domain.PolicyAction  `json:"action"`
+	SchemaVersion int                  `json:"schema_version"`
+	Priority      int                  `json:"priority"`
+	Enabled       bool                 `json:"enabled"`
+	Config        any                  `json:"config"`
+	Target        *domain.PolicyTarget `json:"target,omitempty"`
 }
 
 // HashPolicies returns a canonical SHA-256 for the effective tenant policy set.
@@ -34,6 +35,7 @@ func HashPolicies(policies []domain.Policy) (string, error) {
 			Priority:      p.Priority,
 			Enabled:       p.Enabled,
 			Config:        p.Config,
+			Target:        p.Target,
 		}
 	}
 

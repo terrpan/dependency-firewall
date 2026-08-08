@@ -23,22 +23,26 @@ type RegistryHandler struct {
 	audit     *service.AuditService
 	upstream  port.UpstreamClient
 	upstreams port.UpstreamRepository
+	snapshots *service.NPMInstallSnapshotService
 	logger    *slog.Logger
 }
 
-// NewRegistryHandler creates a new npm RegistryHandler.
+// NewRegistryHandler creates a new npm RegistryHandler. snapshots may be nil
+// when install-snapshot root inference is not wired for the runtime.
 func NewRegistryHandler(
 	access *service.AccessService,
 	upstream port.UpstreamClient,
 	upstreams port.UpstreamRepository,
 	logger *slog.Logger,
 	audit *service.AuditService,
+	snapshots *service.NPMInstallSnapshotService,
 ) *RegistryHandler {
 	return &RegistryHandler{
 		access:    access,
 		audit:     audit,
 		upstream:  upstream,
 		upstreams: upstreams,
+		snapshots: snapshots,
 		logger:    logger,
 	}
 }
@@ -46,6 +50,7 @@ func NewRegistryHandler(
 // RegisterRoutes registers npm protocol routes on the given mux.
 func (h *RegistryHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /npm/{package...}", h.route)
+	mux.HandleFunc("POST /npm/{path...}", h.routePost)
 }
 
 // route dispatches requests based on path structure.
@@ -90,6 +95,7 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 	}
 
 	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
+	req.Kind = domain.AccessRequestKindNPMMetadata
 	audit := proxyflow.AuditContext{
 		TenantID:      tenant.ID,
 		CorrelationID: req.RequestID,
@@ -208,6 +214,7 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 	}
 
 	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
+	req.Kind = domain.AccessRequestKindNPMTarball
 	audit := proxyflow.AuditContext{
 		TenantID:      tenant.ID,
 		CorrelationID: req.RequestID,

@@ -56,3 +56,8 @@ bundle:
           # Local example only because the seed script creates a fresh tenant ID.
           # Production should list explicit tenant IDs for each proxy identity.
           - "*"
+      - identity: "dependency-graph-worker.firewall.local"
+        tenant_ids:
+          # Local example only. Resolver workers that claim arbitrary jobs need
+          # wildcard access; tenant-dedicated workers can list explicit tenants.
+          - "*"

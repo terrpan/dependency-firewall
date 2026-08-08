@@ -25,12 +25,23 @@ type AccessService struct {
 	policies       port.PolicyRepository
 	decisions      port.DecisionRepository
 	decisionCache  port.DecisionCache
+	dependencies   *DependencyContextService
 	enrichment     *EnrichmentService
 	evaluator      *policy.Evaluator
 	upstreamClient port.UpstreamClient
 	upstreamRepo   port.UpstreamRepository
 	logger         *slog.Logger
 	audit          *AuditService
+}
+
+// AccessServiceOption customizes AccessService construction.
+type AccessServiceOption func(*AccessService)
+
+// WithDependencyContextService enables graph-backed dependency context.
+func WithDependencyContextService(dependencies *DependencyContextService) AccessServiceOption {
+	return func(s *AccessService) {
+		s.dependencies = dependencies
+	}
 }
 
 // NewAccessService creates a new AccessService.
@@ -44,8 +55,9 @@ func NewAccessService(
 	upstreamRepo port.UpstreamRepository,
 	logger *slog.Logger,
 	audit *AuditService,
+	options ...AccessServiceOption,
 ) *AccessService {
-	return &AccessService{
+	svc := &AccessService{
 		policies:       policies,
 		decisions:      decisions,
 		decisionCache:  decisionCache,
@@ -56,10 +68,14 @@ func NewAccessService(
 		logger:         logger,
 		audit:          audit,
 	}
+	for _, option := range options {
+		option(svc)
+	}
+	return svc
 }
 
 // Evaluate processes an access request through the full pipeline:
-// normalize -> check decision cache -> enrich (with metadata cache) -> evaluate policies -> cache decision -> record decision.
+// normalize -> load policies -> attach dependency context -> check decision cache -> enrich -> evaluate policies -> cache decision -> record decision.
 func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) (*domain.Decision, error) {
 	ctx, span := serviceTracer().Start(ctx, "access.evaluate")
 	span.SetAttributes(accessRequestAttributes(req)...)
@@ -84,17 +100,7 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		return nil, err
 	}
 
-	// 2. Check decision cache.
-	cached, hit, err := s.lookupCachedDecision(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if hit {
-		span.SetAttributes(attribute.Bool("cache.hit", true))
-		return cached, nil
-	}
-
-	// 3. Load tenant policies before enrichment so default-allow traffic does
+	// 2. Load tenant policies before enrichment so default-allow traffic does
 	// not pay for metadata lookups when no enabled policy can inspect metadata.
 	policySet, invalidDecision, err := s.preparePolicySet(ctx, req)
 	if invalidDecision != nil {
@@ -102,6 +108,23 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	// 3. Attach dependency context only when target-aware policies are enabled.
+	req, err = s.attachDependencyContext(ctx, req, policySet.effectivePolicies)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. Check decision cache after context attachment so graph-sensitive
+	// decisions do not reuse artifact-only cache entries.
+	cached, hit, err := s.lookupCachedDecision(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if hit {
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		return cached, nil
 	}
 
 	var metadata *domain.ArtifactMetadata
@@ -114,7 +137,7 @@ func (s *AccessService) Evaluate(ctx context.Context, req domain.AccessRequest) 
 		req.Metadata = metadata
 	}
 
-	// 4b. Propagate mutable-tag flag so the block_mutable_tag condition can detect it.
+	// 5. Propagate mutable-tag flag so the block_mutable_tag condition can detect it.
 	applyMutableTagMetadata(&req, wasMutableTag)
 
 	// 6. Run policy evaluator.
@@ -221,6 +244,10 @@ func (s *AccessService) evaluatePolicies(
 	evaluateSpan.End()
 
 	decision.PolicyHash = policySet.hash
+	if req.DependencyContext != nil {
+		dependencyContext := req.DependencyContext.Normalize()
+		decision.DependencyContext = &dependencyContext
+	}
 	parentSpan.SetAttributes(
 		attribute.String("decision.outcome", string(decision.Outcome)),
 		attribute.Int("decision.reason_count", len(decision.Reasons)),
@@ -268,6 +295,7 @@ func (s *AccessService) evaluatePolicies(
 				"reason_count":       len(decision.Reasons),
 				"metadata_available": metadata != nil,
 				"metadata_summary":   s.metadataSummary(metadata),
+				"dependency_context": dependencyContextSummary(decision.DependencyContext),
 			},
 		}); err != nil {
 			return nil, err
@@ -345,7 +373,8 @@ func (s *AccessService) finalizeDecision(
 		Artifact:      decision.Artifact,
 		Message:       "decision persisted",
 		Payload: map[string]any{
-			"policy_hash": decision.PolicyHash,
+			"policy_hash":        decision.PolicyHash,
+			"dependency_context": dependencyContextSummary(decision.DependencyContext),
 		},
 	}); auditErr != nil {
 		recordSpanError(recordSpan, auditErr)

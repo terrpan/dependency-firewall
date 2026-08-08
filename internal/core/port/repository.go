@@ -4,6 +4,7 @@ package port
 
 import (
 	"context"
+	"time"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
@@ -39,6 +40,38 @@ type DecisionRepository interface {
 	GetByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error)
 	ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error)
 	HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error)
+}
+
+// DependencyGraphRepository manages durable npm dependency graphs and resolver jobs.
+type DependencyGraphRepository interface {
+	EnqueueResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error)
+	ListRoots(ctx context.Context, tenantID string, limit int) ([]domain.DependencyGraphRoot, error)
+	GetSnapshot(ctx context.Context, tenantID, rootID string) (*domain.DependencyGraphSnapshot, error)
+	DependencyGraphResolver
+	DependencyGraphContextLookup
+}
+
+// DependencyGraphContextLookup loads graph context summaries for artifacts.
+type DependencyGraphContextLookup interface {
+	LookupContext(ctx context.Context, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error)
+}
+
+// DependencyGraphResolver claims and completes graph-resolution jobs.
+type DependencyGraphResolver interface {
+	ClaimNextResolveJob(ctx context.Context, now time.Time) (*domain.DependencyGraphResolveRequest, error)
+	CompleteResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error
+	FailResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error
+}
+
+// DependencyGraphQueue enqueues idempotent async graph resolution requests.
+type DependencyGraphQueue interface {
+	EnqueueResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error)
+}
+
+// DependencyGraphJobWatcher streams wake-up signals emitted when graph-resolution
+// jobs are enqueued. The returned channel is closed when ctx is canceled.
+type DependencyGraphJobWatcher interface {
+	WatchResolveJobs(ctx context.Context) <-chan struct{}
 }
 
 // UpstreamRepository manages upstream registry configs.

@@ -23,6 +23,7 @@ func main() {
 	deliveryapi.NewUpstreamHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewEvaluationHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewAuditHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
+	deliveryapi.NewDependencyGraphHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")

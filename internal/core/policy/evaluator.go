@@ -41,6 +41,10 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 	hasDeny := false
 
 	for _, p := range enabled {
+		targetMode := targetEvaluationMode(req, p.Target)
+		if targetMode == targetSkip {
+			continue
+		}
 		cond, err := conditionForType(p.Type)
 		if err != nil {
 			er := domain.EvaluationReason{
@@ -81,7 +85,7 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 
 		// When dry_run is enabled, record the match as a warning instead of
 		// a hard allow/deny. The decision outcome is unaffected.
-		if isWarnMode(p.Config) {
+		if isWarnMode(p.Config) || targetMode == targetWarn {
 			er := domain.EvaluationReason{
 				PolicyID:   p.ID,
 				PolicyName: p.Name,
@@ -162,4 +166,61 @@ func filterEnabled(policies []domain.Policy) []domain.Policy {
 		}
 	}
 	return result
+}
+
+type targetMode int
+
+const (
+	targetApply targetMode = iota
+	targetWarn
+	targetSkip
+)
+
+func targetEvaluationMode(req domain.AccessRequest, target *domain.PolicyTarget) targetMode {
+	if target == nil {
+		return targetApply
+	}
+
+	ctx := domain.NewUnknownDependencyContext()
+	if req.DependencyContext != nil {
+		ctx = req.DependencyContext.Normalize()
+	}
+	if ctx.Scope == domain.DependencyScopeUnknown {
+		switch target.OnUnknown {
+		case domain.DependencyUnknownDeny:
+			return targetApply
+		case domain.DependencyUnknownSkip:
+			return targetSkip
+		default:
+			return targetWarn
+		}
+	}
+
+	if len(target.DependencyScopes) > 0 && !scopeMatches(target.DependencyScopes, ctx.Scope) {
+		return targetSkip
+	}
+	if len(target.DependencyTypes) > 0 && !dependencyTypesMatch(target.DependencyTypes, ctx.DependencyTypes) {
+		return targetSkip
+	}
+	return targetApply
+}
+
+func scopeMatches(allowed []domain.DependencyScope, actual domain.DependencyScope) bool {
+	for _, value := range allowed {
+		if value == actual {
+			return true
+		}
+	}
+	return false
+}
+
+func dependencyTypesMatch(allowed, actual []domain.DependencyType) bool {
+	for _, allowedType := range allowed {
+		for _, actualType := range actual {
+			if allowedType == actualType {
+				return true
+			}
+		}
+	}
+	return false
 }

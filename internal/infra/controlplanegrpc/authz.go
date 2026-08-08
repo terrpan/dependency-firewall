@@ -104,6 +104,48 @@ func TenantAuthorizationInterceptor(clients []config.BundleTLSAuthorizedClient, 
 	}
 }
 
+// TenantAuthorizationStreamInterceptor authorizes mTLS client identities for
+// streaming control-plane RPCs. Streaming requests carry no tenant-scoped
+// payload, so clients must hold wildcard tenant access, mirroring the
+// requirement for worker-level unary RPCs such as ClaimDependencyGraphResolve.
+func TenantAuthorizationStreamInterceptor(clients []config.BundleTLSAuthorizedClient, options ...TenantAuthorizationOption) grpc.StreamServerInterceptor {
+	authorizer := newTenantAuthorizer(clients)
+	cfg := tenantAuthorizationConfig{}
+	for _, option := range options {
+		if option != nil {
+			option(&cfg)
+		}
+	}
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		fullMethod := ""
+		if info != nil {
+			fullMethod = info.FullMethod
+		}
+		ctx := stream.Context()
+		identities := peerCertificateIdentities(ctx)
+		if len(identities) == 0 {
+			_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+				TenantID:          "*",
+				FullMethod:        fullMethod,
+				Reason:            "client_certificate_identity_missing",
+				PermissionMessage: "client certificate identity is required",
+			}, codes.Unauthenticated)
+			return err
+		}
+		if !authorizer.authorized(identities, "*") {
+			_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+				TenantID:          "*",
+				ClientIdentities:  identities,
+				FullMethod:        fullMethod,
+				Reason:            "client_certificate_not_authorized_for_tenant",
+				PermissionMessage: "client certificate is not authorized for streaming control-plane access",
+			}, codes.PermissionDenied)
+			return err
+		}
+		return handler(srv, stream)
+	}
+}
+
 func (cfg tenantAuthorizationConfig) deny(ctx context.Context, event TenantAuthorizationDeniedEvent, code codes.Code) (any, error) {
 	event.TenantID = strings.TrimSpace(event.TenantID)
 	event.FullMethod = strings.TrimSpace(event.FullMethod)

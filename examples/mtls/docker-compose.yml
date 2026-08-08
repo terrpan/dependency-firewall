@@ -40,6 +40,30 @@ services:
         condition: service_started
       valkey:
         condition: service_healthy
+
+  dependency-graph-worker:
+    image: dependency-firewall-graph-worker:latest
+    command: ["-mode=dependency-graph-worker"]
+    volumes:
+      - ./certs/ca.pem:/etc/firewall/mtls/ca.pem:ro
+      - ./certs/dependency-graph-worker.pem:/etc/firewall/mtls/dependency-graph-worker.pem:ro
+      - ./certs/dependency-graph-worker-key.pem:/etc/firewall/mtls/dependency-graph-worker-key.pem:ro
+    environment:
+      FIREWALL_RUNTIME_MODE: "dependency-graph-worker"
+      FIREWALL_BUNDLE_CONTROL_PLANE_ADDR: "control-plane:9090"
+      FIREWALL_BUNDLE_TLS_MODE: "mtls"
+      FIREWALL_BUNDLE_TLS_CA_FILE: "/etc/firewall/mtls/ca.pem"
+      FIREWALL_BUNDLE_TLS_CERT_FILE: "/etc/firewall/mtls/dependency-graph-worker.pem"
+      FIREWALL_BUNDLE_TLS_KEY_FILE: "/etc/firewall/mtls/dependency-graph-worker-key.pem"
+      FIREWALL_BUNDLE_TLS_SERVER_NAME_OVERRIDE: "control-plane.firewall.local"
+      FIREWALL_TELEMETRY_ENABLED: "${FIREWALL_TELEMETRY_ENABLED:-true}"
+      FIREWALL_TELEMETRY_ENDPOINT: "${FIREWALL_TELEMETRY_ENDPOINT:-http://otel-collector:4317}"
+      FIREWALL_TELEMETRY_PROTOCOL: "${FIREWALL_TELEMETRY_PROTOCOL:-grpc}"
+      FIREWALL_TELEMETRY_INSECURE: "${FIREWALL_TELEMETRY_INSECURE:-true}"
+    depends_on:
+      control-plane:
+        condition: service_started
+
   postgres:
     image: postgres:16-alpine
     ports:

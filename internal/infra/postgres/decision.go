@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -56,12 +57,16 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 	if warnings == nil {
 		warnings = []string{}
 	}
+	dependencyContextJSON, err := json.Marshal(decision.DependencyContext)
+	if err != nil {
+		return fmt.Errorf("marshalling dependency context: %w", err)
+	}
 	err = tx.QueryRow(ctx,
-		`INSERT INTO decisions (tenant_id, artifact_id, outcome, policy_id, policy_hash, reason, warnings, cached_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO decisions (tenant_id, artifact_id, outcome, policy_id, policy_hash, reason, warnings, dependency_context, cached_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING id, evaluated_at`,
 		decision.TenantID, artifactID, decision.Outcome, policyID,
-		decision.PolicyHash, decision.Reason, warnings, decision.CachedAt,
+		decision.PolicyHash, decision.Reason, warnings, nullableJSON(dependencyContextJSON, decision.DependencyContext != nil), decision.CachedAt,
 	).Scan(&decision.ID, &decision.EvaluatedAt)
 	if err != nil {
 		return fmt.Errorf("inserting decision: %w", err)
@@ -71,10 +76,10 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 	if len(decision.Reasons) > 0 {
 		var evaluationID string
 		err = tx.QueryRow(ctx,
-			`INSERT INTO evaluations (tenant_id, artifact_id, outcome, policy_id, reason)
-			 VALUES ($1, $2, $3, $4, $5)
+			`INSERT INTO evaluations (tenant_id, artifact_id, outcome, policy_id, reason, dependency_context)
+			 VALUES ($1, $2, $3, $4, $5, $6)
 			 RETURNING id`,
-			decision.TenantID, artifactID, decision.Outcome, policyID, decision.Reason,
+			decision.TenantID, artifactID, decision.Outcome, policyID, decision.Reason, nullableJSON(dependencyContextJSON, decision.DependencyContext != nil),
 		).Scan(&evaluationID)
 		if err != nil {
 			return fmt.Errorf("inserting evaluation: %w", err)
@@ -108,8 +113,8 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 	var d domain.Decision
 	var policyID *string
 	var policyHash *string
-	err := r.pool.QueryRow(ctx,
-		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.cached_at, d.evaluated_at,
+	row := r.pool.QueryRow(ctx,
+		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.dependency_context, d.cached_at, d.evaluated_at,
 		        a.ecosystem, a.namespace, a.name, a.version, a.digest
 		 FROM decisions d
 		 JOIN artifacts a ON d.artifact_id = a.id
@@ -120,7 +125,9 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 		 LIMIT 1`,
 		tenantID, artifact.Ecosystem, artifact.Namespace,
 		artifact.Name, artifact.Version, artifact.Digest,
-	).Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason, &d.Warnings,
+	)
+	var dependencyContextJSON []byte
+	err := row.Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason, &d.Warnings, &dependencyContextJSON,
 		&d.CachedAt, &d.EvaluatedAt,
 		&d.Artifact.Ecosystem, &d.Artifact.Namespace, &d.Artifact.Name,
 		&d.Artifact.Version, &d.Artifact.Digest)
@@ -136,13 +143,16 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 	if policyHash != nil {
 		d.PolicyHash = *policyHash
 	}
+	if err := decodeDecisionDependencyContext(dependencyContextJSON, &d); err != nil {
+		return nil, err
+	}
 	return &d, nil
 }
 
 // ListByTenant returns decisions for a tenant ordered by evaluated_at descending.
 func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.cached_at, d.evaluated_at,
+		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.dependency_context, d.cached_at, d.evaluated_at,
 		        a.ecosystem, a.namespace, a.name, a.version, a.digest
 		 FROM decisions d
 		 LEFT JOIN artifacts a ON d.artifact_id = a.id
@@ -169,8 +179,9 @@ func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, 
 		var policyID *string
 		var policyHash *string
 		var eco, ns, name, ver, dig *string
+		var dependencyContextJSON []byte
 		if err := rows.Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason,
-			&d.Warnings, &d.CachedAt, &d.EvaluatedAt, &eco, &ns, &name, &ver, &dig); err != nil {
+			&d.Warnings, &dependencyContextJSON, &d.CachedAt, &d.EvaluatedAt, &eco, &ns, &name, &ver, &dig); err != nil {
 			return nil, fmt.Errorf("scanning decision row: %w", err)
 		}
 		if policyID != nil {
@@ -194,12 +205,28 @@ func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, 
 		if dig != nil {
 			d.Artifact.Digest = *dig
 		}
+		if err := decodeDecisionDependencyContext(dependencyContextJSON, &d); err != nil {
+			return nil, err
+		}
 		decisions = append(decisions, d)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating decision rows: %w", err)
 	}
 	return decisions, nil
+}
+
+func decodeDecisionDependencyContext(data []byte, decision *domain.Decision) error {
+	if len(data) == 0 {
+		return nil
+	}
+	var dependencyContext domain.DependencyContext
+	if err := json.Unmarshal(data, &dependencyContext); err != nil {
+		return fmt.Errorf("decoding decision dependency context: %w", err)
+	}
+	dependencyContext = dependencyContext.Normalize()
+	decision.DependencyContext = &dependencyContext
+	return nil
 }
 
 // HasRecentAllow checks if a recent allow decision exists for the given

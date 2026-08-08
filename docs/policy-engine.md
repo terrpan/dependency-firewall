@@ -6,12 +6,42 @@ Policies control which artifacts tenants can install through the proxy. Every po
 
 1. Only **enabled** policies are evaluated.
 2. Policies with `upstream_id` only evaluate for requests that resolve to that same upstream. Legacy rules without `upstream_id` still apply tenant-wide.
-3. Policies run in **priority order** (ascending). Ties break alphabetically by name.
-4. **Deny overrides allow** — if any deny policy matches, the outcome is deny regardless of allow matches.
-5. The **first** matching deny reason becomes the user-facing error message.
-6. All matched reasons (allow and deny) are logged for audit.
-7. If **no policies match**, the default outcome is **allow**.
-8. Condition lookup or evaluation errors are treated as deny (`evaluation_error`).
+3. Policies with `target` only evaluate when the request dependency context matches the requested dependency scope/type.
+4. Policies run in **priority order** (ascending). Ties break alphabetically by name.
+5. **Deny overrides allow** — if any deny policy matches, the outcome is deny regardless of allow matches.
+6. The **first** matching deny reason becomes the user-facing error message.
+7. All matched reasons (allow and deny) are logged for audit.
+8. If **no policies match**, the default outcome is **allow**.
+9. Condition lookup or evaluation errors are treated as deny (`evaluation_error`).
+
+## Dependency targets
+
+Policies may include an optional `target` block. Policies without `target` keep the existing behavior.
+
+```yaml
+- name: warn-on-transitive-peer-risk
+  type: license
+  schema_version: 1
+  action: deny
+  target:
+    dependency_scope: [transitive]
+    dependency_types: [peer, optional]
+    on_unknown: warn
+  config:
+    licenses:
+      - AGPL-3.0-only
+```
+
+- `dependency_scope` may include `direct`, `transitive`, or `unknown`.
+- `dependency_types` may include `prod`, `dev`, `peer`, or `optional`.
+- `on_unknown` controls target-aware behavior when async graph resolution has not completed or graph evidence conflicts:
+  - `warn` records a policy warning when the condition matches, but does not change the allow/deny outcome
+  - `deny` evaluates the policy normally
+  - `skip` treats the policy as not matched
+- omitted `on_unknown` defaults to `warn`
+- npm dependency graph context is only resolved for concrete npm versions and only when at least one enabled policy has `target`
+- bare npm packuments skip dependency context lookup because they do not identify an enforceable version
+- conflicting graph evidence is classified as `unknown`
 
 ## Upstream capability profiles
 
@@ -84,6 +114,7 @@ policies:
 - the service retains the latest **3** versions per policy
 - rollback creates a new current policy version from the chosen retained snapshot
 - retained snapshots include the full policy shape needed for rollback: `name`, `type`, `action`, `schema_version`, `config`, `priority`, `enabled`, and `upstream_id`
+- retained snapshots also include optional `target` blocks
 - rollback is exposed through the control plane:
   - `GET /api/v1/policies/{id}/versions`
   - `POST /api/v1/policies/{id}/rollback`

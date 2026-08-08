@@ -29,7 +29,7 @@ func run() error {
 	var configPath string
 	var mode string
 	flag.StringVar(&configPath, "config", "", "path to config file")
-	flag.StringVar(&mode, "mode", "", "runtime mode: all-in-one, control-plane, or proxy")
+	flag.StringVar(&mode, "mode", "", "runtime mode: all-in-one, control-plane, proxy, or dependency-graph-worker")
 	flag.Parse()
 
 	cfg, err := config.LoadWithOptions(config.LoadOptions{ConfigPath: configPath})

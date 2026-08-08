@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -21,6 +22,7 @@ func scanPolicy(row rowScanner) (*domain.Policy, error) {
 	var policy domain.Policy
 	var upstreamID sql.NullString
 	var configJSON []byte
+	var targetJSON []byte
 	err := row.Scan(
 		&policy.ID,
 		&policy.TenantID,
@@ -30,6 +32,7 @@ func scanPolicy(row rowScanner) (*domain.Policy, error) {
 		&policy.Action,
 		&policy.SchemaVersion,
 		&configJSON,
+		&targetJSON,
 		&policy.Priority,
 		&policy.Enabled,
 		&policy.Version,
@@ -50,6 +53,11 @@ func scanPolicy(row rowScanner) (*domain.Policy, error) {
 		return nil, fmt.Errorf("decoding policy config: %w", err)
 	}
 	policy.Config = config
+	target, err := decodePolicyTarget(targetJSON)
+	if err != nil {
+		return nil, fmt.Errorf("decoding policy target: %w", err)
+	}
+	policy.Target = target
 	return &policy, nil
 }
 
@@ -57,6 +65,7 @@ func scanPolicyVersion(row rowScanner) (domain.PolicyVersion, error) {
 	var version domain.PolicyVersion
 	var upstreamID sql.NullString
 	var configJSON []byte
+	var targetJSON []byte
 	if err := row.Scan(
 		&version.PolicyID,
 		&version.Version,
@@ -66,6 +75,7 @@ func scanPolicyVersion(row rowScanner) (domain.PolicyVersion, error) {
 		&version.Action,
 		&version.SchemaVersion,
 		&configJSON,
+		&targetJSON,
 		&version.Priority,
 		&version.Enabled,
 		&version.CreatedAt,
@@ -80,6 +90,11 @@ func scanPolicyVersion(row rowScanner) (domain.PolicyVersion, error) {
 		return domain.PolicyVersion{}, fmt.Errorf("decoding policy version config: %w", err)
 	}
 	version.Config = config
+	target, err := decodePolicyTarget(targetJSON)
+	if err != nil {
+		return domain.PolicyVersion{}, fmt.Errorf("decoding policy version target: %w", err)
+	}
+	version.Target = target
 	return version, nil
 }
 
@@ -88,4 +103,26 @@ func nullableString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func nullableJSON(value []byte, valid bool) any {
+	if !valid {
+		return nil
+	}
+	return value
+}
+
+func decodePolicyTarget(data []byte) (*domain.PolicyTarget, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var target domain.PolicyTarget
+	if err := json.Unmarshal(data, &target); err != nil {
+		return nil, err
+	}
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
+	target.Normalize()
+	return &target, nil
 }

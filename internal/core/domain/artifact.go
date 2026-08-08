@@ -14,14 +14,24 @@ type ArtifactIdentity struct {
 	Digest    string // immutable content hash (sha256:...), populated when resolved
 }
 
+// AccessRequestKind identifies the protocol-level request shape.
+type AccessRequestKind string
+
+const (
+	AccessRequestKindNPMMetadata AccessRequestKind = "npm_metadata"
+	AccessRequestKindNPMTarball  AccessRequestKind = "npm_tarball"
+)
+
 // AccessRequest is the normalized input to the policy engine.
 type AccessRequest struct {
-	TenantID  string
-	RequestID string
-	Artifact  ArtifactIdentity
-	Upstream  Upstream
-	Metadata  *ArtifactMetadata
-	Timestamp time.Time
+	TenantID          string
+	RequestID         string
+	Kind              AccessRequestKind
+	Artifact          ArtifactIdentity
+	Upstream          Upstream
+	Metadata          *ArtifactMetadata
+	DependencyContext *DependencyContext
+	Timestamp         time.Time
 }
 
 // ArtifactMetadata holds enrichment data about an artifact.

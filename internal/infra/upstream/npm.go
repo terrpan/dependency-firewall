@@ -105,6 +105,47 @@ func (c *NPMClient) FetchContent(ctx context.Context, upstream domain.Upstream, 
 	}, nil
 }
 
+// npmManifestDependencies is the minimal structure needed to read declared
+// dependency names from a versioned npm manifest.
+type npmManifestDependencies struct {
+	Dependencies         map[string]string `json:"dependencies"`
+	OptionalDependencies map[string]string `json:"optionalDependencies"`
+	PeerDependencies     map[string]string `json:"peerDependencies"`
+}
+
+// ListManifestDependencyNames fetches one concrete package version manifest and
+// returns the names of its declared runtime, optional, and peer dependencies.
+func (c *NPMClient) ListManifestDependencyNames(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) ([]string, error) {
+	if strings.TrimSpace(artifact.Version) == "" {
+		return nil, fmt.Errorf("listing npm manifest dependencies: version is required")
+	}
+	resp, err := c.FetchMetadata(ctx, upstream, artifact)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("listing npm manifest dependencies: unexpected status %d", resp.StatusCode)
+	}
+
+	var manifest npmManifestDependencies
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
+		return nil, fmt.Errorf("decoding npm manifest: %w", err)
+	}
+
+	names := make([]string, 0, len(manifest.Dependencies)+len(manifest.OptionalDependencies)+len(manifest.PeerDependencies))
+	for _, deps := range []map[string]string{manifest.Dependencies, manifest.OptionalDependencies, manifest.PeerDependencies} {
+		for name := range deps {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
 // npmDistTags is the minimal structure needed to read dist-tags from npm metadata.
 type npmDistTags struct {
 	DistTags map[string]string `json:"dist-tags"`

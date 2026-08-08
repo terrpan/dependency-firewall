@@ -43,19 +43,20 @@ type BundleTenant struct {
 }
 
 type BundlePolicy struct {
-	ID            string              `json:"id"`
-	TenantID      string              `json:"tenant_id"`
-	UpstreamID    string              `json:"upstream_id,omitempty"`
-	Name          string              `json:"name"`
-	Type          domain.PolicyType   `json:"type"`
-	Action        domain.PolicyAction `json:"action"`
-	SchemaVersion int                 `json:"schema_version"`
-	Config        json.RawMessage     `json:"config"`
-	Priority      int                 `json:"priority"`
-	Enabled       bool                `json:"enabled"`
-	Version       int                 `json:"version"`
-	CreatedAt     string              `json:"created_at"`
-	UpdatedAt     string              `json:"updated_at"`
+	ID            string               `json:"id"`
+	TenantID      string               `json:"tenant_id"`
+	UpstreamID    string               `json:"upstream_id,omitempty"`
+	Name          string               `json:"name"`
+	Type          domain.PolicyType    `json:"type"`
+	Action        domain.PolicyAction  `json:"action"`
+	SchemaVersion int                  `json:"schema_version"`
+	Config        json.RawMessage      `json:"config"`
+	Target        *domain.PolicyTarget `json:"target,omitempty"`
+	Priority      int                  `json:"priority"`
+	Enabled       bool                 `json:"enabled"`
+	Version       int                  `json:"version"`
+	CreatedAt     string               `json:"created_at"`
+	UpdatedAt     string               `json:"updated_at"`
 }
 
 type BundleUpstream struct {
@@ -179,6 +180,12 @@ func (p BundlePolicy) toDomain() (*domain.Policy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding policy config: %w", err)
 	}
+	if p.Target != nil {
+		if err := p.Target.Validate(); err != nil {
+			return nil, fmt.Errorf("validating policy target: %w", err)
+		}
+		p.Target.Normalize()
+	}
 
 	return &domain.Policy{
 		ID:            p.ID,
@@ -189,6 +196,7 @@ func (p BundlePolicy) toDomain() (*domain.Policy, error) {
 		Action:        p.Action,
 		SchemaVersion: p.SchemaVersion,
 		Config:        config,
+		Target:        p.Target,
 		Priority:      p.Priority,
 		Enabled:       p.Enabled,
 		Version:       p.Version,

@@ -45,6 +45,9 @@ func ValidatePolicy(p domain.Policy) error {
 	if err := p.Config.Validate(); err != nil {
 		return invalidPolicyf("%v", err)
 	}
+	if err := p.Target.Validate(); err != nil {
+		return invalidPolicyf("%v", err)
+	}
 	return nil
 }
 

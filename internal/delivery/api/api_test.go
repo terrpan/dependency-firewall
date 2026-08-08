@@ -280,7 +280,7 @@ type mockMetadataCache struct {
 	invalidateTenantErr error
 }
 
-func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.Decision, error) {
+func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity, _ string) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 

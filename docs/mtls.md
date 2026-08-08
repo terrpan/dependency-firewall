@@ -193,6 +193,8 @@ The proxy certificate DNS SAN is `proxy-a.firewall.local`, so the control-plane 
 
 - `runtime.mode=control-plane` requires `bundle.tls.mode=mtls`, unless `bundle.tls.allow_insecure_control_plane=true` is explicitly set for local development.
 - `runtime.mode=proxy` requires `bundle.tls.mode=mtls`.
+- `runtime.mode=dependency-graph-worker` requires `bundle.tls.mode=mtls` and uses `bundle.control_plane_addr` to claim and complete graph jobs.
+- In worker mode, the `bundle` section is transport-only: it configures the mTLS client to the control plane, not tenant bundle retrieval or caching.
 - `bundle.tls.mode=mtls` requires `ca_file`, `cert_file`, and `key_file`.
 - `runtime.mode=control-plane` plus `bundle.tls.mode=mtls` requires at least one `authorized_clients` entry.
 - Authenticated OCI upstream secrets are delivered in bundles only when the bundle transport is mTLS-protected and tenant-authorized.
@@ -200,9 +202,10 @@ The proxy certificate DNS SAN is `proxy-a.firewall.local`, so the control-plane 
 
 ## Operational checklist
 
-- Issue separate certificates for each proxy deployment.
-- Keep control-plane and proxy configs separate in split deployments; each process should receive only its own certificate/key.
-- Authorize each proxy identity only for the tenants it should serve.
+- Issue separate certificates for each proxy and dependency graph worker deployment.
+- Keep control-plane, proxy, and dependency graph worker configs separate in split deployments; each process should receive only its own certificate/key.
+- Keep the worker's `bundle` config limited to the control-plane address and mTLS client credentials; it should not reuse proxy bundle cache settings.
+- Authorize each proxy and worker identity only for the tenants it should serve. Resolver workers that claim unscoped jobs need wildcard tenant authorization, so run tenant-scoped workers when tighter isolation is required.
 - Rotate proxy certificates by adding the new identity to `authorized_clients`, deploying the new cert, then removing the old identity.
 - Protect key files with filesystem permissions readable only by the firewall process.
 - Use one CA bundle for the trust anchors that should be allowed to participate in control-plane gRPC.

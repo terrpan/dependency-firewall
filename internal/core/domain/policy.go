@@ -36,6 +36,7 @@ type Policy struct {
 	Action        PolicyAction
 	SchemaVersion int
 	Config        PolicyConfig
+	Target        *PolicyTarget
 	Priority      int
 	Enabled       bool
 	Version       int
@@ -55,6 +56,7 @@ type PolicyVersion struct {
 	Action        PolicyAction
 	SchemaVersion int
 	Config        PolicyConfig
+	Target        *PolicyTarget
 	Priority      int
 	Enabled       bool
 	CreatedAt     time.Time
@@ -67,4 +69,20 @@ type PolicySetRevision struct {
 	Generation int64
 	PolicyHash string
 	CreatedAt  time.Time
+}
+
+// DependencyUnknownAction controls how a target-aware policy behaves when graph context is unknown.
+type DependencyUnknownAction string
+
+const (
+	DependencyUnknownWarn DependencyUnknownAction = "warn"
+	DependencyUnknownDeny DependencyUnknownAction = "deny"
+	DependencyUnknownSkip DependencyUnknownAction = "skip"
+)
+
+// PolicyTarget restricts a policy to dependency graph context.
+type PolicyTarget struct {
+	DependencyScopes []DependencyScope       `json:"dependency_scope,omitempty"`
+	DependencyTypes  []DependencyType        `json:"dependency_types,omitempty"`
+	OnUnknown        DependencyUnknownAction `json:"on_unknown,omitempty"`
 }

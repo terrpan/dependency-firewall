@@ -50,8 +50,27 @@ openssl x509 -req \
   -days 30 -sha256 \
   -extfile "$cert_dir/proxy-a.ext"
 
+openssl genrsa -out "$cert_dir/dependency-graph-worker-key.pem" 2048
+openssl req -new \
+  -key "$cert_dir/dependency-graph-worker-key.pem" \
+  -subj "/CN=dependency-graph-worker" \
+  -out "$cert_dir/dependency-graph-worker.csr"
+cat > "$cert_dir/dependency-graph-worker.ext" <<'EOF'
+subjectAltName=DNS:dependency-graph-worker.firewall.local
+extendedKeyUsage=clientAuth
+EOF
+openssl x509 -req \
+  -in "$cert_dir/dependency-graph-worker.csr" \
+  -CA "$cert_dir/ca.pem" \
+  -CAkey "$cert_dir/ca-key.pem" \
+  -CAcreateserial \
+  -out "$cert_dir/dependency-graph-worker.pem" \
+  -days 30 -sha256 \
+  -extfile "$cert_dir/dependency-graph-worker.ext"
+
 rm -f "$cert_dir"/*.csr "$cert_dir"/*.ext "$cert_dir"/ca.srl
 chmod 0600 "$cert_dir"/*-key.pem
 
 echo "Generated test certificates in examples/mtls/$cert_dir"
 echo "Proxy client identity: proxy-a.firewall.local"
+echo "Dependency graph worker client identity: dependency-graph-worker.firewall.local"

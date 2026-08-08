@@ -7,31 +7,33 @@ import (
 )
 
 type PolicyResponse struct {
-	ID            string    `json:"id"`
-	UpstreamID    string    `json:"upstream_id,omitempty"`
-	Name          string    `json:"name"`
-	Type          string    `json:"type"`
-	Action        string    `json:"action"`
-	SchemaVersion int       `json:"schema_version"`
-	Config        any       `json:"config"`
-	Priority      int       `json:"priority"`
-	Enabled       bool      `json:"enabled"`
-	Version       int       `json:"version"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            string               `json:"id"`
+	UpstreamID    string               `json:"upstream_id,omitempty"`
+	Name          string               `json:"name"`
+	Type          string               `json:"type"`
+	Action        string               `json:"action"`
+	SchemaVersion int                  `json:"schema_version"`
+	Target        *domain.PolicyTarget `json:"target,omitempty"`
+	Config        any                  `json:"config"`
+	Priority      int                  `json:"priority"`
+	Enabled       bool                 `json:"enabled"`
+	Version       int                  `json:"version"`
+	CreatedAt     time.Time            `json:"created_at"`
+	UpdatedAt     time.Time            `json:"updated_at"`
 }
 
 type PolicyVersionResponse struct {
-	Version       int       `json:"version"`
-	UpstreamID    string    `json:"upstream_id,omitempty"`
-	Name          string    `json:"name"`
-	Type          string    `json:"type"`
-	Action        string    `json:"action"`
-	SchemaVersion int       `json:"schema_version"`
-	Config        any       `json:"config"`
-	Priority      int       `json:"priority"`
-	Enabled       bool      `json:"enabled"`
-	CreatedAt     time.Time `json:"created_at"`
+	Version       int                  `json:"version"`
+	UpstreamID    string               `json:"upstream_id,omitempty"`
+	Name          string               `json:"name"`
+	Type          string               `json:"type"`
+	Action        string               `json:"action"`
+	SchemaVersion int                  `json:"schema_version"`
+	Target        *domain.PolicyTarget `json:"target,omitempty"`
+	Config        any                  `json:"config"`
+	Priority      int                  `json:"priority"`
+	Enabled       bool                 `json:"enabled"`
+	CreatedAt     time.Time            `json:"created_at"`
 }
 
 type PolicyTypeResponse struct {
@@ -55,6 +57,7 @@ func toPolicyResponse(p *domain.Policy) *PolicyResponse {
 		Type:          string(p.Type),
 		Action:        string(p.Action),
 		SchemaVersion: p.SchemaVersion,
+		Target:        p.Target,
 		Config:        p.Config,
 		Priority:      p.Priority,
 		Enabled:       p.Enabled,
@@ -80,6 +83,7 @@ func toPolicyVersionResponse(version *domain.PolicyVersion) *PolicyVersionRespon
 		Type:          string(version.Type),
 		Action:        string(version.Action),
 		SchemaVersion: version.SchemaVersion,
+		Target:        version.Target,
 		Config:        version.Config,
 		Priority:      version.Priority,
 		Enabled:       version.Enabled,

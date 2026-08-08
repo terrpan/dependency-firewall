@@ -1,9 +1,10 @@
 # Split Mode mTLS Example
 
-This example runs `dependency-firewall` as two separate processes:
+This example runs `dependency-firewall` as separate processes:
 
 - `control-plane`: HTTP control-plane API on `localhost:8080` and mTLS bundle/ingest gRPC on `localhost:9090`
 - `proxy`: package proxy on `localhost:8081`, connected to the control plane over mTLS
+- `dependency-graph-worker`: isolated npm dependency graph resolver, connected to the control plane over mTLS
 
 The example is for local development only. It creates self-signed test certificates and uses a test upstream secret key in `control-plane.yaml`.
 
@@ -11,16 +12,17 @@ The example is for local development only. It creates self-signed test certifica
 
 - `control-plane.yaml`: mounted only into the control-plane container
 - `proxy.yaml`: mounted only into the proxy container
-- `generate-certs.sh`: creates a local CA, a control-plane server cert, and a proxy client cert
+- `generate-certs.sh`: creates a local CA, a control-plane server cert, a proxy client cert, and a dependency graph worker client cert
 - `seed.sh`: creates a tenant through the control-plane API and adds an OCI upstream for that tenant
-- `docker-compose.yml`: runs the split control-plane/proxy topology plus PostgreSQL and Valkey
+- `docker-compose.yml`: runs the split control-plane/proxy/worker topology plus PostgreSQL and Valkey
 
 The Compose file mounts only the certificate files each process needs:
 
 - control plane: CA bundle plus control-plane server certificate/key
 - proxy: CA bundle plus proxy client certificate/key
+- dependency graph worker: CA bundle plus worker client certificate/key
 
-The proxy container does not receive the control-plane private key.
+The proxy and worker containers do not receive the control-plane private key. The worker container does not receive PostgreSQL credentials.
 
 The example proxy uses an ephemeral disk cache under `/tmp/dependency-firewall/oci-cache` inside the container. For production, mount a cache directory that is writable by the application user and keep cache keys tenant/upstream scoped.
 
@@ -39,6 +41,9 @@ bundle:
       - identity: "proxy-a.firewall.local"
         tenant_ids:
           - "*"
+      - identity: "dependency-graph-worker.firewall.local"
+        tenant_ids:
+          - "*"
 ```
 
 ## Run
@@ -47,6 +52,7 @@ From the repository root, build the local image first:
 
 ```bash
 make build
+make build-worker
 ```
 
 Generate test certificates and start the split deployment:
@@ -65,11 +71,11 @@ FIREWALL_TELEMETRY_ENABLED=true docker compose --profile observability up -d
 
 Open `http://localhost:18888` to inspect traces.
 
-Environment variables override values in `control-plane.yaml` and `proxy.yaml`. If the stack is already running and you change `FIREWALL_TELEMETRY_ENABLED`, recreate the app containers so Docker Compose applies the new environment:
+Environment variables override values in `control-plane.yaml`, `proxy.yaml`, and the worker service environment. If the stack is already running and you change `FIREWALL_TELEMETRY_ENABLED`, recreate the app containers so Docker Compose applies the new environment:
 
 ```bash
 FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d --force-recreate control-plane proxy
+docker compose --profile observability up -d --force-recreate control-plane proxy dependency-graph-worker
 ```
 
 If local Postgres or Valkey already uses the default host ports, override only the host bindings:
@@ -128,6 +134,7 @@ curl -H "Host: <tenant-id-from-seed-output>.localhost" \
 - The control plane extracts `proxy-a.firewall.local` from the proxy certificate.
 - The control plane authorizes the proxy identity before serving bundle or ingest RPCs.
 - The proxy can serve requests for that tenant without mounting the control-plane private key.
+- The dependency graph worker claims resolver jobs over mTLS without mounting database credentials.
 
 ## Negative Check
 

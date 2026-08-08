@@ -29,6 +29,15 @@ func needsEnrichment(policies []domain.Policy) bool {
 	return false
 }
 
+func needsDependencyContext(policies []domain.Policy) bool {
+	for _, policyDef := range policies {
+		if policyDef.Enabled && policyDef.Target != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldEnrichArtifact(req domain.AccessRequest, policies []domain.Policy) bool {
 	if isUnversionedNPMArtifact(req.Artifact) {
 		return false

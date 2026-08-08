@@ -26,18 +26,21 @@ func decisionGenerationKey(tenantID string) string {
 	return "decision-generation:" + tenantID
 }
 
-func decisionKey(tenantID string, generation int64, artifact domain.ArtifactIdentity) string {
-	return "decision:" + tenantID + ":" + strconv.FormatInt(generation, 10) + ":" + artifact.CacheKey()
+func decisionKey(tenantID string, generation int64, artifact domain.ArtifactIdentity, dependencyContextHash string) string {
+	if dependencyContextHash == "" {
+		dependencyContextHash = "none"
+	}
+	return "decision:" + tenantID + ":" + strconv.FormatInt(generation, 10) + ":" + dependencyContextHash + ":" + artifact.CacheKey()
 }
 
 // Get retrieves a cached decision. Returns domain.ErrCacheMiss if not found.
-func (c *DecisionCache) Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (c *DecisionCache) Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, dependencyContextHash string) (*domain.Decision, error) {
 	generation, err := c.currentGeneration(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := c.client.Do(ctx, c.client.B().Get().Key(decisionKey(tenantID, generation, artifact)).Build()).AsBytes()
+	data, err := c.client.Do(ctx, c.client.B().Get().Key(decisionKey(tenantID, generation, artifact, dependencyContextHash)).Build()).AsBytes()
 	if err != nil {
 		if valkeygo.IsValkeyNil(err) {
 			return nil, domain.ErrCacheMiss
@@ -64,7 +67,11 @@ func (c *DecisionCache) Set(ctx context.Context, decision *domain.Decision, ttl 
 		return err
 	}
 
-	key := decisionKey(decision.TenantID, generation, decision.Artifact)
+	dependencyContextHash := ""
+	if decision.DependencyContext != nil {
+		dependencyContextHash = decision.DependencyContext.Normalize().ContextHash
+	}
+	key := decisionKey(decision.TenantID, generation, decision.Artifact, dependencyContextHash)
 	cmd := c.client.B().Set().Key(key).Value(valkeygo.BinaryString(data))
 	if ttl > 0 {
 		if err := c.client.Do(ctx, cmd.Px(ttl).Build()).Error(); err != nil {
@@ -85,7 +92,7 @@ func (c *DecisionCache) Invalidate(ctx context.Context, tenantID string, artifac
 		return err
 	}
 
-	if err := c.client.Do(ctx, c.client.B().Del().Key(decisionKey(tenantID, generation, artifact)).Build()).Error(); err != nil {
+	if err := c.client.Do(ctx, c.client.B().Del().Key(decisionKey(tenantID, generation, artifact, "")).Build()).Error(); err != nil {
 		return fmt.Errorf("invalidating cached decision: %w", err)
 	}
 	return nil

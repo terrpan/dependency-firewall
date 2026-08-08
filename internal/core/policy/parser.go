@@ -111,6 +111,10 @@ func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, e
 	if err != nil {
 		return domain.Policy{}, err
 	}
+	target, err := toDomainTarget(def.Target)
+	if err != nil {
+		return domain.Policy{}, err
+	}
 
 	return domain.Policy{
 		TenantID:      tenantID,
@@ -120,6 +124,7 @@ func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, e
 		Action:        action,
 		SchemaVersion: schemaVersion,
 		Config:        config,
+		Target:        target,
 		Priority:      priority,
 		Enabled:       enabled,
 		Version:       1,
@@ -135,4 +140,26 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func toDomainTarget(def *TargetDef) (*domain.PolicyTarget, error) {
+	if def == nil {
+		return nil, nil
+	}
+	target := &domain.PolicyTarget{
+		DependencyScopes: make([]domain.DependencyScope, 0, len(def.DependencyScopes)),
+		DependencyTypes:  make([]domain.DependencyType, 0, len(def.DependencyTypes)),
+		OnUnknown:        domain.DependencyUnknownAction(def.OnUnknown),
+	}
+	for _, value := range def.DependencyScopes {
+		target.DependencyScopes = append(target.DependencyScopes, domain.DependencyScope(value))
+	}
+	for _, value := range def.DependencyTypes {
+		target.DependencyTypes = append(target.DependencyTypes, domain.DependencyType(value))
+	}
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
+	target.Normalize()
+	return target, nil
 }
