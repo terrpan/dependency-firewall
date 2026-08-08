@@ -69,7 +69,7 @@ func (m *mockDecisionRepository) HasRecentAllow(_ context.Context, _ string, _ d
 
 type mockDecisionCache struct{}
 
-func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.Decision, error) {
+func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity, _ string) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 
@@ -221,7 +221,7 @@ func newTestHandlerWithEnricherAndAudit(
 		auditSvc,
 	)
 
-	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), auditSvc)
+	return NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), auditSvc, nil)
 }
 
 func withTenant(r *http.Request) *http.Request {
@@ -587,7 +587,7 @@ func Test_handleMetadata_rewritesTarballURLsToFirewall(t *testing.T) {
 		nil,
 	)
 
-	h := NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), nil)
+	h := NewRegistryHandler(accessSvc, upstreamClient, upstreamRepo, slog.Default(), nil, nil)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 

@@ -16,13 +16,19 @@ import (
 )
 
 const (
-	ServiceName                 = "dependencyfirewall.proxyingest.v1.ProxyIngestService"
-	RecordDecisionMethod        = "/" + ServiceName + "/RecordDecision"
-	GetDecisionByArtifactMethod = "/" + ServiceName + "/GetDecisionByArtifact"
-	ListDecisionsByTenantMethod = "/" + ServiceName + "/ListDecisionsByTenant"
-	HasRecentAllowMethod        = "/" + ServiceName + "/HasRecentAllow"
-	RecordAuditEventMethod      = "/" + ServiceName + "/RecordAuditEvent"
-	timeLayout                  = time.RFC3339Nano
+	ServiceName                          = "dependencyfirewall.proxyingest.v1.ProxyIngestService"
+	RecordDecisionMethod                 = "/" + ServiceName + "/RecordDecision"
+	GetDecisionByArtifactMethod          = "/" + ServiceName + "/GetDecisionByArtifact"
+	ListDecisionsByTenantMethod          = "/" + ServiceName + "/ListDecisionsByTenant"
+	HasRecentAllowMethod                 = "/" + ServiceName + "/HasRecentAllow"
+	RecordAuditEventMethod               = "/" + ServiceName + "/RecordAuditEvent"
+	EnqueueDependencyGraphResolveMethod  = "/" + ServiceName + "/EnqueueDependencyGraphResolve"
+	ClaimDependencyGraphResolveMethod    = "/" + ServiceName + "/ClaimDependencyGraphResolve"
+	CompleteDependencyGraphResolveMethod = "/" + ServiceName + "/CompleteDependencyGraphResolve"
+	FailDependencyGraphResolveMethod     = "/" + ServiceName + "/FailDependencyGraphResolve"
+	WatchDependencyGraphResolveMethod    = "/" + ServiceName + "/WatchDependencyGraphResolve"
+	LookupDependencyGraphContextMethod   = "/" + ServiceName + "/LookupDependencyGraphContext"
+	timeLayout                           = time.RFC3339Nano
 )
 
 type RecordDecisionRequest struct {
@@ -72,18 +78,70 @@ type RecordAuditEventResponse struct {
 	Event AuditEvent `json:"event"`
 }
 
+type DependencyGraphResolveRequest struct {
+	TenantID string           `json:"tenant_id"`
+	Upstream Upstream         `json:"upstream"`
+	Root     ArtifactIdentity `json:"root"`
+}
+
+type EnqueueDependencyGraphResolveRequest = DependencyGraphResolveRequest
+
+type EnqueueDependencyGraphResolveResponse struct {
+	Enqueued bool `json:"enqueued"`
+}
+
+type ClaimDependencyGraphResolveRequest struct {
+	Now string `json:"now,omitempty"`
+}
+
+type ClaimDependencyGraphResolveResponse struct {
+	Job *DependencyGraphResolveRequest `json:"job,omitempty"`
+}
+
+type CompleteDependencyGraphResolveRequest struct {
+	Job       DependencyGraphResolveRequest `json:"job"`
+	Nodes     []domain.DependencyGraphNode  `json:"nodes"`
+	Edges     []domain.DependencyGraphEdge  `json:"edges"`
+	GraphHash string                        `json:"graph_hash"`
+}
+
+type CompleteDependencyGraphResolveResponse struct{}
+
+type FailDependencyGraphResolveRequest struct {
+	Job        DependencyGraphResolveRequest `json:"job"`
+	Message    string                        `json:"message"`
+	RetryAfter string                        `json:"retry_after"`
+}
+
+type FailDependencyGraphResolveResponse struct{}
+
+type LookupDependencyGraphContextRequest struct {
+	TenantID   string           `json:"tenant_id"`
+	UpstreamID string           `json:"upstream_id"`
+	Artifact   ArtifactIdentity `json:"artifact"`
+}
+
+type LookupDependencyGraphContextResponse struct {
+	Context *domain.DependencyContext `json:"context,omitempty"`
+}
+
+type WatchDependencyGraphResolveRequest struct{}
+
+type DependencyGraphResolveQueuedEvent struct{}
+
 type Decision struct {
-	ID          string                 `json:"id"`
-	TenantID    string                 `json:"tenant_id"`
-	Artifact    ArtifactIdentity       `json:"artifact"`
-	Outcome     domain.DecisionOutcome `json:"outcome"`
-	PolicyID    string                 `json:"policy_id"`
-	PolicyHash  string                 `json:"policy_hash"`
-	Reason      string                 `json:"reason"`
-	Reasons     []EvaluationReason     `json:"reasons"`
-	Warnings    []string               `json:"warnings"`
-	CachedAt    *string                `json:"cached_at,omitempty"`
-	EvaluatedAt string                 `json:"evaluated_at,omitempty"`
+	ID                string                    `json:"id"`
+	TenantID          string                    `json:"tenant_id"`
+	Artifact          ArtifactIdentity          `json:"artifact"`
+	Outcome           domain.DecisionOutcome    `json:"outcome"`
+	PolicyID          string                    `json:"policy_id"`
+	PolicyHash        string                    `json:"policy_hash"`
+	DependencyContext *domain.DependencyContext `json:"dependency_context,omitempty"`
+	Reason            string                    `json:"reason"`
+	Reasons           []EvaluationReason        `json:"reasons"`
+	Warnings          []string                  `json:"warnings"`
+	CachedAt          *string                   `json:"cached_at,omitempty"`
+	EvaluatedAt       string                    `json:"evaluated_at,omitempty"`
 }
 
 type EvaluationReason struct {
@@ -100,6 +158,14 @@ type ArtifactIdentity struct {
 	Name      string               `json:"name"`
 	Version   string               `json:"version"`
 	Digest    string               `json:"digest"`
+}
+
+type Upstream struct {
+	ID        string               `json:"id"`
+	TenantID  string               `json:"tenant_id"`
+	Name      string               `json:"name"`
+	Ecosystem domain.EcosystemType `json:"ecosystem"`
+	BaseURL   string               `json:"base_url"`
 }
 
 type AuditEvent struct {
@@ -132,6 +198,18 @@ func TenantIDFromRequest(req any) string {
 		return typed.TenantID
 	case *RecordAuditEventRequest:
 		return typed.Event.TenantID
+	case *EnqueueDependencyGraphResolveRequest:
+		return typed.TenantID
+	case *ClaimDependencyGraphResolveRequest:
+		return "*"
+	case *LookupDependencyGraphContextRequest:
+		return typed.TenantID
+	case *WatchDependencyGraphResolveRequest:
+		return "*"
+	case *CompleteDependencyGraphResolveRequest:
+		return typed.Job.TenantID
+	case *FailDependencyGraphResolveRequest:
+		return typed.Job.TenantID
 	default:
 		return ""
 	}
@@ -139,16 +217,17 @@ func TenantIDFromRequest(req any) string {
 
 func FromDomainDecision(decision *domain.Decision) Decision {
 	result := Decision{
-		ID:          decision.ID,
-		TenantID:    decision.TenantID,
-		Artifact:    FromDomainArtifactIdentity(decision.Artifact),
-		Outcome:     decision.Outcome,
-		PolicyID:    decision.PolicyID,
-		PolicyHash:  decision.PolicyHash,
-		Reason:      decision.Reason,
-		Reasons:     make([]EvaluationReason, 0, len(decision.Reasons)),
-		Warnings:    append([]string(nil), decision.Warnings...),
-		EvaluatedAt: formatTime(decision.EvaluatedAt),
+		ID:                decision.ID,
+		TenantID:          decision.TenantID,
+		Artifact:          FromDomainArtifactIdentity(decision.Artifact),
+		Outcome:           decision.Outcome,
+		PolicyID:          decision.PolicyID,
+		PolicyHash:        decision.PolicyHash,
+		DependencyContext: cloneDependencyContext(decision.DependencyContext),
+		Reason:            decision.Reason,
+		Reasons:           make([]EvaluationReason, 0, len(decision.Reasons)),
+		Warnings:          append([]string(nil), decision.Warnings...),
+		EvaluatedAt:       formatTime(decision.EvaluatedAt),
 	}
 	for i := range decision.Reasons {
 		result.Reasons = append(result.Reasons, FromDomainEvaluationReason(decision.Reasons[i]))
@@ -166,16 +245,17 @@ func (d Decision) ToDomain() (*domain.Decision, error) {
 		return nil, fmt.Errorf("parsing evaluated_at: %w", err)
 	}
 	result := &domain.Decision{
-		ID:          d.ID,
-		TenantID:    d.TenantID,
-		Artifact:    d.Artifact.ToDomain(),
-		Outcome:     d.Outcome,
-		PolicyID:    d.PolicyID,
-		PolicyHash:  d.PolicyHash,
-		Reason:      d.Reason,
-		Reasons:     make([]domain.EvaluationReason, 0, len(d.Reasons)),
-		Warnings:    append([]string(nil), d.Warnings...),
-		EvaluatedAt: evaluatedAt,
+		ID:                d.ID,
+		TenantID:          d.TenantID,
+		Artifact:          d.Artifact.ToDomain(),
+		Outcome:           d.Outcome,
+		PolicyID:          d.PolicyID,
+		PolicyHash:        d.PolicyHash,
+		DependencyContext: cloneDependencyContext(d.DependencyContext),
+		Reason:            d.Reason,
+		Reasons:           make([]domain.EvaluationReason, 0, len(d.Reasons)),
+		Warnings:          append([]string(nil), d.Warnings...),
+		EvaluatedAt:       evaluatedAt,
 	}
 	for i := range d.Reasons {
 		result.Reasons = append(result.Reasons, d.Reasons[i].ToDomain())
@@ -188,6 +268,14 @@ func (d Decision) ToDomain() (*domain.Decision, error) {
 		result.CachedAt = &cachedAt
 	}
 	return result, nil
+}
+
+func cloneDependencyContext(source *domain.DependencyContext) *domain.DependencyContext {
+	if source == nil {
+		return nil
+	}
+	cloned := source.Normalize()
+	return &cloned
 }
 
 func FromDomainEvaluationReason(reason domain.EvaluationReason) EvaluationReason {
@@ -227,6 +315,26 @@ func (a ArtifactIdentity) ToDomain() domain.ArtifactIdentity {
 		Name:      a.Name,
 		Version:   a.Version,
 		Digest:    a.Digest,
+	}
+}
+
+func FromDomainUpstream(upstream domain.Upstream) Upstream {
+	return Upstream{
+		ID:        upstream.ID,
+		TenantID:  upstream.TenantID,
+		Name:      upstream.Name,
+		Ecosystem: upstream.Ecosystem,
+		BaseURL:   upstream.BaseURL,
+	}
+}
+
+func (u Upstream) ToDomain() domain.Upstream {
+	return domain.Upstream{
+		ID:        u.ID,
+		TenantID:  u.TenantID,
+		Name:      u.Name,
+		Ecosystem: u.Ecosystem,
+		BaseURL:   u.BaseURL,
 	}
 }
 
@@ -324,6 +432,121 @@ func RecordAuditEvent(ctx context.Context, conn grpc.ClientConnInterface, event 
 		return nil, MapClientError(err)
 	}
 	return response.Event.ToDomain()
+}
+
+func EnqueueDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, req domain.DependencyGraphResolveRequest) (bool, error) {
+	response := &EnqueueDependencyGraphResolveResponse{}
+	wireReq := FromDomainDependencyGraphResolveRequest(req)
+	if err := conn.Invoke(ctx, EnqueueDependencyGraphResolveMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+		return false, MapClientError(err)
+	}
+	return response.Enqueued, nil
+}
+
+func ClaimDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+	response := &ClaimDependencyGraphResolveResponse{}
+	req := &ClaimDependencyGraphResolveRequest{Now: formatTime(now)}
+	if err := conn.Invoke(ctx, ClaimDependencyGraphResolveMethod, req, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+		return nil, MapClientError(err)
+	}
+	if response.Job == nil {
+		return nil, nil
+	}
+	return response.Job.ToDomain(), nil
+}
+
+func CompleteDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error {
+	wireReq := &CompleteDependencyGraphResolveRequest{
+		Job:       *FromDomainDependencyGraphResolveRequest(req),
+		Nodes:     nodes,
+		Edges:     edges,
+		GraphHash: graphHash,
+	}
+	response := &CompleteDependencyGraphResolveResponse{}
+	if err := conn.Invoke(ctx, CompleteDependencyGraphResolveMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+		return MapClientError(err)
+	}
+	return nil
+}
+
+func FailDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error {
+	wireReq := &FailDependencyGraphResolveRequest{
+		Job:        *FromDomainDependencyGraphResolveRequest(req),
+		Message:    message,
+		RetryAfter: formatTime(retryAfter),
+	}
+	response := &FailDependencyGraphResolveResponse{}
+	if err := conn.Invoke(ctx, FailDependencyGraphResolveMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+		return MapClientError(err)
+	}
+	return nil
+}
+
+func LookupDependencyGraphContext(ctx context.Context, conn grpc.ClientConnInterface, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+	response := &LookupDependencyGraphContextResponse{}
+	wireReq := &LookupDependencyGraphContextRequest{
+		TenantID:   key.TenantID,
+		UpstreamID: key.UpstreamID,
+		Artifact:   FromDomainArtifactIdentity(key.Artifact),
+	}
+	if err := conn.Invoke(ctx, LookupDependencyGraphContextMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+		return nil, MapClientError(err)
+	}
+	if response.Context == nil {
+		return nil, domain.ErrArtifactNotFound
+	}
+	normalized := response.Context.Normalize()
+	return &normalized, nil
+}
+
+var watchDependencyGraphResolveStreamDesc = &grpc.StreamDesc{
+	StreamName:    "WatchDependencyGraphResolve",
+	ServerStreams: true,
+}
+
+// DependencyGraphResolveJobStream receives queued-job wake-up events from the control plane.
+type DependencyGraphResolveJobStream struct {
+	stream grpc.ClientStream
+}
+
+// WatchDependencyGraphResolve opens a server stream of queued-job wake-up events.
+func WatchDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface) (*DependencyGraphResolveJobStream, error) {
+	stream, err := conn.NewStream(ctx, watchDependencyGraphResolveStreamDesc, WatchDependencyGraphResolveMethod, grpc.ForceCodec(jsonCodec{}))
+	if err != nil {
+		return nil, MapClientError(err)
+	}
+	if err := stream.SendMsg(&WatchDependencyGraphResolveRequest{}); err != nil {
+		return nil, MapClientError(err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		return nil, MapClientError(err)
+	}
+	return &DependencyGraphResolveJobStream{stream: stream}, nil
+}
+
+// Recv blocks until the next queued-job event arrives or the stream ends.
+func (s *DependencyGraphResolveJobStream) Recv() error {
+	event := &DependencyGraphResolveQueuedEvent{}
+	if err := s.stream.RecvMsg(event); err != nil {
+		return MapClientError(err)
+	}
+	return nil
+}
+
+func FromDomainDependencyGraphResolveRequest(req domain.DependencyGraphResolveRequest) *DependencyGraphResolveRequest {
+	return &DependencyGraphResolveRequest{
+		TenantID: req.TenantID,
+		Upstream: FromDomainUpstream(req.Upstream),
+		Root:     FromDomainArtifactIdentity(req.Root),
+	}
+}
+
+func (r DependencyGraphResolveRequest) ToDomain() *domain.DependencyGraphResolveRequest {
+	return &domain.DependencyGraphResolveRequest{
+		TenantID: r.TenantID,
+		Upstream: r.Upstream.ToDomain(),
+		Root:     r.Root.ToDomain(),
+	}
 }
 
 func MapClientError(err error) error {

@@ -8,6 +8,7 @@
 - The proxy pulls tenant bundles from the control plane over gRPC and evaluates requests locally.
 - Tenant identity, status, upstreams, and compiled policy data come from the cached tenant bundle, not PostgreSQL.
 - Proxy decision and audit persistence flows through the control-plane ingestion boundary, not direct PostgreSQL repositories.
+- Split-mode proxy dependency graph resolve requests and graph context lookups also flow through the control-plane ingestion boundary (`EnqueueDependencyGraphResolve`, `LookupDependencyGraphContext`); proxy mode does not open PostgreSQL for graph state. Context lookups are cached in Valkey on the proxy side.
 - All-in-one mode keeps the same bundle and ingestion boundaries but satisfies them in-process for local development.
 - Split-mode deployments must run bundle and ingest gRPC with mTLS.
 - The control plane authorizes each proxy client certificate identity for explicit tenant IDs before serving bundles or ingesting decisions/audit events.
@@ -36,6 +37,7 @@ Use this checklist when adding a new proxy protocol adapter or significantly ext
 - Keep deny-wins behavior and policy evaluation ordering unchanged.
 - Keep enrichment conditional on policy metadata requirements.
 - Keep version-sensitive enrichment and decision caching limited to requests that identify a concrete version, digest, or resolver-backed immutable reference.
+- Keep npm dependency graph lookup limited to concrete npm versions and only when target-aware policies are enabled.
 - Keep split-mode tenant authorization and mTLS expectations unchanged.
 - Keep cache isolation by both `tenant_id` and `upstream_id`.
 
@@ -128,6 +130,7 @@ For OCI, the long-term shape should prefer registry-native bearer-token challeng
 ### Supported behaviors
 - package metadata requests
 - tarball requests
+- native audit capture: `POST /-/npm/v1/security/advisories/bulk` (install snapshot intake)
 
 ### Expected flow
 1. Parse npm request.
@@ -145,6 +148,15 @@ For OCI, the long-term shape should prefer registry-native bearer-token challeng
 - Bare packument requests must not use decision-cache lookup/write or external enrichment. This prevents stale package-wide decisions such as `npm:dompurify` from blocking the later concrete tarball request.
 - Bare packument requests that pass policy evaluation are audited as `request_forwarded`, not `request_allowed`, and their allow decisions are not persisted because the concrete version has not been enforced yet.
 - Versioned metadata requests such as `GET /npm/{package}/{version}`, dist-tag metadata requests that resolve to a concrete version, and tarball requests such as `GET /npm/{package}/-/{package}-{version}.tgz` may use normal decision caching and enrichment.
+- When target-aware npm policies are enabled, concrete npm version requests also look up dependency graph context before the decision cache. The decision cache key includes the dependency context hash.
+- On dependency graph miss or resolver failure, evaluation continues with `dependency_context=unknown` and enqueues an async graph resolve request once through the control-plane ingest boundary.
+- Tarball dependency graph misses do not enqueue new root graph jobs. A tarball URL does not say whether the package is the install root or a transitive dependency, so using tarballs as graph roots causes resolver fanout during normal installs.
+- Dependency graph roots come from the npm client itself: after building the install tree, npm POSTs its complete resolved package set to `/-/npm/v1/security/advisories/bulk` (sent even when the install later fails, unless `--no-audit`). The proxy decodes this payload (npm gzips the request body), answers with an empty advisory set so the client proceeds, and asynchronously infers roots by name-level set difference over upstream manifest dependency declarations. Only inferred roots are enqueued as graph jobs.
+- A package-manager command target is not the same thing as a direct dependency root. Running `npm install morgan@1.10.0` inside an existing project makes npm build an install plan for the whole project manifest and lockfile, not only the package name typed on the command line. Every package listed in the project's `package.json` dependencies is a direct root for that install graph. For example, if `package.json` already lists `lodash`, then `lodash` is still direct during `npm install morgan@1.10.0`; it is not transitive merely because `morgan` was the command target.
+- A transitive dependency is a package reached through another package's manifest dependency declarations and not listed as a project root. Direct-scope policies therefore apply to all project manifest roots observed in the install graph, while transitive-only or direct-only policy behavior depends on the resolved graph context, not on the single CLI argument.
+- The synthesized empty advisory response means `npm audit` data from the public registry is not forwarded through the proxy yet; vulnerability enforcement happens through firewall policies instead.
+- Dependency graph workers resolve graphs by running npm in a temporary workspace with scripts, audit, and funding disabled, then submit normalized nodes, edges, and graph hashes to the control plane over mTLS for validation and persistence.
+- The resolver uses the configured upstream registry URL directly and must not point at the firewall npm proxy, which would create recursive graph-resolution traffic.
 - New ecosystems with package-document/listing endpoints should follow the same rule: do not run version-sensitive enrichment or cache decisions until the request identifies the enforceable artifact version or immutable reference.
 
 ## OCI

@@ -19,6 +19,12 @@ type UpstreamClient interface {
 	ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error)
 }
 
+// NPMManifestDependencyLister lists the dependency package names declared by
+// one concrete npm package version manifest.
+type NPMManifestDependencyLister interface {
+	ListManifestDependencyNames(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) ([]string, error)
+}
+
 // UpstreamResponse wraps a streaming response from an upstream registry.
 type UpstreamResponse struct {
 	StatusCode  int

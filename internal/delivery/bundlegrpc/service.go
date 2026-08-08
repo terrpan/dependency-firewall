@@ -157,6 +157,7 @@ func (s *Server) toBundleResponse(ctx context.Context, bundle *domain.TenantBund
 			Action:        bundle.Policies[i].Action,
 			SchemaVersion: bundle.Policies[i].SchemaVersion,
 			Config:        config,
+			Target:        bundle.Policies[i].Target,
 			Priority:      bundle.Policies[i].Priority,
 			Enabled:       bundle.Policies[i].Enabled,
 			Version:       bundle.Policies[i].Version,

@@ -236,7 +236,11 @@ func (s *AccessService) lookupCachedDecision(
 	}
 
 	cacheCtx, cacheSpan := serviceTracer().Start(ctx, "access.decision_cache_lookup")
-	cached, err := s.decisionCache.Get(cacheCtx, req.TenantID, req.Artifact)
+	dependencyContextHash := ""
+	if req.DependencyContext != nil {
+		dependencyContextHash = req.DependencyContext.Normalize().ContextHash
+	}
+	cached, err := s.decisionCache.Get(cacheCtx, req.TenantID, req.Artifact, dependencyContextHash)
 	if err == nil {
 		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
 		cacheSpan.End()
@@ -252,6 +256,9 @@ func (s *AccessService) lookupCachedDecision(
 			Outcome:       cached.Outcome,
 			PolicyID:      cached.PolicyID,
 			Message:       "decision cache hit",
+			Payload: map[string]any{
+				"dependency_context": dependencyContextSummary(req.DependencyContext),
+			},
 		}); auditErr != nil {
 			return nil, false, auditErr
 		}
@@ -297,6 +304,9 @@ func (s *AccessService) lookupCachedDecision(
 		UpstreamID:    req.Upstream.ID,
 		Artifact:      req.Artifact,
 		Message:       "decision cache miss",
+		Payload: map[string]any{
+			"dependency_context": dependencyContextSummary(req.DependencyContext),
+		},
 	}); auditErr != nil {
 		return nil, false, auditErr
 	}

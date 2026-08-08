@@ -39,19 +39,19 @@ func TestDecisionCache_InvalidateTenant(t *testing.T) {
 
 	require.NoError(t, cache.Set(ctx, decision, time.Minute))
 
-	cached, err := cache.Get(ctx, "tenant-1", artifact)
+	cached, err := cache.Get(ctx, "tenant-1", artifact, "")
 	require.NoError(t, err)
 	require.NotNil(t, cached)
 	assert.Equal(t, domain.DecisionAllow, cached.Outcome)
 
 	require.NoError(t, cache.InvalidateTenant(ctx, "tenant-1"))
 
-	_, err = cache.Get(ctx, "tenant-1", artifact)
+	_, err = cache.Get(ctx, "tenant-1", artifact, "")
 	require.ErrorIs(t, err, domain.ErrCacheMiss)
 
 	require.NoError(t, cache.Set(ctx, decision, time.Minute))
 
-	cached, err = cache.Get(ctx, "tenant-1", artifact)
+	cached, err = cache.Get(ctx, "tenant-1", artifact, "")
 	require.NoError(t, err)
 	require.NotNil(t, cached)
 	assert.Equal(t, domain.DecisionAllow, cached.Outcome)

@@ -24,17 +24,18 @@ const (
 
 // Decision records the outcome of a policy evaluation.
 type Decision struct {
-	ID          string
-	TenantID    string
-	Artifact    ArtifactIdentity
-	Outcome     DecisionOutcome
-	PolicyID    string
-	PolicyHash  string
-	Reason      string // user-facing reason
-	Reasons     []EvaluationReason
-	Warnings    []string // user-facing warnings from warn-mode policies
-	CachedAt    *time.Time
-	EvaluatedAt time.Time
+	ID                string
+	TenantID          string
+	Artifact          ArtifactIdentity
+	Outcome           DecisionOutcome
+	PolicyID          string
+	PolicyHash        string
+	DependencyContext *DependencyContext
+	Reason            string // user-facing reason
+	Reasons           []EvaluationReason
+	Warnings          []string // user-facing warnings from warn-mode policies
+	CachedAt          *time.Time
+	EvaluatedAt       time.Time
 }
 
 // EvaluationReason is one reason contributing to a decision.

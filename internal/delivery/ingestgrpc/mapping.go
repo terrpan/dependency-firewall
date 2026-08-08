@@ -13,6 +13,10 @@ func fromDomainArtifactIdentity(artifact domain.ArtifactIdentity) ArtifactIdenti
 	return wire.FromDomainArtifactIdentity(artifact)
 }
 
+func fromDomainUpstream(upstream domain.Upstream) Upstream {
+	return wire.FromDomainUpstream(upstream)
+}
+
 func fromDomainAuditEvent(event *domain.AuditEvent) AuditEvent {
 	return wire.FromDomainAuditEvent(event)
 }

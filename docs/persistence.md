@@ -5,6 +5,7 @@
 PostgreSQL is the system of record.
 
 - only control-plane and all-in-one runtimes open PostgreSQL connections directly
+- dependency-graph-worker mode does not open PostgreSQL; it claims jobs and submits graph results through control-plane gRPC
 - proxy mode loads tenant runtime from bundles and sends durable decision or audit writes back through the control-plane ingestion service
 - bundle construction is a control-plane workflow backed by PostgreSQL tenant, upstream, and policy state
 
@@ -39,11 +40,22 @@ PostgreSQL is the system of record.
 - `policy_versions` stores retained policy snapshots for rollback and keeps the latest 3 versions per policy
 - `tenant_policy_revisions` stores the canonical tenant policy-set hash and generation after every policy mutation
 - decisions store the `policy_hash` that was active when the decision was evaluated
+- decisions and evaluations may store a compact `dependency_context` JSONB summary when target-aware npm policies participated in evaluation
 - `audit_events` stores append-only structured audit records for proxy request, evaluation, decision, and upstream-fetch activity
 - audit event payloads use JSONB for flexible structured details, but top-level filtering still relies on tenant_id, event_type, and created_at indexes
 - audit queries must stay tenant-scoped and should support correlation lookups by request ID and artifact identity fields
 - durable audit persistence is expected to support incident response; sink-failure behavior is configurable and defaults to fail-closed
 - proxy-side durable writes arrive through the control-plane ingestion service before they reach `decisions` and `audit_events`
+- npm dependency graph roots, nodes, edges, context summaries, and resolver job state are owned by control-plane/all-in-one persistence; split proxy mode only enqueues jobs and looks up context summaries through ingest gRPC, and dependency-graph-worker mode only claims and completes jobs through ingest gRPC
+
+### npm dependency graph tables
+
+- `dependency_graph_roots` stores one graph lifecycle row per `tenant_id + upstream_id + root package + root version`
+- `dependency_graph_nodes` stores normalized npm package/version artifacts in a completed graph with minimum depth and observed dependency types
+- `dependency_graph_edges` stores parent/child relationships with dependency type `prod`, `dev`, `peer`, or `optional`
+- `dependency_context_summaries` stores precomputed per-root context evidence for fast lookup and conflict detection
+- graph jobs are idempotent because the root table is unique by tenant, upstream, package, and version
+- the control plane claims retryable jobs with row locking on behalf of resolver workers; resolver failures keep evaluation fail-open by leaving request-time context as `unknown`
 
 ### Upstream auth secret lifecycle
 
@@ -114,12 +126,15 @@ Secret rules:
 Valkey is used for:
 - decision cache
 - metadata cache
+- npm dependency context cache
 - proxy-local caching in split mode
 - runtime access through `github.com/valkey-io/valkey-go` while keeping the operator-facing config under `valkey.addr`, `valkey.password`, and `valkey.db`
 - OpenTelemetry client spans reporting `db.system=valkey`
 
 ### Cache rules
 - keys must include tenant and normalized artifact identity
+- decision cache keys include dependency context hash when dependency graph context is attached
 - long-lived decisions should prefer immutable identities such as digests
+- dependency context cache keys include `tenant_id`, `upstream_id`, and normalized npm artifact identity
 - TTL should vary by reason type and freshness of the artifact
 - OCI artifact cache keys must include `tenant_id`, `upstream_id`, artifact kind, and immutable digest; do not reuse cached OCI content across upstreams even when digests match

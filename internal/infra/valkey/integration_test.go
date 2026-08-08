@@ -118,7 +118,7 @@ func TestDecisionCache_realValkey(t *testing.T) {
 			Version:   "1.0.0",
 		}
 
-		_, err := cache.Get(ctx, "tenant-miss", artifact)
+		_, err := cache.Get(ctx, "tenant-miss", artifact, "")
 		require.ErrorIs(t, err, domain.ErrCacheMiss)
 	})
 
@@ -233,7 +233,7 @@ func TestMetadataCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, "tenant-round-trip", artifact, metadata, time.Minute))
 
-		cached, err := cache.Get(ctx, "tenant-round-trip", artifact)
+		cached, err := cache.Get(ctx, "tenant-round-trip", artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		require.NotNil(t, cached.PublishedAt)
@@ -262,7 +262,7 @@ func TestMetadataCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, "tenant-generation", artifact, firstMetadata, time.Minute))
 
-		cached, err := cache.Get(ctx, "tenant-generation", artifact)
+		cached, err := cache.Get(ctx, "tenant-generation", artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		require.NotNil(t, cached.MaxCVSS)
@@ -270,12 +270,12 @@ func TestMetadataCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.InvalidateTenant(ctx, "tenant-generation"))
 
-		_, err = cache.Get(ctx, "tenant-generation", artifact)
+		_, err = cache.Get(ctx, "tenant-generation", artifact, "")
 		require.ErrorIs(t, err, domain.ErrCacheMiss)
 
 		require.NoError(t, cache.Set(ctx, "tenant-generation", artifact, secondMetadata, time.Minute))
 
-		cached, err = cache.Get(ctx, "tenant-generation", artifact)
+		cached, err = cache.Get(ctx, "tenant-generation", artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		require.NotNil(t, cached.MaxCVSS)
@@ -292,7 +292,7 @@ func TestMetadataCache_realValkey(t *testing.T) {
 		require.NoError(t, cache.Set(ctx, "tenant-ttl", artifact, &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(5.5)}, 200*time.Millisecond))
 
 		require.Eventually(t, func() bool {
-			_, err := cache.Get(ctx, "tenant-ttl", artifact)
+			_, err := cache.Get(ctx, "tenant-ttl", artifact, "")
 			return err != nil && err == domain.ErrCacheMiss
 		}, 5*time.Second, 25*time.Millisecond)
 	})

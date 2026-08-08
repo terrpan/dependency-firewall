@@ -297,6 +297,52 @@ func TestBundleRevisionTracksUpstreamAuthUpdatedAt(t *testing.T) {
 	assert.NotEqual(t, first, second)
 }
 
+func TestBundleRevisionTracksPolicyTarget(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	tenant := domain.Tenant{ID: "tenant-1", Name: "Tenant One"}
+	policiesOne := []domain.Policy{{
+		ID:            "policy-1",
+		TenantID:      "tenant-1",
+		Name:          "targeted cvss",
+		Type:          domain.PolicyTypeCVSSThreshold,
+		Action:        domain.PolicyActionDeny,
+		SchemaVersion: 1,
+		Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: bundleTestFloat64Ptr(7)},
+		Target: &domain.PolicyTarget{
+			DependencyScopes: []domain.DependencyScope{domain.DependencyScopeDirect},
+			OnUnknown:        domain.DependencyUnknownWarn,
+		},
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}
+	policiesTwo := []domain.Policy{{
+		ID:            "policy-1",
+		TenantID:      "tenant-1",
+		Name:          "targeted cvss",
+		Type:          domain.PolicyTypeCVSSThreshold,
+		Action:        domain.PolicyActionDeny,
+		SchemaVersion: 1,
+		Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: bundleTestFloat64Ptr(7)},
+		Target: &domain.PolicyTarget{
+			DependencyScopes: []domain.DependencyScope{domain.DependencyScopeTransitive},
+			OnUnknown:        domain.DependencyUnknownWarn,
+		},
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}}
+
+	first, err := bundleRevision(tenant, policiesOne, nil)
+	require.NoError(t, err)
+	second, err := bundleRevision(tenant, policiesTwo, nil)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first, second)
+}
+
 type stubBundleProvider struct {
 	bundles []*domain.TenantBundle
 	err     error
@@ -312,6 +358,10 @@ func (s *stubBundleProvider) GetTenantBundle(context.Context, string) (*domain.T
 		return nil, s.err
 	}
 	return s.bundles[len(s.bundles)-1], nil
+}
+
+func bundleTestFloat64Ptr(value float64) *float64 {
+	return &value
 }
 
 type stubBundleTenantGetter struct {

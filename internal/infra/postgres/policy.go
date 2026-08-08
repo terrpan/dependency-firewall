@@ -33,7 +33,7 @@ func NewPolicyRepository(pool *pgxpool.Pool) *PolicyRepository {
 // GetByID returns a policy scoped to the given tenant.
 func (r *PolicyRepository) GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error) {
 	p, err := scanPolicy(r.pool.QueryRow(ctx,
-		`SELECT id, tenant_id, upstream_id, name, type, action, schema_version, config, priority, enabled, version, created_at, updated_at
+		`SELECT id, tenant_id, upstream_id, name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
 		 FROM policies WHERE tenant_id = $1 AND id = $2`, tenantID, id,
 	))
 	if err != nil {
@@ -48,7 +48,7 @@ func (r *PolicyRepository) GetByID(ctx context.Context, tenantID, id string) (*d
 // ListByTenant returns all policies for a tenant, ordered by priority.
 func (r *PolicyRepository) ListByTenant(ctx context.Context, tenantID string) ([]domain.Policy, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, tenant_id, upstream_id, name, type, action, schema_version, config, priority, enabled, version, created_at, updated_at
+		`SELECT id, tenant_id, upstream_id, name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
 		 FROM policies WHERE tenant_id = $1 ORDER BY priority`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("listing policies: %w", err)
@@ -85,6 +85,10 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 	if err != nil {
 		return fmt.Errorf("marshalling policy config: %w", err)
 	}
+	targetJSON, err := json.Marshal(policy.Target)
+	if err != nil {
+		return fmt.Errorf("marshalling policy target: %w", err)
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -93,11 +97,11 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	err = tx.QueryRow(ctx,
-		`INSERT INTO policies (tenant_id, upstream_id, name, type, action, schema_version, config, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`INSERT INTO policies (tenant_id, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING id, version, created_at, updated_at`,
 		policy.TenantID, nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion,
-		configJSON, policy.Priority, policy.Enabled,
+		configJSON, nullableJSON(targetJSON, policy.Target != nil), policy.Priority, policy.Enabled,
 	).Scan(&policy.ID, &policy.Version, &policy.CreatedAt, &policy.UpdatedAt)
 	if err != nil {
 		if mappedErr := mapConstraintError(err, policyConstraintErrors); mappedErr != err {
@@ -107,9 +111,9 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 	}
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		policy.ID, policy.Version, nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion, configJSON, policy.Priority, policy.Enabled,
+		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		policy.ID, policy.Version, nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion, configJSON, nullableJSON(targetJSON, policy.Target != nil), policy.Priority, policy.Enabled,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting initial policy version: %w", err)
@@ -140,6 +144,10 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	if err != nil {
 		return fmt.Errorf("marshalling policy config: %w", err)
 	}
+	targetJSON, err := json.Marshal(policy.Target)
+	if err != nil {
+		return fmt.Errorf("marshalling policy target: %w", err)
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -150,12 +158,12 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	var newVersion int
 	err = tx.QueryRow(ctx,
 		`UPDATE policies
-		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, priority = $7,
-		     enabled = $8, version = version + 1, updated_at = now()
-		 WHERE tenant_id = $9 AND id = $10
+		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, target = $7, priority = $8,
+		     enabled = $9, version = version + 1, updated_at = now()
+		 WHERE tenant_id = $10 AND id = $11
 		 RETURNING version, updated_at`,
 		nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion, configJSON,
-		policy.Priority, policy.Enabled, policy.TenantID, policy.ID,
+		nullableJSON(targetJSON, policy.Target != nil), policy.Priority, policy.Enabled, policy.TenantID, policy.ID,
 	).Scan(&newVersion, &policy.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -169,9 +177,9 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	policy.Version = newVersion
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		policy.ID, newVersion, nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion, configJSON, policy.Priority, policy.Enabled,
+		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		policy.ID, newVersion, nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion, configJSON, nullableJSON(targetJSON, policy.Target != nil), policy.Priority, policy.Enabled,
 	)
 	if err != nil {
 		return fmt.Errorf("inserting policy version: %w", err)

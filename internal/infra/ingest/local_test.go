@@ -57,7 +57,7 @@ func TestLocalAdapters_ProxyIngestService(t *testing.T) {
 
 	decisionRepo := &localDecisionRepository{}
 	auditRecorder := &localAuditRecorder{}
-	ingestService := service.NewProxyIngestService(decisionRepo, auditRecorder)
+	ingestService := service.NewProxyIngestService(decisionRepo, auditRecorder, nil, nil)
 
 	decisionAdapter := NewLocalDecisionRepository(ingestService)
 	auditAdapter := NewLocalAuditEventRecorder(ingestService)

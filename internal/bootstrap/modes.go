@@ -56,7 +56,8 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 			return err
 		}
 		bundleServer.Register(grpcServer)
-		ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo)).Register(grpcServer)
+		graphJobNotifier := service.NewDependencyGraphJobNotifier()
+		ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo, deps.dependencyGraphQueue, graphJobNotifier)).Register(grpcServer)
 
 		listener, err := net.Listen("tcp", cfg.Bundle.ListenAddr)
 		if err != nil {
@@ -80,6 +81,7 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 		return serve(ctx, logger,
 			httpServerRunner("control-plane-http", httpServer),
 			grpcServerRunner("control-plane-grpc", grpcServer, listener),
+			optionalDependencyGraphWorkerRunner(ctx, cfg, logger, deps.dependencyGraphRepo, graphJobNotifier),
 		)
 	})
 }
@@ -100,6 +102,8 @@ func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info
 		defer ingestClient.Close()
 
 		deps.decisionRepo = ingestinfra.NewDecisionRepository(ingestClient)
+		deps.dependencyGraphQueue = ingestinfra.NewDependencyGraphQueue(ingestClient)
+		deps.dependencyGraphContexts = ingestClient
 		installRuntimeServices(cfg, logger, deps, nil, ingestinfra.NewAuditEventRecorder(ingestClient))
 
 		bundleProvider := service.NewCachedBundleProvider(grpcClient, cfg.Bundle.RefreshInterval, logger)
@@ -122,9 +126,11 @@ func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, i
 			cfg.Bundle.RefreshInterval,
 			logger,
 		)
-		localIngest := service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo)
+		graphJobNotifier := service.NewDependencyGraphJobNotifier()
+		localIngest := service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo, deps.dependencyGraphQueue, graphJobNotifier)
 		proxyDeps := *deps
 		proxyDeps.decisionRepo = ingestinfra.NewLocalDecisionRepository(localIngest)
+		proxyDeps.dependencyGraphQueue = ingestinfra.NewLocalDependencyGraphQueue(localIngest)
 		installRuntimeServices(cfg, logger, &proxyDeps, nil, ingestinfra.NewLocalAuditEventRecorder(localIngest))
 
 		mux := http.NewServeMux()
@@ -143,8 +149,31 @@ func RunAllInOne(ctx context.Context, cfg *config.Config, logger *slog.Logger, i
 			"http_addr", httpServer.Addr,
 		)
 
-		return serve(ctx, logger, httpServerRunner("firewall-http", httpServer))
+		return serve(ctx, logger,
+			httpServerRunner("firewall-http", httpServer),
+			optionalDependencyGraphWorkerRunner(ctx, cfg, logger, deps.dependencyGraphRepo, graphJobNotifier),
+		)
 	})
+}
+
+// RunDependencyGraphWorker starts the isolated npm dependency graph resolver process.
+func RunDependencyGraphWorker(ctx context.Context, cfg *config.Config, logger *slog.Logger, info BuildInfo) error {
+	telemetryProvider, runtimeLogger, err := startTelemetry(ctx, cfg, logger, info)
+	if err != nil {
+		return err
+	}
+	defer shutdownTelemetry(telemetryProvider)
+
+	ingestClient, err := ingestinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr, cfg.Bundle.TLS)
+	if err != nil {
+		return err
+	}
+	defer ingestClient.Close()
+
+	runtimeLogger.Info("starting dependency graph worker",
+		"control_plane_addr", cfg.Bundle.ControlPlaneAddr,
+	)
+	return serve(ctx, runtimeLogger, dependencyGraphWorkerRunner(ctx, cfg, runtimeLogger, ingestClient, ingestClient))
 }
 
 func newLocalBundleService(deps *dependencies, includeUpstreamAuth bool) (*service.BundleService, error) {
@@ -190,6 +219,11 @@ func controlPlaneGRPCServerOptions(cfg *config.Config, logger *slog.Logger, audi
 		options = append(options, grpc.UnaryInterceptor(controlplanegrpc.TenantAuthorizationInterceptor(
 			cfg.Bundle.TLS.AuthorizedClients,
 			controlPlaneTenantIDFromRequest,
+			controlplanegrpc.WithTenantAuthorizationLogger(logger),
+			controlplanegrpc.WithTenantAuthorizationDeniedRecorder(controlPlaneAuthorizationDeniedRecorder(auditService)),
+		)))
+		options = append(options, grpc.StreamInterceptor(controlplanegrpc.TenantAuthorizationStreamInterceptor(
+			cfg.Bundle.TLS.AuthorizedClients,
 			controlplanegrpc.WithTenantAuthorizationLogger(logger),
 			controlplanegrpc.WithTenantAuthorizationDeniedRecorder(controlPlaneAuthorizationDeniedRecorder(auditService)),
 		)))
@@ -245,6 +279,30 @@ func runProxyHTTP(
 	)
 
 	return serve(ctx, logger, httpServerRunner("proxy-http", httpServer))
+}
+
+func optionalDependencyGraphWorkerRunner(ctx context.Context, cfg *config.Config, logger *slog.Logger, resolver port.DependencyGraphResolver, watcher port.DependencyGraphJobWatcher) server {
+	if !cfg.DependencyGraph.RunInProcess {
+		return server{name: "dependency-graph-worker-disabled", start: func() error { <-ctx.Done(); return nil }}
+	}
+	return dependencyGraphWorkerRunner(ctx, cfg, logger, resolver, watcher)
+}
+
+func dependencyGraphWorkerRunner(ctx context.Context, cfg *config.Config, logger *slog.Logger, resolver port.DependencyGraphResolver, watcher port.DependencyGraphJobWatcher) server {
+	worker := service.NewDependencyGraphWorker(resolver, watcher, service.DependencyGraphWorkerConfig{
+		Enabled:      cfg.DependencyGraph.Enabled,
+		PollInterval: cfg.DependencyGraph.PollInterval,
+		Timeout:      cfg.DependencyGraph.Timeout,
+		Concurrency:  cfg.DependencyGraph.Concurrency,
+		RetryDelay:   cfg.DependencyGraph.RetryDelay,
+	}, logger)
+	return server{
+		name: "dependency-graph-worker",
+		start: func() error {
+			return worker.Run(ctx)
+		},
+		shutdown: nil,
+	}
 }
 
 func httpServerRunner(name string, httpServer *http.Server) server {

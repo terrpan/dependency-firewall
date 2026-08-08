@@ -1,4 +1,4 @@
-.PHONY: help build push mtls-certs up down restart logs logs-control-plane logs-proxy ps clean status test test-integration test-all test-coverage fmt lint vet tidy all
+.PHONY: help build build-worker push mtls-certs up down restart logs logs-control-plane logs-proxy logs-dependency-graph-worker ps clean status test test-integration test-all test-coverage fmt lint vet tidy all
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -9,14 +9,18 @@ build: ## Build the firewall image using ko and load it into Docker
 	@docker tag ko.local:latest dependency-firewall:latest
 	@echo "Tagged as dependency-firewall:latest"
 
+build-worker: ## Build the isolated npm dependency graph worker image
+	@echo "Building dependency graph worker image..."
+	@docker build -f Dockerfile.dependency-graph-worker -t dependency-firewall-graph-worker:latest .
+
 push: ## Push the firewall image using ko
 	ko build ./cmd/firewall
 
 mtls-certs: ## Generate local mTLS certificates for split-mode Docker Compose
-	@if [ ! -f examples/mtls/certs/ca.pem ]; then ./examples/mtls/generate-certs.sh; fi
+	@if [ ! -f examples/mtls/certs/ca.pem ] || [ ! -f examples/mtls/certs/control-plane.pem ] || [ ! -f examples/mtls/certs/proxy-a.pem ] || [ ! -f examples/mtls/certs/dependency-graph-worker.pem ] || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/ca.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/control-plane.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/proxy-a.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/dependency-graph-worker.pem >/dev/null 2>&1; then ./examples/mtls/generate-certs.sh; fi
 
-up: mtls-certs build ## Build and start docker compose
-	docker compose up -d
+up: mtls-certs build build-worker ## Build and start docker compose
+	docker compose up -d --force-recreate
 
 down: ## Stop docker compose
 	docker compose down
@@ -32,12 +36,16 @@ logs-control-plane: ## Show control-plane logs only
 logs-proxy: ## Show proxy logs only
 	docker compose logs -f proxy
 
+logs-dependency-graph-worker: ## Show dependency graph worker logs only
+	docker compose logs -f dependency-graph-worker
+
 ps: ## Show docker compose containers
 	docker compose ps
 
 clean: ## Clean up docker images and volumes
 	docker compose down -v
 	docker rmi -f dependency-firewall:latest 2>/dev/null || true
+	docker rmi -f dependency-firewall-graph-worker:latest 2>/dev/null || true
 
 status: ## Show service status
 	@echo "Docker Compose Status:"
@@ -73,4 +81,4 @@ vet: ## Run go vet
 tidy: ## Tidy dependencies
 	go mod tidy
 
-all: clean build test ## Clean, build, and test
+all: clean build build-worker test ## Clean, build, and test

@@ -31,18 +31,24 @@ type dependencies struct {
 	pool         *pgxpool.Pool
 	valkeyClient valkeygo.Client
 
-	tenantRepo          port.TenantRepository
-	policyRepo          port.PolicyRepository
-	policyRevisionRepo  port.PolicyRevisionRepository
-	decisionRepo        port.DecisionRepository
-	auditRepo           *postgres.AuditEventRepository
-	upstreamRepo        port.UpstreamRepository
-	bundleUpstreamRepo  port.BundleUpstreamRepository
-	authSecretRewrapper port.UpstreamAuthSecretRewrapper
+	tenantRepo           port.TenantRepository
+	policyRepo           port.PolicyRepository
+	policyRevisionRepo   port.PolicyRevisionRepository
+	decisionRepo         port.DecisionRepository
+	dependencyGraphRepo  port.DependencyGraphRepository
+	dependencyGraphQueue port.DependencyGraphQueue
+	// dependencyGraphContexts loads graph context summaries; Postgres-backed in
+	// DB-owning runtimes, gRPC-backed in split-mode proxies.
+	dependencyGraphContexts port.DependencyGraphContextLookup
+	auditRepo               *postgres.AuditEventRepository
+	upstreamRepo            port.UpstreamRepository
+	bundleUpstreamRepo      port.BundleUpstreamRepository
+	authSecretRewrapper     port.UpstreamAuthSecretRewrapper
 
-	decisionCache port.DecisionCache
-	metadataCache port.MetadataCache
-	enricher      port.Enricher
+	decisionCache          port.DecisionCache
+	metadataCache          port.MetadataCache
+	dependencyContextCache port.DependencyContextCache
+	enricher               port.Enricher
 
 	auditService      *service.AuditService
 	enrichmentService *service.EnrichmentService
@@ -76,10 +82,11 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 	}
 
 	deps := &dependencies{
-		pool:          pool,
-		valkeyClient:  valkeyClient,
-		decisionCache: valkeyinfra.NewDecisionCache(valkeyClient),
-		metadataCache: valkeyinfra.NewMetadataCache(valkeyClient),
+		pool:                   pool,
+		valkeyClient:           valkeyClient,
+		decisionCache:          valkeyinfra.NewDecisionCache(valkeyClient),
+		metadataCache:          valkeyinfra.NewMetadataCache(valkeyClient),
+		dependencyContextCache: valkeyinfra.NewDependencyContextCache(valkeyClient),
 	}
 	if pool != nil {
 		secretCodec, err := upstreamSecretCodec(cfg)
@@ -91,6 +98,9 @@ func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		deps.policyRepo = postgres.NewPolicyRepository(pool)
 		deps.policyRevisionRepo = postgres.NewPolicyRevisionRepository(pool)
 		deps.decisionRepo = postgres.NewDecisionRepository(pool)
+		deps.dependencyGraphRepo = postgres.NewDependencyGraphRepository(pool)
+		deps.dependencyGraphQueue = deps.dependencyGraphRepo
+		deps.dependencyGraphContexts = deps.dependencyGraphRepo
 		deps.auditRepo = postgres.NewAuditEventRepository(pool)
 		upstreamRepo := postgres.NewUpstreamRepository(pool, secretCodec)
 		deps.upstreamRepo = upstreamRepo

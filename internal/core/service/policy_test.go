@@ -225,7 +225,7 @@ func (s *stubPolicyUpstreamRepository) Delete(context.Context, string, string) e
 	return nil
 }
 
-func (s *spyPolicyDecisionCache) Get(context.Context, string, domain.ArtifactIdentity) (*domain.Decision, error) {
+func (s *spyPolicyDecisionCache) Get(context.Context, string, domain.ArtifactIdentity, string) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 

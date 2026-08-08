@@ -48,12 +48,52 @@ func (r *ingestAuditRecorder) Record(_ context.Context, event *domain.AuditEvent
 	return nil
 }
 
+type ingestGraphStore struct {
+	dependencyContext *domain.DependencyContext
+}
+
+func (s *ingestGraphStore) EnqueueResolve(context.Context, domain.DependencyGraphResolveRequest) (bool, error) {
+	return true, nil
+}
+
+func (s *ingestGraphStore) LookupContext(context.Context, domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+	if s.dependencyContext == nil {
+		return nil, domain.ErrArtifactNotFound
+	}
+	return s.dependencyContext, nil
+}
+
+func TestProxyIngestService_LookupDependencyGraphContext(t *testing.T) {
+	t.Parallel()
+
+	dependencyContext := domain.DependencyContext{Scope: domain.DependencyScopeDirect}.Normalize()
+	store := &ingestGraphStore{dependencyContext: &dependencyContext}
+	svc := NewProxyIngestService(nil, nil, store, nil)
+
+	result, err := svc.LookupDependencyGraphContext(context.Background(), domain.DependencyContextSummaryKey{
+		TenantID: "tenant-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, domain.DependencyScopeDirect, result.Scope)
+
+	_, err = svc.LookupDependencyGraphContext(context.Background(), domain.DependencyContextSummaryKey{})
+	require.Error(t, err)
+}
+
+func TestProxyIngestService_LookupDependencyGraphContext_Unavailable(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProxyIngestService(nil, nil, nil, nil)
+	_, err := svc.LookupDependencyGraphContext(context.Background(), domain.DependencyContextSummaryKey{TenantID: "tenant-1"})
+	require.Error(t, err)
+}
+
 func TestProxyIngestService_PersistsDecisionAndAuditEvent(t *testing.T) {
 	t.Parallel()
 
 	decisionRepo := &ingestDecisionRepository{}
 	auditRecorder := &ingestAuditRecorder{}
-	service := NewProxyIngestService(decisionRepo, auditRecorder)
+	service := NewProxyIngestService(decisionRepo, auditRecorder, nil, nil)
 
 	decision := &domain.Decision{
 		TenantID: "tenant-1",

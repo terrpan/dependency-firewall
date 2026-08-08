@@ -23,31 +23,33 @@ func defaultOCICacheRootDir() string {
 
 // Config holds all application configuration sections.
 type Config struct {
-	Runtime   RuntimeConfig   `mapstructure:"runtime" validate:"required"`
-	Server    ServerConfig    `mapstructure:"server" validate:"required"`
-	OCICache  OCICacheConfig  `mapstructure:"oci_cache"`
-	Database  DatabaseConfig  `mapstructure:"database"`
-	Valkey    ValkeyConfig    `mapstructure:"valkey" validate:"required"`
-	Log       LogConfig       `mapstructure:"log" validate:"required"`
-	Telemetry TelemetryConfig `mapstructure:"telemetry"`
-	Audit     AuditConfig     `mapstructure:"audit" validate:"required"`
-	Health    HealthConfig    `mapstructure:"health"`
-	Bundle    BundleConfig    `mapstructure:"bundle" validate:"required"`
-	Secrets   SecretsConfig   `mapstructure:"secrets"`
+	Runtime         RuntimeConfig         `mapstructure:"runtime" validate:"required"`
+	Server          ServerConfig          `mapstructure:"server" validate:"required"`
+	OCICache        OCICacheConfig        `mapstructure:"oci_cache"`
+	Database        DatabaseConfig        `mapstructure:"database"`
+	Valkey          ValkeyConfig          `mapstructure:"valkey" validate:"required"`
+	Log             LogConfig             `mapstructure:"log" validate:"required"`
+	Telemetry       TelemetryConfig       `mapstructure:"telemetry"`
+	Audit           AuditConfig           `mapstructure:"audit" validate:"required"`
+	Health          HealthConfig          `mapstructure:"health"`
+	Bundle          BundleConfig          `mapstructure:"bundle" validate:"required"`
+	Secrets         SecretsConfig         `mapstructure:"secrets"`
+	DependencyGraph DependencyGraphConfig `mapstructure:"dependency_graph"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
 type RuntimeMode string
 
 const (
-	RuntimeModeAllInOne     RuntimeMode = "all-in-one"
-	RuntimeModeControlPlane RuntimeMode = "control-plane"
-	RuntimeModeProxy        RuntimeMode = "proxy"
+	RuntimeModeAllInOne              RuntimeMode = "all-in-one"
+	RuntimeModeControlPlane          RuntimeMode = "control-plane"
+	RuntimeModeProxy                 RuntimeMode = "proxy"
+	RuntimeModeDependencyGraphWorker RuntimeMode = "dependency-graph-worker"
 )
 
 // RuntimeConfig holds process mode selection.
 type RuntimeConfig struct {
-	Mode RuntimeMode `mapstructure:"mode" validate:"required,oneof=all-in-one control-plane proxy"`
+	Mode RuntimeMode `mapstructure:"mode" validate:"required,oneof=all-in-one control-plane proxy dependency-graph-worker"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -167,6 +169,16 @@ type SecretsConfig struct {
 	UpstreamAuthKey string `mapstructure:"upstream_auth_key"`
 }
 
+// DependencyGraphConfig holds async npm dependency graph resolver settings.
+type DependencyGraphConfig struct {
+	Enabled      bool          `mapstructure:"enabled"`
+	RunInProcess bool          `mapstructure:"run_in_process"`
+	PollInterval time.Duration `mapstructure:"poll_interval"`
+	Timeout      time.Duration `mapstructure:"timeout"`
+	Concurrency  int           `mapstructure:"concurrency"`
+	RetryDelay   time.Duration `mapstructure:"retry_delay"`
+}
+
 // LoadOptions customizes config loading behavior.
 type LoadOptions struct {
 	ConfigPath string
@@ -238,6 +250,12 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 	v.SetDefault("bundle.tls.allow_insecure_control_plane", false)
 	v.SetDefault("bundle.tls.authorized_clients", []BundleTLSAuthorizedClient{})
 	v.SetDefault("secrets.upstream_auth_key", "")
+	v.SetDefault("dependency_graph.enabled", true)
+	v.SetDefault("dependency_graph.run_in_process", false)
+	v.SetDefault("dependency_graph.poll_interval", 5*time.Second)
+	v.SetDefault("dependency_graph.timeout", 2*time.Minute)
+	v.SetDefault("dependency_graph.concurrency", 2)
+	v.SetDefault("dependency_graph.retry_delay", 5*time.Minute)
 
 	if strings.TrimSpace(options.ConfigPath) != "" {
 		v.SetConfigFile(options.ConfigPath)
@@ -292,7 +310,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid config: %s", validation.ErrorMessage(err))
 	}
 
-	if c.Runtime.Mode != RuntimeModeProxy {
+	if c.Runtime.Mode != RuntimeModeProxy && c.Runtime.Mode != RuntimeModeDependencyGraphWorker {
 		if strings.TrimSpace(c.Database.DSN) == "" {
 			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "database.dsn", c.Runtime.Mode)
 		}
@@ -375,11 +393,11 @@ func (c *Config) Validate() error {
 		}
 	}
 	switch c.Runtime.Mode {
-	case RuntimeModeAllInOne, RuntimeModeProxy:
+	case RuntimeModeAllInOne, RuntimeModeProxy, RuntimeModeDependencyGraphWorker:
 		if strings.TrimSpace(c.Bundle.ControlPlaneAddr) == "" {
 			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.control_plane_addr", c.Runtime.Mode)
 		}
-		if c.Runtime.Mode == RuntimeModeProxy && c.Bundle.TLS.Mode != "mtls" {
+		if (c.Runtime.Mode == RuntimeModeProxy || c.Runtime.Mode == RuntimeModeDependencyGraphWorker) && c.Bundle.TLS.Mode != "mtls" {
 			return fmt.Errorf("invalid config: field %q must be %q when runtime.mode is %q", "bundle.tls.mode", "mtls", c.Runtime.Mode)
 		}
 	}

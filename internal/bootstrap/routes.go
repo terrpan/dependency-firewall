@@ -70,6 +70,9 @@ func registerControlPlaneRoutes(
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewEvaluationHandler(evaluationService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewAuditHandler(auditListService, logger).RegisterHumaRoutes(controlPlaneAPI)
+	if deps.dependencyGraphRepo != nil {
+		apidelivery.NewDependencyGraphHandler(deps.dependencyGraphRepo, logger).RegisterHumaRoutes(controlPlaneAPI)
+	}
 
 	return nil
 }
@@ -86,6 +89,12 @@ func registerProxyRoutes(
 	bundleUpstreamRepo := bundleinfra.NewUpstreamRepository(bundleProvider)
 
 	evaluator := policy.NewEvaluator()
+	dependencyContextService := service.NewDependencyContextService(
+		deps.dependencyContextCache,
+		deps.dependencyGraphContexts,
+		deps.dependencyGraphQueue,
+		logger,
+	)
 	accessService := service.NewAccessService(
 		bundlePolicyRepo,
 		deps.decisionRepo,
@@ -96,10 +105,15 @@ func registerProxyRoutes(
 		bundleUpstreamRepo,
 		logger,
 		deps.auditService,
+		service.WithDependencyContextService(dependencyContextService),
 	)
 
 	ociHandler := ocidelivery.NewRegistryHandler(accessService, deps.ociClient, bundleUpstreamRepo, logger, deps.auditService)
-	npmHandler := npmdelivery.NewRegistryHandler(accessService, deps.npmClient, bundleUpstreamRepo, logger, deps.auditService)
+	var snapshotService *service.NPMInstallSnapshotService
+	if manifests, ok := deps.npmClient.(port.NPMManifestDependencyLister); ok && deps.dependencyGraphQueue != nil {
+		snapshotService = service.NewNPMInstallSnapshotService(manifests, deps.dependencyGraphQueue, logger)
+	}
+	npmHandler := npmdelivery.NewRegistryHandler(accessService, deps.npmClient, bundleUpstreamRepo, logger, deps.auditService, snapshotService)
 
 	if registerHealth {
 		healthOptions := []service.HealthOption{

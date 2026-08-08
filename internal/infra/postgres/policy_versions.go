@@ -19,7 +19,7 @@ func (r *PolicyRepository) ListVersions(ctx context.Context, tenantID, policyID 
 	}
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.priority, pv.enabled, pv.created_at
+		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
 		 FROM policy_versions pv
 		 JOIN policies p ON p.id = pv.policy_id
 		 WHERE p.tenant_id = $1 AND pv.policy_id = $2
@@ -60,7 +60,7 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	target, err := scanPolicyVersion(tx.QueryRow(ctx,
-		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.priority, pv.enabled, pv.created_at
+		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
 		 FROM policy_versions pv
 		 JOIN policies p ON p.id = pv.policy_id
 		 WHERE p.tenant_id = $1 AND pv.policy_id = $2 AND pv.version = $3`,
@@ -85,6 +85,7 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 		Action:        target.Action,
 		SchemaVersion: target.SchemaVersion,
 		Config:        target.Config,
+		Target:        target.Target,
 		Priority:      target.Priority,
 		Enabled:       target.Enabled,
 	}
@@ -96,12 +97,16 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 	if err != nil {
 		return nil, fmt.Errorf("marshalling rolled back config: %w", err)
 	}
+	targetJSON, err := json.Marshal(target.Target)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling rolled back target: %w", err)
+	}
 
 	err = tx.QueryRow(ctx,
 		`UPDATE policies
-		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, priority = $7,
-		     enabled = $8, version = version + 1, updated_at = now()
-		 WHERE tenant_id = $9 AND id = $10
+		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, target = $7, priority = $8,
+		     enabled = $9, version = version + 1, updated_at = now()
+		 WHERE tenant_id = $10 AND id = $11
 		 RETURNING version, created_at, updated_at`,
 		nullableString(target.UpstreamID),
 		target.Name,
@@ -109,6 +114,7 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 		target.Action,
 		target.SchemaVersion,
 		configJSON,
+		nullableJSON(targetJSON, target.Target != nil),
 		target.Priority,
 		target.Enabled,
 		tenantID,
@@ -122,8 +128,8 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 	}
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		policyID,
 		policyDef.Version,
 		nullableString(policyDef.UpstreamID),
@@ -132,6 +138,7 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 		policyDef.Action,
 		policyDef.SchemaVersion,
 		configJSON,
+		nullableJSON(targetJSON, policyDef.Target != nil),
 		policyDef.Priority,
 		policyDef.Enabled,
 	)

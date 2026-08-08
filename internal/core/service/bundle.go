@@ -270,17 +270,18 @@ type bundleTenantHashInput struct {
 }
 
 type bundlePolicyHashInput struct {
-	ID            string              `json:"id"`
-	UpstreamID    string              `json:"upstream_id,omitempty"`
-	Name          string              `json:"name"`
-	Type          domain.PolicyType   `json:"type"`
-	Action        domain.PolicyAction `json:"action"`
-	SchemaVersion int                 `json:"schema_version"`
-	Config        json.RawMessage     `json:"config"`
-	Priority      int                 `json:"priority"`
-	Enabled       bool                `json:"enabled"`
-	Version       int                 `json:"version"`
-	UpdatedAt     time.Time           `json:"updated_at"`
+	ID            string               `json:"id"`
+	UpstreamID    string               `json:"upstream_id,omitempty"`
+	Name          string               `json:"name"`
+	Type          domain.PolicyType    `json:"type"`
+	Action        domain.PolicyAction  `json:"action"`
+	SchemaVersion int                  `json:"schema_version"`
+	Config        json.RawMessage      `json:"config"`
+	Target        *domain.PolicyTarget `json:"target,omitempty"`
+	Priority      int                  `json:"priority"`
+	Enabled       bool                 `json:"enabled"`
+	Version       int                  `json:"version"`
+	UpdatedAt     time.Time            `json:"updated_at"`
 }
 
 type bundleUpstreamHashInput struct {
@@ -325,6 +326,7 @@ func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []
 			Action:        policies[i].Action,
 			SchemaVersion: policies[i].SchemaVersion,
 			Config:        config,
+			Target:        policies[i].Target,
 			Priority:      policies[i].Priority,
 			Enabled:       policies[i].Enabled,
 			Version:       policies[i].Version,

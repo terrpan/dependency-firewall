@@ -6,7 +6,7 @@ It now ships as **one binary**:
 
 | Binary | Modes |
 | --- | --- |
-| `./cmd/firewall` | `all-in-one`, `control-plane`, `proxy` |
+| `./cmd/firewall` | `all-in-one`, `control-plane`, `proxy`, `dependency-graph-worker` |
 
 The mode can be selected with:
 
@@ -14,7 +14,9 @@ The mode can be selected with:
 - env: `FIREWALL_RUNTIME_MODE`
 - CLI flag: `-mode`
 
-The control plane exposes gRPC **bundle** and **proxy ingest** services. The proxy pulls tenant bundles from the control plane, evaluates requests locally, and sends durable decision/audit writes back through the control plane. The proxy keeps serving the **last-known-good bundle** when the control plane is temporarily unavailable. In **all-in-one** mode, those boundaries stay in-process and do **not** open separate gRPC listeners.
+The control plane exposes gRPC **bundle** and **proxy ingest** services. The proxy pulls tenant bundles from the control plane, evaluates requests locally, and sends durable decision/audit writes back through the control plane. The npm dependency graph resolver runs as a separate `dependency-graph-worker` service in split deployments; it claims jobs and submits graph results over mTLS, and it is the only service that needs Node/npm. The proxy keeps serving the **last-known-good bundle** when the control plane is temporarily unavailable. In **all-in-one** mode, those boundaries stay in-process and do **not** open separate gRPC listeners.
+
+The proxy's `bundle` config is the tenant bundle fetch/cache path. The worker's `bundle` config is only the mTLS connection settings it uses to reach the control plane; it does not load tenant bundles.
 
 ## Architecture
 
@@ -32,6 +34,11 @@ operators / UI / automation
             |                                                  |
             v                                                  v
       PostgreSQL + Valkey                                  Valkey
+            ^
+            |
+ dependency-graph-worker
+ - npm resolver
+ - mTLS ingest client
 ```
 
 ## Prerequisites
@@ -42,11 +49,12 @@ operators / UI / automation
 
 ## Quick start with Docker Compose
 
-The default Compose topology runs the same image twice:
+The default Compose topology runs the regular firewall image for control-plane/proxy and the worker image for npm graph resolution:
 
 - control plane on `http://localhost:8080`
 - proxy on `http://localhost:8081`
 - control-plane gRPC (bundle + ingest) on `localhost:9090`
+- dependency graph worker as a separate service with Node/npm
 
 `make up` generates local test mTLS certificates under `examples/mtls/certs` before starting the split topology.
 
@@ -62,6 +70,7 @@ make down
 make logs
 make logs-control-plane
 make logs-proxy
+make logs-dependency-graph-worker
 make status
 ```
 
@@ -113,7 +122,7 @@ All config keys can be overridden with `FIREWALL_*` environment variables.
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `runtime.mode` | `all-in-one` | Process mode: `all-in-one`, `control-plane`, or `proxy` |
+| `runtime.mode` | `all-in-one` | Process mode: `all-in-one`, `control-plane`, `proxy`, or `dependency-graph-worker` |
 | `server.port` | `8080` | HTTP listen port for the current process |
 | `health.proxy_url` | `""` | Optional proxy `/healthz` URL for control-plane split-mode health checks |
 | `bundle.listen_addr` | `:9090` | gRPC bundle listen address for control-plane mode |
@@ -171,7 +180,7 @@ The Compose file includes an optional OpenTelemetry Collector in front of the As
 ```bash
 make mtls-certs
 FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d postgres valkey control-plane proxy otel-collector aspire-dashboard
+docker compose --profile observability up -d postgres valkey control-plane proxy dependency-graph-worker otel-collector aspire-dashboard
 ```
 
 Open `http://localhost:18888` to inspect traces.
@@ -185,7 +194,7 @@ FIREWALL_CONTROL_PLANE_PORT=18080 \
 FIREWALL_PROXY_PORT=18081 \
 FIREWALL_BUNDLE_PORT=19090 \
 FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d postgres valkey control-plane proxy otel-collector aspire-dashboard
+docker compose --profile observability up -d postgres valkey control-plane proxy dependency-graph-worker otel-collector aspire-dashboard
 ```
 
 In this local topology:
@@ -227,7 +236,7 @@ If you want the standalone proxy service included in the trace view, run the spl
 ```bash
 make mtls-certs
 FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d postgres valkey control-plane proxy otel-collector aspire-dashboard
+docker compose --profile observability up -d postgres valkey control-plane proxy dependency-graph-worker otel-collector aspire-dashboard
 
 curl http://localhost:8081/npm/t/<tenant-id>/u/<upstream-id>/lodash
 curl -H "Host: u-<upstream-id>.<tenant-id>.localhost" \
