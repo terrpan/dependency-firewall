@@ -23,18 +23,16 @@
 .graph-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 4px 12px; color: var(--text-muted); font-size: .78rem; }
 .graph-legend span { display: inline-flex; gap: 7px; align-items: center; padding: 3px 0; }
 .graph-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-.graph-legend-root { background: #fb7185; }
-.graph-legend-direct { background: #38bdf8; }
-.graph-legend-transitive { background: #a78bfa; }
+.graph-legend-root { background: var(--color-graphite-800); }
+.graph-legend-direct { background: var(--color-action); }
+.graph-legend-transitive { background: var(--color-warning); }
 .graph-legend-line { display: inline-block; width: 18px; border-top: 2px solid var(--accent); }
 .graph-workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: var(--space-card); align-items: start; }
 .graph-workspace-grid-full { grid-template-columns: minmax(0, 1fr); }
 .graph-map-card { min-width: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }
-.graph-map-stage { position: relative; height: clamp(420px, 62vh, 720px); border-radius: 20px; background: rgba(8, 15, 30, .22); }
-.graph-map-scroll { width: 100%; height: 100%; overflow: hidden; padding: 0; border-radius: 20px; touch-action: none; background: rgba(8, 15, 30, .22); }
-:root[data-theme='light'] .graph-map-scroll { background: rgba(241, 245, 249, .55); }
-.graph-map { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: visible; background: rgba(8, 15, 30, .22); }
-:root[data-theme='light'] .graph-map-stage, :root[data-theme='light'] .graph-map { background: rgba(241, 245, 249, .55); }
+.graph-map-stage { position: relative; height: clamp(420px, 62vh, 720px); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-subtle); }
+.graph-map-scroll { width: 100%; height: 100%; overflow: hidden; padding: 0; border-radius: var(--radius-lg); touch-action: none; background: var(--color-surface-subtle); }
+.graph-map { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: visible; background: var(--color-surface-subtle); }
 .graph-zoom-controls { position: absolute; z-index: 2; top: 16px; right: 16px; display: inline-flex; align-items: center; gap: 4px; padding: 5px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface-raised); box-shadow: var(--shadow-soft); }
 .graph-zoom-controls button { min-width: 30px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text-strong); font-weight: 800; cursor: pointer; }
 .graph-zoom-controls button:hover:not(:disabled), .graph-zoom-controls button:focus-visible { background: var(--accent-surface); color: var(--accent-bright); }
@@ -45,8 +43,7 @@
 .graph-map-info > button:hover, .graph-map-info > button:focus-visible { border-color: var(--accent-border); background: var(--accent-surface); color: var(--accent-bright); }
 .graph-map-info-tooltip { position: absolute; top: 38px; left: 0; width: min(280px, calc(100vw - 48px)); padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-raised); color: var(--text-muted); font-size: .78rem; line-height: 1.45; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: 160ms ease; box-shadow: var(--shadow-soft); }
 .graph-map-info:hover .graph-map-info-tooltip, .graph-map-info:focus-within .graph-map-info-tooltip { opacity: 1; transform: translateY(0); }
-.graph-map-background { fill: rgba(8, 15, 30, .22); stroke: var(--border-soft); stroke-dasharray: 4 8; }
-:root[data-theme='light'] .graph-map-background { fill: rgba(241, 245, 249, .55); }
+.graph-map-background { fill: var(--color-surface-subtle); stroke: var(--color-border); stroke-dasharray: 4 8; }
 .graph-edge-group { cursor: pointer; }
 .graph-edge-group:focus { outline: none; }
 .graph-edge-hit-area { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; }
@@ -56,17 +53,17 @@
 .graph-node { cursor: grab; outline: none; }
 .graph-node:active { cursor: grabbing; }
 .graph-node-circle { stroke-width: 2; transition: 160ms ease; }
-.graph-node-root .graph-node-circle { fill: rgba(251, 113, 133, .22); stroke: #fb7185; }
-.graph-node-direct .graph-node-circle { fill: rgba(56, 189, 248, .2); stroke: #38bdf8; }
-.graph-node-transitive .graph-node-circle { fill: rgba(167, 139, 250, .2); stroke: #a78bfa; }
+.graph-node-root .graph-node-circle { fill: var(--color-surface-muted); stroke: var(--color-graphite-800); }
+.graph-node-direct .graph-node-circle { fill: var(--color-action-soft); stroke: var(--color-action); }
+.graph-node-transitive .graph-node-circle { fill: var(--color-warning-soft); stroke: var(--color-warning); }
 .graph-node:hover .graph-node-circle, .graph-node-selected .graph-node-circle, .graph-node-related .graph-node-circle { stroke: var(--accent-bright); stroke-width: 4; filter: drop-shadow(0 0 8px rgba(125, 211, 252, .35)); }
 .graph-node-depth { fill: var(--text-strong); font-size: 11px; font-weight: 800; letter-spacing: .04em; }
 .graph-node-name { fill: var(--text-strong); font-size: 13px; font-weight: 800; }
-.graph-node-version { fill: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.graph-node-version { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; }
 .graph-node-kind { fill: var(--text-muted); font-size: 10px; }
 .graph-detail-card { position: sticky; top: 18px; }
 .graph-detail-card h3 { overflow-wrap: anywhere; }
-.graph-detail-version { margin: -8px 0 20px; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.graph-detail-version { margin: -8px 0 20px; color: var(--accent); font-family: var(--font-mono); }
 .graph-detail-arrow { margin: -14px 0 12px; color: var(--accent); font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .graph-detail-list { display: grid; gap: 12px; margin: 0; }
 .graph-detail-list div { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
