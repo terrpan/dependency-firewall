@@ -1,5 +1,6 @@
 // PolicyListPanel renders searchable tenant policies and item-level actions.
 import { SearchFilterBar } from '../../components/filters/SearchFilterBar.tsx'
+import { policyClass } from './styles.ts'
 import type { TypedPolicy, Upstream } from '../../lib/api/index.ts'
 import { getPolicyTypeLabel, isPolicyDryRun } from './draft.ts'
 import {
@@ -74,42 +75,42 @@ export function PolicyListPanel({
   onTogglePolicy,
 }: PolicyListPanelProps) {
   return (
-    <section className="card policy-list-card">
-      <div className="policy-section-heading">
+    <section className={policyClass("card policy-list-card")}>
+      <div className={policyClass("policy-section-heading")}>
         <div>
           <h3>Current tenant policies</h3>
         </div>
-        <div className="policy-list-tools">
+        <div className={policyClass("policy-list-tools")}>
           {activeFilters.length > 0 || policySearch.trim() ? (
-            <span className="status-pill status-pill-neutral">{filteredPolicies.length} shown</span>
+            <span className={policyClass("status-pill status-pill-neutral")}>{filteredPolicies.length} shown</span>
           ) : null}
-          {isUpstreamsFetching ? <span className="status-pill status-pill-neutral">Loading upstreams</span> : null}
-          {isPoliciesFetching ? <span className="status-pill status-pill-neutral">Refreshing</span> : null}
+          {isUpstreamsFetching ? <span className={policyClass("status-pill status-pill-neutral")}>Loading upstreams</span> : null}
+          {isPoliciesFetching ? <span className={policyClass("status-pill status-pill-neutral")}>Refreshing</span> : null}
           <button
-            className="secondary-button"
+            className={policyClass("secondary-button")}
             disabled={!canRefresh}
             onClick={onRefresh}
             type="button"
           >
             Refresh
           </button>
-          <button className="primary-button" disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">
+          <button className={policyClass("primary-button")} disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">
             {hasCreateDraftInProgress ? 'Resume draft' : 'New policy'}
           </button>
         </div>
       </div>
 
       {isPoliciesError ? (
-        <div className="policy-error-panel">
+        <div className={policyClass("policy-error-panel")}>
           <h4>Unable to load policies</h4>
-          <p className="muted">{policiesErrorMessage}</p>
+          <p className={policyClass("muted")}>{policiesErrorMessage}</p>
         </div>
       ) : null}
 
       {isDeleteError ? (
-        <div className="policy-error-panel">
+        <div className={policyClass("policy-error-panel")}>
           <h4>Unable to delete policy</h4>
-          <p className="muted">{deleteErrorMessage}</p>
+          <p className={policyClass("muted")}>{deleteErrorMessage}</p>
         </div>
       ) : null}
 
@@ -132,15 +133,15 @@ export function PolicyListPanel({
       />
 
       {!isPoliciesError && policies.length === 0 ? (
-        <div className="policy-empty-state">
+        <div className={policyClass("policy-empty-state")}>
           <h4>No policies yet</h4>
-          <p className="muted">
+          <p className={policyClass("muted")}>
             {upstreamsCount === 0
               ? 'Create an upstream first, then open the guided popup to scope the first policy to it.'
               : 'Open the guided popup to create the first policy without leaving this page.'}
           </p>
-          <div className="policy-empty-actions">
-            <button className="primary-button" disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">
+          <div className={policyClass("policy-empty-actions")}>
+            <button className={policyClass("primary-button")} disabled={!canOpenCreateModal} onClick={onOpenCreate} type="button">
               Create first policy
             </button>
           </div>
@@ -148,18 +149,18 @@ export function PolicyListPanel({
       ) : null}
 
       {!isPoliciesError && policies.length > 0 && filteredPolicies.length === 0 ? (
-        <div className="policy-empty-state">
+        <div className={policyClass("policy-empty-state")}>
           <h4>No policies match this search and filter state</h4>
-          <p className="muted">Try a different search or filter combination to bring matching policies back into view.</p>
-          <div className="policy-empty-actions">
-            <button className="secondary-button" onClick={onClearFilters} type="button">
+          <p className={policyClass("muted")}>Try a different search or filter combination to bring matching policies back into view.</p>
+          <div className={policyClass("policy-empty-actions")}>
+            <button className={policyClass("secondary-button")} onClick={onClearFilters} type="button">
               Clear filters
             </button>
           </div>
         </div>
       ) : null}
 
-      <div className="policy-list" role="list">
+      <div className={policyClass("policy-list")} role="list">
         {filteredPolicies.map((policy) => {
           const configDetail = getPolicyConfigDetail(policy)
           const isDeletePending = deletePendingPolicyId === policy.id
@@ -168,32 +169,32 @@ export function PolicyListPanel({
           return (
             <article
               key={policy.id}
-              className={`policy-list-item${policy.id === selectedPolicyId ? ' selected' : ''}`}
+              className={policyClass('policy-list-item', policy.id === selectedPolicyId && 'selected')}
             >
               <button
-                className="policy-list-item-main"
+                className={policyClass("policy-list-item-main")}
                 onClick={() => onOpenDetail(policy.id)}
                 type="button"
               >
-                <div className="policy-list-item-header">
+                <div className={policyClass("policy-list-item-header")}>
                   <div>
                     <h4>{policy.name}</h4>
-                    <p className="muted">{getPolicyTypeLabel(policy.type)}</p>
-                    <p className="policy-scope-copy">{formatPolicyScopeCaption(policy, upstreamsByID)}</p>
+                    <p className={policyClass("muted")}>{getPolicyTypeLabel(policy.type)}</p>
+                    <p className={policyClass("policy-scope-copy")}>{formatPolicyScopeCaption(policy, upstreamsByID)}</p>
                   </div>
-                  <div className="policy-list-item-badges">
-                    <span className={`policy-badge ${getActionTone(policy.action)}`}>{policy.action}</span>
-                    <span className={`policy-badge ${getEnabledTone(policy.enabled)}`}>
+                  <div className={policyClass("policy-list-item-badges")}>
+                    <span className={policyClass('policy-badge', getActionTone(policy.action))}>{policy.action}</span>
+                    <span className={policyClass('policy-badge', getEnabledTone(policy.enabled))}>
                       {policy.enabled ? 'enabled' : 'disabled'}
                     </span>
-                    {isPolicyDryRun(policy) ? <span className="policy-badge policy-badge-muted">dry run</span> : null}
+                    {isPolicyDryRun(policy) ? <span className={policyClass("policy-badge policy-badge-muted")}>dry run</span> : null}
                   </div>
                 </div>
-                <div className="policy-config-summary">
-                  <span className="policy-config-label">{configDetail.label}</span>
-                  <span className="policy-config-value">{configDetail.value}</span>
+                <div className={policyClass("policy-config-summary")}>
+                  <span className={policyClass("policy-config-label")}>{configDetail.label}</span>
+                  <span className={policyClass("policy-config-value")}>{configDetail.value}</span>
                 </div>
-                <dl className="metadata-list compact-metadata-list compact-metadata-list-dense">
+                <dl className={policyClass("metadata-list compact-metadata-list compact-metadata-list-dense")}>
                   <div>
                     <dt>Scope</dt>
                     <dd>{formatPolicyScopeLabel(policy, upstreamsByID)}</dd>
@@ -221,16 +222,16 @@ export function PolicyListPanel({
                 </dl>
               </button>
 
-              <div className="policy-list-item-footer">
-                <div className="policy-list-item-actions">
-                  <button className="policy-card-action" onClick={() => onEdit(policy)} type="button">
+              <div className={policyClass("policy-list-item-footer")}>
+                <div className={policyClass("policy-list-item-actions")}>
+                  <button className={policyClass("policy-card-action")} onClick={() => onEdit(policy)} type="button">
                     Edit
                   </button>
-                  <button className="policy-card-action" onClick={() => onOpenDetail(policy.id, 'history')} type="button">
+                  <button className={policyClass("policy-card-action")} onClick={() => onOpenDetail(policy.id, 'history')} type="button">
                     History
                   </button>
                   <button
-                    className="policy-card-action policy-card-action-danger"
+                    className={policyClass("policy-card-action policy-card-action-danger")}
                     disabled={policy.enabled || Boolean(deletePendingPolicyId)}
                     onClick={() => onDelete(policy)}
                     title={policy.enabled ? 'Disable the policy before deleting it.' : undefined}
@@ -239,10 +240,10 @@ export function PolicyListPanel({
                     {policy.enabled ? 'Disable first' : isDeletePending ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
-                <div className="policy-inline-toggle">
-                  <span className="policy-inline-toggle-label">Enabled</span>
+                <div className={policyClass("policy-inline-toggle")}>
+                  <span className={policyClass("policy-inline-toggle-label")}>Enabled</span>
                   <button
-                    className={`policy-enabled-toggle${policy.enabled ? ' active' : ''}`}
+                    className={policyClass('policy-enabled-toggle', policy.enabled && 'active')}
                     disabled={isTogglePending}
                     onClick={() => onTogglePolicy(policy)}
                     type="button"

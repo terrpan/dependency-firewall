@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { buildPolicyDraftInput, createPolicyDraftForType, createPolicyDraftFromPolicy } from '../../src/features/policies/draft'
+import { installApi, installAuth } from './fixtures'
 
 test('unknown dependency scope round-trips through policy editing', () => {
   const draft = {
@@ -23,4 +24,23 @@ test('unknown dependency scope round-trips through policy editing', () => {
   })
   expect(editDraft.targetDependencyScopes).toEqual(['unknown'])
   expect(editDraft.targetOnUnknown).toBe('deny')
+})
+
+test('policy wizard and evaluation filters are keyboard-operable', async ({ page }) => {
+  await installAuth(page)
+  await installApi(page)
+  await page.goto('/policies')
+  await page.getByRole('button', { name: 'New policy' }).click()
+  await expect(page.getByRole('dialog', { name: 'Create policy' })).toBeVisible()
+  await page.getByRole('button', { name: /npm registry/i }).click()
+  await expect(page.getByRole('heading', { name: 'Choose type' })).toBeVisible()
+  await page.getByRole('button', { name: /Namespace blocklist blocklist/i }).click()
+  await expect(page.getByRole('heading', { name: 'Set basics' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await page.goto('/evaluations')
+  const search = page.getByLabel('Artifact search')
+  await search.fill('react@19')
+  await expect(page.getByText('No matching evaluations').first()).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Evaluation filters' })).toBeVisible()
 })

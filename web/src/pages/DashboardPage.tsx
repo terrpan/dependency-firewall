@@ -26,7 +26,7 @@ import {
 } from '../features/upstreams/api.ts'
 import { asTypedPolicy, type Evaluation, type Health, type TypedPolicy, type Upstream } from '../lib/api/index.ts'
 import { sortPolicies } from '../features/policies/display.ts'
-import '../features/evaluations/evaluations.css'
+import { evaluationClass } from '../features/evaluations/styles.ts'
 
 type AttentionItem = {
   key: string
@@ -44,34 +44,34 @@ type Segment = {
 
 function statusPillClassName(tone: 'default' | 'success' | 'danger' | 'warning' | undefined) {
   if (tone === 'success') {
-    return 'status-pill status-pill-success'
+    return evaluationClass('status-pill', 'status-pill-success')
   }
 
   if (tone === 'danger') {
-    return 'status-pill status-pill-danger'
+    return evaluationClass('status-pill', 'status-pill-danger')
   }
 
   if (tone === 'warning') {
-    return 'status-pill status-pill-warning'
+    return evaluationClass('status-pill', 'status-pill-warning')
   }
 
-  return 'status-pill'
+  return evaluationClass('status-pill')
 }
 
 function segmentClassName(tone: Segment['tone']) {
   if (tone === 'success') {
-    return 'dashboard-bar-segment dashboard-bar-segment-success'
+    return evaluationClass('dashboard-bar-segment', 'dashboard-bar-segment-success')
   }
 
   if (tone === 'danger') {
-    return 'dashboard-bar-segment dashboard-bar-segment-danger'
+    return evaluationClass('dashboard-bar-segment', 'dashboard-bar-segment-danger')
   }
 
   if (tone === 'warning') {
-    return 'dashboard-bar-segment dashboard-bar-segment-warning'
+    return evaluationClass('dashboard-bar-segment', 'dashboard-bar-segment-warning')
   }
 
-  return 'dashboard-bar-segment'
+  return evaluationClass('dashboard-bar-segment')
 }
 
 function formatPercent(numerator: number, denominator: number) {
@@ -92,12 +92,12 @@ function DashboardCompactBar({
   segments: readonly Segment[]
 }) {
   return (
-    <div className="dashboard-compact-bar">
-      <div className="dashboard-compact-bar-header">
-        <span className="metric-label">{label}</span>
-        <span className="muted">{total} total</span>
+    <div className={evaluationClass("dashboard-compact-bar")}>
+      <div className={evaluationClass("dashboard-compact-bar-header")}>
+        <span className={evaluationClass("metric-label")}>{label}</span>
+        <span className={evaluationClass("muted")}>{total} total</span>
       </div>
-      <div className="dashboard-bar-track" aria-label={label}>
+      <div className={evaluationClass("dashboard-bar-track")} aria-label={label}>
         {segments.map((segment) => (
           <span
             key={segment.label}
@@ -106,9 +106,9 @@ function DashboardCompactBar({
             title={`${segment.label}: ${segment.value} (${formatPercent(segment.value, total)})`}
           />
         ))}
-        {total === 0 ? <span className="dashboard-bar-empty" /> : null}
+        {total === 0 ? <span className={evaluationClass("dashboard-bar-empty")} /> : null}
       </div>
-      <div className="dashboard-bar-legend">
+      <div className={evaluationClass("dashboard-bar-legend")}>
         {segments.map((segment) => (
           <span key={segment.label}>
             <span className={segmentClassName(segment.tone)} />
@@ -322,35 +322,35 @@ export function DashboardPage() {
   }
 
   return (
-    <section className="page">
-      <header className="page-header">
+    <section className={evaluationClass("page")}>
+      <header className={evaluationClass("page-header")}>
         <div>
-          <p className="eyebrow">Operator overview</p>
+          <p className={evaluationClass("eyebrow")}>Operator overview</p>
           <h2>Dashboard</h2>
-          <p className="page-summary">{activeTenant?.name ?? 'Selected tenant'} overview.</p>
+          <p className={evaluationClass("page-summary")}>{activeTenant?.name ?? 'Selected tenant'} overview.</p>
         </div>
-        <div className="page-actions">
+        <div className={evaluationClass("page-actions")}>
           <span className={headerStatusClassName}>{headerStatusLabel}</span>
           {recentEvaluationsQuery.isFetching || upstreamsQuery.isFetching || policiesQuery.isFetching ? (
-            <span className="status-pill">Refreshing</span>
+            <span className={evaluationClass("status-pill")}>Refreshing</span>
           ) : null}
-          <button className="secondary-button" onClick={refreshDashboard} type="button">
+          <button className={evaluationClass("secondary-button")} onClick={refreshDashboard} type="button">
             Refresh
           </button>
-          <Link className="route-link" to="/evaluations">
+          <Link className={evaluationClass("route-link")} to="/evaluations">
             Open audit trail
           </Link>
         </div>
       </header>
 
-      <div className="dashboard-body-grid">
-        <div className="dashboard-primary-stack">
-          <section className="card dashboard-primary-card">
-            <div className="section-header">
+      <div className={evaluationClass("dashboard-body-grid")}>
+        <div className={evaluationClass("dashboard-primary-stack")}>
+          <section className={evaluationClass("card dashboard-primary-card")}>
+            <div className={evaluationClass("section-header")}>
               <div>
                 <h3>Recent decisions</h3>
               </div>
-              <Link className="route-link" to="/evaluations">
+              <Link className={evaluationClass("route-link")} to="/evaluations">
                 Inspect
               </Link>
             </div>
@@ -377,7 +377,7 @@ export function DashboardPage() {
             ) : (
               <>
                 <SummaryMetrics items={summaryMetrics} />
-                <div className="dashboard-chart-grid">
+                <div className={evaluationClass("dashboard-chart-grid")}>
                   <DashboardCompactBar
                     label="Outcome split"
                     segments={[
@@ -400,22 +400,22 @@ export function DashboardPage() {
             )}
           </section>
 
-          <section className="card dashboard-attention-card">
-            <div className="section-header">
+          <section className={evaluationClass("card dashboard-attention-card")}>
+            <div className={evaluationClass("section-header")}>
               <div>
                 <h3>Policy activity</h3>
               </div>
             </div>
 
-            <ul className="dashboard-attention-list">
+            <ul className={evaluationClass("dashboard-attention-list")}>
               {attentionItems.map((item) => (
-                <li key={item.key} className={`dashboard-attention-item dashboard-attention-item-${item.tone ?? 'default'}`}>
+                <li key={item.key} className={evaluationClass('dashboard-attention-item', `dashboard-attention-item-${item.tone ?? 'default'}`)}>
                   <div>
                     <strong>{item.title}</strong>
-                    <p className="muted">{item.detail}</p>
+                    <p className={evaluationClass("muted")}>{item.detail}</p>
                   </div>
                   {item.to ? (
-                    <Link className="route-link" to={item.to}>
+                    <Link className={evaluationClass("route-link")} to={item.to}>
                       Open
                     </Link>
                   ) : null}
@@ -424,12 +424,12 @@ export function DashboardPage() {
             </ul>
           </section>
 
-          <section className="card">
-            <div className="section-header">
+          <section className={evaluationClass("card")}>
+            <div className={evaluationClass("section-header")}>
               <div>
                 <h3>Recent activity</h3>
               </div>
-              <Link className="route-link" to="/evaluations">
+              <Link className={evaluationClass("route-link")} to="/evaluations">
                 View all
               </Link>
             </div>
@@ -454,8 +454,8 @@ export function DashboardPage() {
                 message="This tenant does not have any stored evaluation history yet."
               />
             ) : (
-              <div className="dashboard-activity-table">
-                <div className="dashboard-activity-row dashboard-activity-head">
+              <div className={evaluationClass("dashboard-activity-table")}>
+                <div className={evaluationClass("dashboard-activity-row dashboard-activity-head")}>
                   <span>Artifact</span>
                   <span>Outcome</span>
                   <span>Reason</span>
@@ -463,20 +463,20 @@ export function DashboardPage() {
                   <span>Time</span>
                 </div>
                 {recentEvaluations.slice(0, 7).map((evaluation) => (
-                  <div key={evaluation.id} className="dashboard-activity-row">
+                  <div key={evaluation.id} className={evaluationClass("dashboard-activity-row")}>
                     <div>
-                      <span className="route-label">{evaluation.artifact.ecosystem}</span>
+                      <span className={evaluationClass("route-label")}>{evaluation.artifact.ecosystem}</span>
                       <strong>{formatArtifact(evaluation.artifact)}</strong>
                     </div>
-                    <div className="pill-group">
+                    <div className={evaluationClass("pill-group")}>
                       <span className={statusPillClassName(getOutcomeTone(evaluation.outcome))}>
                         {evaluation.outcome.toUpperCase()}
                       </span>
-                      {evaluation.cached_at ? <span className="status-pill status-pill-neutral">Cached</span> : null}
+                      {evaluation.cached_at ? <span className={evaluationClass("status-pill status-pill-neutral")}>Cached</span> : null}
                     </div>
-                    <p className="muted">{getPrimaryReason(evaluation)}</p>
+                    <p className={evaluationClass("muted")}>{getPrimaryReason(evaluation)}</p>
                     <span>{formatPolicyReference(evaluation)}</span>
-                    <span className="muted">{formatRelativeTime(evaluation.evaluated_at)}</span>
+                    <span className={evaluationClass("muted")}>{formatRelativeTime(evaluation.evaluated_at)}</span>
                   </div>
                 ))}
               </div>
@@ -484,7 +484,7 @@ export function DashboardPage() {
           </section>
         </div>
 
-        <div className="dashboard-side-stack">
+        <div className={evaluationClass("dashboard-side-stack")}>
           <ControlPlaneHealthCard
             error={healthQuery.error}
             health={healthQuery.data}
@@ -493,17 +493,17 @@ export function DashboardPage() {
             compact
           />
 
-          <section className="card">
-            <div className="section-header">
+          <section className={evaluationClass("card")}>
+            <div className={evaluationClass("section-header")}>
               <div>
                 <h3>Configuration</h3>
               </div>
-              <Link className="route-link" to="/upstreams">
+              <Link className={evaluationClass("route-link")} to="/upstreams">
                 Manage
               </Link>
             </div>
 
-            <dl className="dashboard-coverage-list">
+            <dl className={evaluationClass("dashboard-coverage-list")}>
               <div>
                 <dt>Registry upstreams</dt>
                 <dd>{upstreamsQuery.isPending && tenantId ? 'Loading' : upstreams.length}</dd>
