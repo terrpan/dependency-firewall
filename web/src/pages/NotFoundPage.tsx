@@ -1,24 +1,11 @@
 import { Link } from 'react-router-dom'
+import { EmptyState, PageHeader } from '../ui/index.ts'
 
 export function NotFoundPage() {
   return (
     <section className="page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Route missing</p>
-          <h2>Page not found</h2>
-          <p className="page-summary">
-            This route is outside the current scaffold. Return to the dashboard and continue from
-            the existing control-plane shell.
-          </p>
-        </div>
-      </header>
-
-      <section className="card">
-        <p>
-          Go back to the <Link className="inline-link" to="/">dashboard</Link>.
-        </p>
-      </section>
+      <PageHeader eyebrow="404" title="Page not found" summary="The requested control-plane route does not exist or has moved." />
+      <EmptyState title="Nothing at this address" message="Return to the operational summary and continue from a known route." action={<Link className="primary-button" to="/">Return to dashboard</Link>} />
     </section>
   )
 }

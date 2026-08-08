@@ -13,7 +13,8 @@ export async function installApi(page: Page) {
   await page.route('**/healthz', route => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
-    if (path.endsWith('/tenants')) return route.fulfill({ json: [{ id: 'tenant-acme', name: 'Acme Engineering' }] })
+    if (path.endsWith('/tenants') && route.request().method() === 'POST') return route.fulfill({ json: { id: 'tenant-platform', name: 'Platform Engineering', created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z' } })
+    if (path.endsWith('/tenants')) return route.fulfill({ json: [{ id: 'tenant-acme', name: 'Acme Engineering', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-08T10:00:00Z' }] })
     if (path.endsWith('/evaluations')) return route.fulfill({ json: [] })
     if (path.endsWith('/upstreams')) return route.fulfill({ json: [{ id: 'npm', name: 'npm registry', url: 'https://registry.npmjs.org', enabled: true }] })
     if (path.endsWith('/policies/types')) return route.fulfill({ json: [] })
