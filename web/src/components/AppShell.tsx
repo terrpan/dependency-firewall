@@ -21,7 +21,7 @@ const navigationItems = [
   { to: '/tenants', label: 'Tenants', summary: 'Workspace selection and setup.', icon: Building2 },
   { to: '/upstreams', label: 'Upstreams', summary: 'Package sources and client setup.', icon: Server, requiresTenant: true },
   { to: '/policies', label: 'Policies', summary: 'Rules, versions, and rollback history.', icon: FileCheck2, requiresTenant: true },
-  { to: '/evaluations', label: 'Evaluations', summary: 'Audit history and decision details.', icon: Activity, requiresTenant: true },
+  { to: '/evaluations', label: 'Evaluations', summary: 'Decisions, reasons, and policy evidence.', icon: Activity, requiresTenant: true },
   { to: '/dependency-graphs', label: 'Dependency graphs', summary: 'Resolved npm package relationships.', icon: GitFork, requiresTenant: true },
 ] satisfies readonly NavigationItem[]
 

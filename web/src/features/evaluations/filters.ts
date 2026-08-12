@@ -10,6 +10,8 @@ export const evaluationFilterOptions = [
   { id: 'cached', label: 'Cached', tone: 'info' },
 ] as const
 
+const outcomeFilters = new Set<EvaluationFilter>(['allow', 'deny'])
+
 export function matchesEvaluationFilter(evaluation: Evaluation, filter: EvaluationFilter) {
   if (filter === 'allow') {
     return evaluation.outcome.toLowerCase() === 'allow'
@@ -24,4 +26,26 @@ export function matchesEvaluationFilter(evaluation: Evaluation, filter: Evaluati
   }
 
   return Boolean(evaluation.cached_at)
+}
+
+export function matchesEvaluationFilters(
+  evaluation: Evaluation,
+  filters: readonly EvaluationFilter[],
+): boolean {
+  return filters.every((filter) => matchesEvaluationFilter(evaluation, filter))
+}
+
+export function toggleEvaluationFilter(
+  filters: readonly EvaluationFilter[],
+  filter: EvaluationFilter,
+): EvaluationFilter[] {
+  if (filters.includes(filter)) {
+    return filters.filter((currentFilter) => currentFilter !== filter)
+  }
+
+  const withoutOtherOutcome = outcomeFilters.has(filter)
+    ? filters.filter((currentFilter) => !outcomeFilters.has(currentFilter))
+    : filters
+
+  return [...withoutOtherOutcome, filter]
 }

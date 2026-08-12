@@ -70,7 +70,61 @@ export const upstreamOverviewFixtures = [
   },
 ] as const
 
+export const evaluationOverviewFixtures = [
+  {
+    id: 'evaluation-react',
+    artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' },
+    outcome: 'deny',
+    policy_id: 'policy-blocklist',
+    policy_hash: 'policyhash1234567890',
+    reason: 'Namespace matched the tenant blocklist.',
+    reasons: [
+      { action: 'deny', category: 'blocklist', message: 'Namespace matched the tenant blocklist.', policy_id: 'policy-blocklist', policy_name: 'Protected namespaces' },
+      { action: 'deny', category: 'license', message: 'License metadata was not approved.', policy_id: 'policy-licenses', policy_name: 'Approved licenses' },
+    ],
+    warnings: [],
+    evaluated_at: '2026-08-08T10:00:00Z',
+  },
+  {
+    id: 'evaluation-lodash',
+    artifact: { ecosystem: 'npm', name: 'lodash', version: '4.17.21' },
+    outcome: 'allow',
+    policy_id: 'policy-age',
+    policy_hash: 'agehash1234567890',
+    reason: 'All enforced policies allowed this package.',
+    reasons: [{ action: 'allow', category: 'minimum_age', message: 'Package is older than the cooling-off period.', policy_id: 'policy-age', policy_name: 'Package cooling-off period' }],
+    warnings: [],
+    cached_at: '2026-08-08T10:03:00Z',
+    evaluated_at: '2026-08-08T10:04:00Z',
+  },
+  {
+    id: 'evaluation-left-pad',
+    artifact: { ecosystem: 'npm', name: 'left-pad', version: '1.3.0' },
+    outcome: 'allow',
+    policy_id: 'policy-age',
+    policy_hash: 'agehash1234567890',
+    reason: 'Enforced policies allowed this package.',
+    reasons: [{ action: 'allow', category: 'minimum_age', message: 'Package is older than the cooling-off period.', policy_id: 'policy-age', policy_name: 'Package cooling-off period' }],
+    warnings: ['[Approved licenses] would deny because license metadata is unavailable.'],
+    evaluated_at: '2026-08-08T10:02:00Z',
+  },
+  {
+    id: 'evaluation-nginx',
+    artifact: { ecosystem: 'oci', namespace: 'library', name: 'nginx', digest: 'sha256:1234567890abcdef1234567890abcdef' },
+    outcome: 'deny',
+    policy_id: 'policy-mutable-tag',
+    policy_hash: 'mutablehash1234567890',
+    reason: 'Mutable image tags are not allowed.',
+    reasons: [{ action: 'deny', category: 'block_mutable_tag', message: 'Mutable image tags are not allowed.', policy_id: 'policy-mutable-tag', policy_name: 'Require immutable images' }],
+    warnings: [],
+    cached_at: '2026-08-08T10:00:30Z',
+    evaluated_at: '2026-08-08T10:01:00Z',
+  },
+] as const
+
 type ApiFixtureOptions = {
+  evaluationListFailures?: number
+  evaluations?: readonly Record<string, unknown>[]
   policies?: readonly unknown[]
   tenantListFailures?: number
   tenants?: readonly Record<string, unknown>[]
@@ -85,6 +139,7 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
     .map((upstream) => ({ ...upstream }))
   let remainingTenantListFailures = options.tenantListFailures ?? 0
   let remainingUpstreamListFailures = options.upstreamListFailures ?? 0
+  let remainingEvaluationListFailures = options.evaluationListFailures ?? 0
 
   await page.route('**/healthz', route => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
   await page.route('**/api/v1/**', async route => {
@@ -107,17 +162,19 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
       }
       return route.fulfill({ json: tenantFixtures })
     }
-    if (path.endsWith('/evaluations')) return route.fulfill({ json: [{
-      id: 'evaluation-react',
-      artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' },
-      outcome: 'deny',
-      policy_id: 'policy-blocklist',
-      policy_hash: 'policyhash123',
-      reason: 'Namespace matched the tenant blocklist.',
-      reasons: [{ action: 'deny', category: 'blocklist', message: 'Namespace matched the tenant blocklist.', policy_id: 'policy-blocklist', policy_name: 'Protected namespaces' }],
-      warnings: [],
-      evaluated_at: '2026-08-08T10:00:00Z',
-    }] })
+    if (path.endsWith('/evaluations')) {
+      if (remainingEvaluationListFailures > 0) {
+        remainingEvaluationListFailures -= 1
+        return route.fulfill({ status: 503, json: { error: 'decision history unavailable' } })
+      }
+      const search = new URL(route.request().url()).searchParams.get('search')?.trim().toLowerCase()
+      const evaluations = options.evaluations ?? evaluationOverviewFixtures.slice(0, 1)
+      return route.fulfill({
+        json: search
+          ? evaluations.filter((evaluation) => JSON.stringify(evaluation.artifact).toLowerCase().includes(search))
+          : evaluations,
+      })
+    }
     if (path.endsWith('/upstreams') && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as {
         auth?: { type?: string, username?: string }
