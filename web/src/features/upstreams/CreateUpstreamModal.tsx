@@ -58,6 +58,7 @@ function getAuthTypeOptions(draft: UpstreamDraft) {
 type CreateUpstreamModalProps = {
   open: boolean
   tenantId: string | null
+  tenantName: string | null
   draft: UpstreamDraft
   draftErrors: UpstreamDraftErrors
   currentStep: number
@@ -91,6 +92,7 @@ function formatDraftAuth(draft: UpstreamDraft): string {
 export function CreateUpstreamModal({
   open,
   tenantId,
+  tenantName,
   draft,
   draftErrors,
   currentStep,
@@ -167,7 +169,7 @@ export function CreateUpstreamModal({
       closeOnEscape={!isPending}
       closeOnOverlayClick={!isPending}
       currentStep={currentStep}
-      description="Add the registry endpoint and optional OCI credentials."
+      description="Connect a package source and choose the policy data it provides."
       dismissible={!isPending}
       footer={footer}
       initialFocusRef={initialFocusRef}
@@ -202,6 +204,7 @@ export function CreateUpstreamModal({
                 ref={initialFocusRef}
                 value={draft.name}
               />
+              <p className={upstreamClass("upstreams-field-hint")}>Use a short name your team will recognize in policy and audit views.</p>
               {draftErrors.name ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.name}</p> : null}
             </div>
 
@@ -235,6 +238,7 @@ export function CreateUpstreamModal({
                 placeholder={upstreamBaseUrlExamples[draft.ecosystem]}
                 value={draft.baseUrl}
               />
+              <p className={upstreamClass("upstreams-field-hint")}>Enter the HTTPS registry origin, without a package or image path.</p>
               {draftErrors.baseUrl ? (
                 <p className={upstreamClass("upstreams-field-error")}>{draftErrors.baseUrl}</p>
               ) : null}
@@ -257,6 +261,7 @@ export function CreateUpstreamModal({
                       />
                       <span>
                         <strong>{capability.label}</strong>
+                        <small>{capability.description}</small>
                       </span>
                     </label>
                   )
@@ -352,7 +357,8 @@ export function CreateUpstreamModal({
                 <div>
                   <dt>Tenant</dt>
                   <dd>
-                    <code>{tenantId ?? 'No tenant selected'}</code>
+                    {tenantName ?? 'No tenant selected'}
+                    {tenantId ? <small><code>{tenantId}</code></small> : null}
                   </dd>
                 </div>
                 <div>

@@ -45,16 +45,46 @@ export const tenantOverviewFixtures = [
   },
 ] as const
 
+export const upstreamOverviewFixtures = [
+  {
+    id: 'npm',
+    name: 'npm registry',
+    ecosystem: 'npm',
+    base_url: 'https://registry.npmjs.org',
+    capabilities: ['publish_time', 'licenses'],
+    supported_policy_types: ['blocklist', 'minimum_age', 'license_allowlist'],
+    auth: { configured: false, type: 'none' },
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-08T10:00:00Z',
+  },
+  {
+    id: 'oci-private',
+    name: 'Private containers',
+    ecosystem: 'oci',
+    base_url: 'https://registry.example.test',
+    capabilities: ['manifest_digest_lookup'],
+    supported_policy_types: ['blocklist', 'block_mutable_tag'],
+    auth: { configured: true, type: 'basic', username: 'robot' },
+    created_at: '2026-08-02T10:00:00Z',
+    updated_at: '2026-08-07T10:00:00Z',
+  },
+] as const
+
 type ApiFixtureOptions = {
   policies?: readonly unknown[]
   tenantListFailures?: number
   tenants?: readonly Record<string, unknown>[]
+  upstreamListFailures?: number
+  upstreams?: readonly Record<string, unknown>[]
 }
 
 export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
   const tenantFixtures: Array<Record<string, unknown>> = (options.tenants ?? tenantOverviewFixtures.slice(0, 1))
     .map((tenant) => ({ ...tenant }))
+  const upstreamFixtures: Array<Record<string, unknown>> = (options.upstreams ?? upstreamOverviewFixtures.slice(0, 1))
+    .map((upstream) => ({ ...upstream }))
   let remainingTenantListFailures = options.tenantListFailures ?? 0
+  let remainingUpstreamListFailures = options.upstreamListFailures ?? 0
 
   await page.route('**/healthz', route => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
   await page.route('**/api/v1/**', async route => {
@@ -88,8 +118,48 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
       warnings: [],
       evaluated_at: '2026-08-08T10:00:00Z',
     }] })
-    if (path.endsWith('/upstreams') && route.request().method() === 'POST') return route.fulfill({ json: { id: 'npm-internal', tenant_id: 'tenant-acme', name: 'Internal npm', ecosystem: 'npm', base_url: 'https://npm.example.test', capabilities: ['publish_time'], auth_type: 'none', created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z' } })
-    if (path.endsWith('/upstreams')) return route.fulfill({ json: [{ id: 'npm', tenant_id: 'tenant-acme', name: 'npm registry', ecosystem: 'npm', base_url: 'https://registry.npmjs.org', capabilities: ['publish_time', 'licenses'], auth_type: 'none', created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-08T10:00:00Z' }] })
+    if (path.endsWith('/upstreams') && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as {
+        auth?: { type?: string, username?: string }
+        base_url?: string
+        capabilities?: string[]
+        ecosystem?: string
+        name?: string
+      }
+      const capabilities = body.capabilities ?? []
+      const upstream = {
+        id: 'npm-internal',
+        name: body.name?.trim() || 'Internal npm',
+        ecosystem: body.ecosystem ?? 'npm',
+        base_url: body.base_url ?? 'https://npm.example.test',
+        capabilities,
+        supported_policy_types: capabilities.includes('publish_time')
+          ? ['blocklist', 'minimum_age']
+          : ['blocklist'],
+        auth: {
+          configured: Boolean(body.auth?.type && body.auth.type !== 'none'),
+          type: body.auth?.type ?? 'none',
+          ...(body.auth?.username ? { username: body.auth.username } : {}),
+        },
+        created_at: '2026-08-08T10:00:00Z',
+        updated_at: '2026-08-08T10:00:00Z',
+      }
+      upstreamFixtures.push(upstream)
+      return route.fulfill({ json: upstream })
+    }
+    if (/\/upstreams\/[^/]+$/.test(path) && route.request().method() === 'DELETE') {
+      const upstreamId = path.split('/').at(-1)
+      const upstreamIndex = upstreamFixtures.findIndex((upstream) => upstream.id === upstreamId)
+      if (upstreamIndex >= 0) upstreamFixtures.splice(upstreamIndex, 1)
+      return route.fulfill({ json: {} })
+    }
+    if (path.endsWith('/upstreams')) {
+      if (remainingUpstreamListFailures > 0) {
+        remainingUpstreamListFailures -= 1
+        return route.fulfill({ status: 503, json: { error: 'upstream inventory unavailable' } })
+      }
+      return route.fulfill({ json: upstreamFixtures })
+    }
     if (path.endsWith('/policy-types')) return route.fulfill({ json: [{ type: 'blocklist', summary: 'Block selected namespaces.', description: 'Deny packages from explicitly blocked namespaces.', help: 'Add one namespace per line.', example: 'namespaces: [blocked]', supported_actions: ['deny', 'allow'], supported_schema_versions: [1], current_schema_version: 1, supported_ecosystems: ['npm', 'oci'], required_capabilities: [] }] })
     if (path.endsWith('/policies')) return route.fulfill({ json: options.policies ?? [] })
     if (path.endsWith('/dependency-graphs/root-react')) return route.fulfill({ json: {

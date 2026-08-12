@@ -31,7 +31,7 @@ export function buildUpstreamUsageGuide(
       secondaryLabel: 'Install command',
       secondaryCode: `npm install lodash --registry ${registryUrl}`,
       note: tenantId
-        ? `This route is pinned to upstream ${upstream.id} under /npm/t/${tenantId}/u/${upstream.id}/.`
+        ? 'Use this tenant-specific route in developer and CI configuration. Dependency Firewall evaluates package requests before forwarding them to the source.'
         : 'Select a tenant to render the upstream-specific npm route.',
     }
   }
@@ -48,9 +48,9 @@ export function buildUpstreamUsageGuide(
     primaryLabel: 'docker pull',
     primaryCode: `docker pull ${upstreamHost}/library/nginx:1.25.3`,
     secondaryLabel: 'Optional mirror config',
-    secondaryCode: `{\n  "registry-mirrors": ["${mirrorOrigin}"],\n  "insecure-registries": ["${upstreamHost}"]\n}`,
+    secondaryCode: `{\n  "registry-mirrors": ["${mirrorOrigin}"]\n}`,
     note: tenantId
-      ? `This hostname is pinned to upstream ${upstream.id} as u-${upstream.id}.${tenantId}.${firewallHost}.`
+      ? 'Use this tenant-specific hostname in developer and CI configuration. Dependency Firewall evaluates image requests before forwarding them to the source.'
       : 'Select a tenant to render the upstream-specific registry hostname.',
   }
 }
