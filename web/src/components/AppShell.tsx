@@ -340,7 +340,7 @@ export function AppShell() {
           </header>
 
           <main className="content">
-            {status === 'ready' ? <Outlet /> : <div className="shell-state"><TenantShellState /></div>}
+            {status === 'ready' || location.pathname === '/tenants' ? <Outlet /> : <div className="shell-state"><TenantShellState /></div>}
           </main>
         </div>
       </div>
