@@ -130,42 +130,6 @@ export function AppShell() {
   const { activeTenant, hasTenants, isError, isLoading, setTenantId, status, tenantId, tenants } =
     useTenant()
 
-  const tenantHelperText =
-    status === 'loading'
-      ? 'Loading available tenants.'
-      : status === 'error'
-        ? 'Tenant selection returns when the workspace is available again.'
-      : status === 'empty'
-        ? 'Create a tenant to unlock scoped pages.'
-        : 'This tenant scopes the current workspace.'
-
-  const shellStatusLabel =
-    status === 'loading'
-      ? 'Loading'
-      : status === 'error'
-        ? 'Issue'
-        : status === 'empty'
-          ? 'Empty'
-          : 'Ready'
-
-  const shellStatusClassName =
-    status === 'ready'
-      ? applicationClass('status-pill', 'status-pill-success')
-      : status === 'error'
-        ? applicationClass('status-pill', 'status-pill-danger')
-        : applicationClass('status-pill', 'status-pill-neutral')
-
-  const tenantDisplayName = activeTenant?.name ?? (status === 'empty' ? 'Create a tenant' : 'Select a tenant')
-  const tenantDisplayMeta = activeTenant?.id
-    ? activeTenant.id
-    : status === 'loading'
-      ? 'Tenant list pending.'
-      : status === 'error'
-        ? 'Waiting for tenant data.'
-        : status === 'empty'
-          ? 'No tenant has been created yet.'
-        : 'Choose a tenant to continue.'
-
   useEffect(() => {
     window.localStorage.setItem(themeStorageKey, theme)
     document.documentElement.dataset.theme = resolveTheme(theme)
@@ -234,37 +198,29 @@ export function AppShell() {
               <div className={applicationClass("brand-heading")}><span className={applicationClass("brand-mark")} aria-hidden="true">DF</span><div><p className={applicationClass("eyebrow")}>Dependency Firewall</p><h1>Operations</h1></div><button className={applicationClass("mobile-nav-close")} aria-label="Close navigation" onClick={() => setNavigationOpen(false)} type="button"><X size={20}/></button></div>
             </div>
 
-            <label className={applicationClass("tenant-switcher")} htmlFor="tenant-select">
-              <div className={applicationClass("tenant-switcher-header")}>
-                <span className={applicationClass("tenant-switcher-label")}>Tenant</span>
-                <span className={shellStatusClassName}>{shellStatusLabel}</span>
+            <div className={applicationClass("tenant-switcher")}>
+              <label className={applicationClass("tenant-switcher-label")} htmlFor="tenant-select">Workspace</label>
+              <div className={applicationClass("tenant-switcher-control")}>
+                <Building2 aria-hidden="true" size={16} />
+                <select
+                  id="tenant-select"
+                  disabled={isLoading || isError || !hasTenants}
+                  value={tenantId ?? ''}
+                  onChange={(event) => setTenantId(event.target.value)}
+                >
+                  {!hasTenants ? (
+                    <option value="">
+                      {isLoading ? 'Loading tenants…' : isError ? 'Unable to load tenants' : 'No tenants'}
+                    </option>
+                  ) : null}
+                  {tenants.map((tenant) => (
+                    <option key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <select
-                id="tenant-select"
-                disabled={isLoading || isError || !hasTenants}
-                value={tenantId ?? ''}
-                onChange={(event) => setTenantId(event.target.value)}
-              >
-                {!hasTenants ? (
-                  <option value="">
-                    {isLoading ? 'Loading tenants…' : isError ? 'Unable to load tenants' : 'No tenants'}
-                  </option>
-                ) : null}
-                {tenants.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>
-                    {tenant.name}
-                  </option>
-                ))}
-              </select>
-
-              <div className={applicationClass("tenant-active")}>
-                <div className={applicationClass("stack-sm")}>
-                  <strong data-testid="active-tenant-name">{tenantDisplayName}</strong>
-                  <span className={applicationClass("tenant-meta")}>{tenantDisplayMeta}</span>
-                </div>
-                <small>{tenantHelperText}</small>
-              </div>
-            </label>
+            </div>
           </div>
 
           <nav className={applicationClass("nav-section")}>
@@ -299,7 +255,7 @@ export function AppShell() {
         <div className={applicationClass("shell-main")}>
           <header className={applicationClass("shell-utility-bar")}>
             <button className={applicationClass("mobile-nav-trigger")} aria-label="Open navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)} type="button"><Menu size={20}/></button>
-            <div className={applicationClass("utility-context")}><strong>{activeTenant?.name ?? 'Dependency Firewall'}</strong><span>Security operations console</span></div>
+            <div className={applicationClass("utility-context")}><strong data-testid="active-tenant-name">{activeTenant?.name ?? 'Dependency Firewall'}</strong><span>Security operations console</span></div>
             <div className={applicationClass("account-summary")}>
               <span className={applicationClass("account-avatar")} aria-hidden="true">
                 {accountName.slice(0, 1).toUpperCase()}

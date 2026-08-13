@@ -56,6 +56,7 @@ All reusable values belong in `web/src/ui/foundation/tokens.css`. Components mus
 - The desktop shell is a two-column grid with a 260px navigation rail and a flexible content column.
 - The rail uses viewport-sticky positioning. Ancestors of a sticky element must not introduce clipping or scrolling through `overflow: hidden`, `auto`, or `scroll` unless that ancestor is intentionally the scroll container.
 - The utility bar remains visible while route content scrolls and exposes tenant/account context without displacing the page heading.
+- The navigation rail keeps tenant switching compact: one workspace label and one selector. Tenant IDs, readiness explanations, and detailed management belong on the Tenants page rather than in persistent navigation.
 - Below 768px, navigation is a fixed drawer. Opening and closing it must work by keyboard, expose an accessible expanded state, and restore a usable focus path.
 - Route content owns vertical page growth. Avoid fixed content heights except for bounded interactive surfaces such as the graph viewport.
 - Test meaningful behavior at 390px, 768px, 1024px, and 1440px; do not infer mobile behavior solely from desktop resizing.
