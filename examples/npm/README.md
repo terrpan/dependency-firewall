@@ -1,110 +1,80 @@
 # npm proxy example
 
-This example walks through setting up the dependency firewall as an npm registry proxy for a single tenant.
+This example creates one tenant, registers `registry.npmjs.org`, and imports the six parser-valid policies in [`policy.yaml`](./policy.yaml):
 
-## What the setup script does
+- CVSS at or above 7.0;
+- packages newer than 7 days;
+- packages older than 730 days (disabled by default);
+- blocked namespaces;
+- approved SPDX licenses;
+- a positive match for internal namespaces.
 
-1. Waits for the firewall to be healthy
-2. Creates a tenant called `npm-example`
-3. Registers `registry.npmjs.org` as the upstream npm registry
-4. Imports the six policies in `policy.yaml`:
-   - **block-critical-vulnerabilities** — deny packages with CVSS > 7.0
-   - **block-brand-new-packages** — deny packages published less than 7 days ago
-   - **block-outdated-packages** — deny packages published more than 365 days ago
-   - **block-untrusted-scopes** — deny known bad npm scopes
-   - **allow-approved-licenses** — deny packages whose licenses are outside the approved SPDX list
-   - **allow-internal-packages** — unconditionally allow your own packages
+The allowlist does not exempt internal packages from deny rules. Dependency Firewall evaluates every applicable rule and any deny wins.
 
 ## Prerequisites
 
-- Firewall running (see root [README](../../README.md))
-- `curl` and `jq` installed
-- Node.js v24.11.1 or compatible (if using npm commands; see `.nvmrc`)
+- running firewall (see the root [README](../../README.md));
+- `curl` and `jq`;
+- the Node version in [`.nvmrc`](./.nvmrc) for npm commands.
 
-## Run the setup
+The public management and proxy HTTP endpoints used by this local example are not authenticated. Do not expose this topology directly.
+
+## Setup
 
 ```bash
-# Start the full stack if you haven't already
 docker compose up --build -d
-
-# Run setup (defaults to http://localhost:8080)
 chmod +x setup.sh
 ./setup.sh
+```
 
-# Or point at a different host
+Pass a different all-in-one/control-plane URL if needed:
+
+```bash
 ./setup.sh http://firewall.internal:8080
 ```
 
-The script prints your tenant ID and an `.npmrc` snippet at the end:
-
-```
-══════════════════════════════════════════════════════
-  Setup complete!
-
-  Tenant ID : 01920abc-...
-
-  To use the npm proxy, add this to your .npmrc:
-
-    registry=http://localhost:8080/npm/t/01920abc-.../
-
-  Or pass the header manually (alternative method):
-
-    curl -H "X-Tenant-ID: 01920abc-..." \
-         http://localhost:8080/npm/express
-══════════════════════════════════════════════════════
-```
-
-## Try it out
-
-```bash
-TENANT_ID="<id from setup>"
-
-# Fetch package metadata — should be allowed (express is well-established)
-curl -H "X-Tenant-ID: $TENANT_ID" http://localhost:8080/npm/express | jq .name,.version
-
-# Fetch a scoped package
-curl -H "X-Tenant-ID: $TENANT_ID" "http://localhost:8080/npm/%40types%2Fnode" | jq .name
-
-# A brand-new package will be denied (published < 7 days ago)
-# The response is a JSON error that npm displays as a 403:
-# {
-#   "error": "policy \"block-brand-new-packages\" denied: package age 0 days is below minimum 7 days"
-# }
-```
-
-## Configure npm
-
-Add to your project's `.npmrc` (or `~/.npmrc`):
+The script prints the tenant ID and writes a local `.npmrc`. With the example's single npm upstream, the tenant-only compatibility path resolves that upstream:
 
 ```ini
 registry=http://localhost:8080/npm/t/<tenant-id>/
 ```
 
-Replace `<tenant-id>` with your actual tenant ID from the setup output.
+For an explicit upstream—recommended when a tenant has more than one—use:
 
-Then normal npm commands are proxied and evaluated:
-
-```bash
-npm install express          # evaluated and passed through if allowed
-npm install some-new-package # blocked if published < 7 days ago
+```ini
+registry=http://localhost:8080/npm/t/<tenant-id>/u/<upstream-id>/
 ```
 
-## Review decisions
+## Exercise the proxy
 
 ```bash
-curl -H "X-Tenant-ID: $TENANT_ID" \
-     "http://localhost:8080/api/v1/evaluations?limit=20" | jq .
+npm install express
+
+curl -H 'X-Tenant-ID: <tenant-id>' \
+  http://localhost:8080/npm/express
 ```
 
-## Customising policies
+Bare packuments are forwarded without version-level enrichment or decision persistence. Versioned metadata, resolved dist-tags, and tarballs are evaluated.
 
-Edit `policy.yaml` and re-import to apply changes:
+## Inspect results
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/policies/import \
-  -H "Content-Type: application/x-yaml" \
-  -H "X-Tenant-ID: $TENANT_ID" \
-  --data-binary @policy.yaml | jq .
+curl -H 'X-Tenant-ID: <tenant-id>' \
+  'http://localhost:8080/api/v1/evaluations?limit=20'
+
+curl -H 'X-Tenant-ID: <tenant-id>' \
+  'http://localhost:8080/api/v1/dependency-graphs?limit=100'
 ```
 
-The import endpoint also accepts `application/json` with the same schema.
+Dependency graphs require a running graph worker or `dependency_graph.run_in_process=true`. The default all-in-one setting is false.
+
+## Re-import policies
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/policies/import \
+  -H 'Content-Type: application/x-yaml' \
+  -H 'X-Tenant-ID: <tenant-id>' \
+  --data-binary @policy.yaml
+```
+
+The endpoint also accepts JSON with the same required per-item `schema_version` field.
