@@ -6,6 +6,7 @@ import { useTenant } from '../features/tenant/useTenant.ts'
 import { docsUrl } from '../lib/config.ts'
 import { recordSpanError, startSpan } from '../lib/telemetry.ts'
 import { applicationClass } from '../ui/foundation/applicationStyles.ts'
+import { PageHeader } from '../ui/index.ts'
 
 type NavigationItem = {
   to: string
@@ -98,13 +99,7 @@ function TenantShellState() {
   if (status === 'loading') {
     return (
       <section className={applicationClass("page")}>
-        <header className={applicationClass("page-header")}>
-          <div>
-            <h2>Loading tenants</h2>
-            <p className={applicationClass("page-summary")}>Loading the tenant workspace.</p>
-          </div>
-          <span className={applicationClass("status-pill")}>Loading</span>
-        </header>
+        <PageHeader title="Loading tenants" summary="Loading the tenant workspace." actions={<span className={applicationClass("status-pill")}>Loading</span>} />
       </section>
     )
   }
@@ -112,28 +107,16 @@ function TenantShellState() {
   if (status === 'error') {
     return (
       <section className={applicationClass("page")}>
-        <header className={applicationClass("page-header")}>
-          <div>
-            <h2>Unable to load tenants</h2>
-            <p className={applicationClass("page-summary")}>{errorMessage ?? 'The tenant list is unavailable right now.'}</p>
-          </div>
-          <button className={applicationClass("secondary-button")} onClick={() => void reloadTenants()} type="button">
+        <PageHeader title="Unable to load tenants" summary={errorMessage ?? 'The tenant list is unavailable right now.'} actions={<button className={applicationClass("secondary-button")} onClick={() => void reloadTenants()} type="button">
             Retry
-          </button>
-        </header>
+          </button>} />
       </section>
     )
   }
 
   return (
     <section className={applicationClass("page")}>
-      <header className={applicationClass("page-header")}>
-        <div>
-          <h2>No tenants yet</h2>
-          <p className={applicationClass("page-summary")}>Create a tenant to start using tenant-scoped pages.</p>
-        </div>
-        <span className={applicationClass("status-pill status-pill-neutral")}>Empty</span>
-      </header>
+      <PageHeader title="No tenants yet" summary="Create a tenant to start using tenant-scoped pages." actions={<span className={applicationClass("status-pill status-pill-neutral")}>Empty</span>} />
     </section>
   )
 }

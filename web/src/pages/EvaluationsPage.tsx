@@ -12,6 +12,7 @@ import {
 import { formatTimestamp, getQueryErrorMessage, summarizeEvaluations } from '../features/evaluations/model.ts'
 import { evaluationClass } from '../features/evaluations/styles.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
+import { PageHeader } from '../ui/index.ts'
 
 export function EvaluationsPage() {
   const { activeTenant, tenantId } = useTenant()
@@ -87,16 +88,11 @@ export function EvaluationsPage() {
 
   return (
     <section className={evaluationClass('page')}>
-      <header className={evaluationClass('page-header')}>
-        <div>
-          <p className={evaluationClass('eyebrow')}>Decision history</p>
-          <h2>Evaluations</h2>
-          <p className={evaluationClass('page-summary')}>
-            See what Dependency Firewall decided for {activeTenant?.name ?? 'the selected tenant'}, which policy made the decision, and why.
-          </p>
-        </div>
-
-        <div className={evaluationClass('page-actions')}>
+      <PageHeader
+        eyebrow="Decision history"
+        title="Evaluations"
+        summary={<>See what Dependency Firewall decided for {activeTenant?.name ?? 'the selected tenant'}, which policy made the decision, and why.</>}
+        actions={<>
           {evaluationsQuery.isFetching && !evaluationsQuery.isPending ? (
             <span className={evaluationClass('status-pill status-pill-neutral')}>Refreshing</span>
           ) : null}
@@ -110,8 +106,8 @@ export function EvaluationsPage() {
               Refresh
             </button>
           ) : null}
-        </div>
-      </header>
+        </>}
+      />
 
       {evaluationsQuery.isSuccess && evaluations.length > 0 ? (
         <section className={evaluationClass('evaluations-overview')} aria-labelledby="evaluation-overview-title">

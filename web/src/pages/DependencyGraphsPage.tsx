@@ -5,6 +5,7 @@ import { normalizeGraph, normalizeGraphRoots, useDependencyGraph, useDependencyG
 import { QueryStateNotice, SummaryMetrics } from '../features/evaluations/components.tsx'
 import { useTenant } from '../features/tenant/useTenant.ts'
 import { graphClass } from '../features/dependency-graphs/styles.ts'
+import { PageHeader } from '../ui/index.ts'
 
 type GraphNode = NonNullable<DependencyGraph['nodes']>[number]
 type GraphEdge = NonNullable<DependencyGraph['edges']>[number]
@@ -327,15 +328,11 @@ export function DependencyGraphsPage() {
 
   return (
     <section className={graphClass('page dependency-graphs-page')}>
-      <header className={graphClass('page-header')}>
-        <div>
-          <p className={graphClass('eyebrow')}>Resolved supply chain</p>
-          <h2>Dependency graphs</h2>
-          <p className={graphClass('page-summary')}>
-            Trace which packages {activeTenant?.name ?? 'the selected tenant'} installs directly and which arrive through other dependencies.
-          </p>
-        </div>
-        <div className={graphClass('page-actions')}>
+      <PageHeader
+        eyebrow="Resolved supply chain"
+        title="Dependency graphs"
+        summary={<>Trace which packages {activeTenant?.name ?? 'the selected tenant'} installs directly and which arrive through other dependencies.</>}
+        actions={<>
           <span className={graphClass('status-pill status-pill-neutral')}>
             {rootsQuery.isPending
               ? 'Loading roots'
@@ -355,8 +352,8 @@ export function DependencyGraphsPage() {
               Refresh
             </button>
           ) : null}
-        </div>
-      </header>
+        </>}
+      />
 
       {rootsQuery.isPending ? (
         <QueryStateNotice title="Loading dependency graphs" message="Fetching observed install roots for this tenant." />

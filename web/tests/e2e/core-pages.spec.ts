@@ -2,6 +2,49 @@ import { expect, installApi, installAuth, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page) })
 
+test('uses one page-header hierarchy across every route', async ({ page }) => {
+  const routes = [
+    ['/', 'Dashboard'],
+    ['/tenants', 'Tenants'],
+    ['/upstreams', 'Upstreams'],
+    ['/policies', 'Policies'],
+    ['/evaluations', 'Evaluations'],
+    ['/dependency-graphs', 'Dependency graphs'],
+    ['/missing-route', 'Page not found'],
+  ] as const
+
+  let referenceStyle: { fontSize: string; letterSpacing: string; lineHeight: string } | undefined
+
+  for (const [route, title] of routes) {
+    await page.goto(route)
+    const heading = page.getByRole('heading', { name: title, exact: true })
+    await expect(heading).toBeVisible()
+    await expect(heading).toHaveJSProperty('tagName', 'H2')
+
+    const style = await heading.evaluate((element) => {
+      const computed = getComputedStyle(element)
+      return {
+        fontSize: computed.fontSize,
+        letterSpacing: computed.letterSpacing,
+        lineHeight: computed.lineHeight,
+      }
+    })
+
+    referenceStyle ??= style
+    expect(style).toEqual(referenceStyle)
+  }
+
+  if (test.info().project.name === 'desktop-chromium') {
+    for (const width of [1024, 768]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/policies')
+      const heading = page.getByRole('heading', { name: 'Policies', exact: true })
+      await expect(heading).toBeVisible()
+      await expect.poll(() => heading.evaluate((element) => getComputedStyle(element.closest('header')!).display)).toBe('grid')
+    }
+  }
+})
+
 test('tenant inventory supports selection and creation', async ({ page }) => {
   await page.goto('/tenants')
   await expect(page.getByRole('heading', { name: 'Tenants' })).toBeVisible()

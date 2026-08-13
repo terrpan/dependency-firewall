@@ -7,13 +7,6 @@
   align-items: center;
 }
 
-.policies-header-status {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
 .policy-section-meta,
 .policy-list-tools,
 .policy-filter-row,
@@ -878,7 +871,6 @@
     align-items: stretch;
   }
 
-  .policies-header-status,
   .policy-list-tools,
   .policy-list-item-actions {
     justify-content: flex-start;

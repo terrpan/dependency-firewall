@@ -33,6 +33,7 @@ import { buildUpstreamUsageGuide } from '../features/upstreams/usage.ts'
 import { upstreamClass } from '../features/upstreams/styles.ts'
 import { firewallRootUrl } from '../lib/config.ts'
 import type { Upstream } from '../lib/api/types.ts'
+import { PageHeader } from '../ui/index.ts'
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
@@ -279,15 +280,11 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
 
   return (
     <section className={upstreamClass("page")}>
-      <header className={upstreamClass("page-header")}>
-        <div>
-          <p className={upstreamClass("eyebrow")}>Registry configuration</p>
-          <h2>Upstreams</h2>
-          <p className={upstreamClass("page-summary")}>
-            Connect package sources for {tenantName ?? 'this tenant'}, then copy the client setup that routes installs through the firewall.
-          </p>
-        </div>
-        <div className={upstreamClass("upstreams-actions")}>
+      <PageHeader
+        eyebrow="Registry configuration"
+        title="Upstreams"
+        summary={<>Connect package sources for {tenantName ?? 'this tenant'}, then copy the client setup that routes installs through the firewall.</>}
+        actions={<>
           <span className={upstreamClass("status-pill status-pill-neutral")}>
             {upstreamsQuery.isPending
               ? 'Loading sources'
@@ -310,8 +307,8 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
               Refresh
             </button>
           ) : null}
-        </div>
-      </header>
+        </>}
+      />
 
       <div className={upstreamClass('upstreams-layout', !selectedUpstream && 'upstreams-layout-empty')}>
         <UpstreamsListPanel

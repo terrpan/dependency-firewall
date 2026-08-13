@@ -25,6 +25,7 @@ import {
 import { asTypedPolicy, type Evaluation, type TypedPolicy, type Upstream } from '../lib/api/index.ts'
 import { sortPolicies } from '../features/policies/display.ts'
 import { dashboardClass } from '../features/dashboard/styles.ts'
+import { PageHeader } from '../ui/index.ts'
 
 type AttentionItem = {
   key: string
@@ -244,15 +245,11 @@ export function DashboardPage() {
 
   return (
     <section className={dashboardClass("page")}>
-      <header className={dashboardClass("page-header")}>
-        <div>
-          <p className={dashboardClass("eyebrow")}>Protection overview</p>
-          <h2>Dashboard</h2>
-          <p className={dashboardClass("page-summary")}>
-            See what is protected, what was blocked, and what needs your attention for {activeTenant?.name ?? 'the selected tenant'}.
-          </p>
-        </div>
-        <div className={dashboardClass("page-actions")}>
+      <PageHeader
+        eyebrow="Protection overview"
+        title="Dashboard"
+        summary={<>See what is protected, what was blocked, and what needs your attention for {activeTenant?.name ?? 'the selected tenant'}.</>}
+        actions={<>
           {recentEvaluationsQuery.isFetching || upstreamsQuery.isFetching || policiesQuery.isFetching ? (
             <span className={dashboardClass("status-pill")}>Refreshing</span>
           ) : null}
@@ -262,8 +259,8 @@ export function DashboardPage() {
           <Link className={dashboardClass("route-link")} to="/evaluations">
             Review all decisions
           </Link>
-        </div>
-      </header>
+        </>}
+      />
 
       <SummaryMetrics items={summaryMetrics} />
 

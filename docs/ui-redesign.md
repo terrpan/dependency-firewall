@@ -84,6 +84,7 @@ The supported internal import surface is `web/src/ui/index.ts`:
 - `foundation` owns tokens, typography, theme values, reset, motion, and breakpoints.
 - `primitives` owns Button, IconButton, Badge, Panel, Field, Input, Select, Checkbox, Tabs, Tooltip, and Dialog.
 - `patterns` owns PageHeader, Toolbar, MetricGrid, ResourceList, DefinitionList, FilterBar, EmptyState, and AsyncState.
+- Every route and route-level loading, empty, or error state uses `PageHeader` for its eyebrow, `h2` title, summary, and actions. Routes must not recreate page-header typography or responsive layout in feature CSS.
 
 UI code accepts data, callbacks, slots, native attributes, and renderable content. It must not import APIs, React Query, the router, tenant state, auth providers, or feature modules. Application composition belongs in layouts; domain behavior belongs in features. CSS Modules are the default for primitives, patterns, components, and features. Global CSS is limited to tokens, font declarations, reset, and document defaults after route migration is complete.
 

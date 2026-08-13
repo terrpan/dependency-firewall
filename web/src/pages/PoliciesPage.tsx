@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Suspense, lazy, useMemo, useState } from 'react'
+import { PageHeader } from '../ui/index.ts'
 import {
   isApiError,
   asTypedPolicy,
@@ -856,13 +857,11 @@ export function PoliciesPage() {
 
   return (
     <section className={policyClass("page")}>
-      <header className={policyClass("page-header")}>
-        <div>
-          <p className={policyClass("eyebrow")}>Policy control plane</p>
-          <h2>Policies</h2>
-          <p className={policyClass("page-summary")}>See what each rule does, where it applies, and whether it is enforcing.</p>
-        </div>
-        <div className={policyClass("page-actions policies-header-status")}>
+      <PageHeader
+        eyebrow="Policy control plane"
+        title="Policies"
+        summary="See what each rule does, where it applies, and whether it is enforcing."
+        actions={<>
           <span className={policyClass("status-pill status-pill-neutral")}>{policies.length} policies</span>
           <span
             className={policyClass('status-pill', enforcingPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral')}
@@ -872,8 +871,8 @@ export function PoliciesPage() {
           {dryRunPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-warning")}>{dryRunPoliciesCount} dry run</span> : null}
           {disabledPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-neutral")}>{disabledPoliciesCount} disabled</span> : null}
           {policyTypesQuery.isError ? <span className={policyClass("status-pill status-pill-neutral")}>Fallback metadata</span> : null}
-        </div>
-      </header>
+        </>}
+      />
 
       <div className={policyClass("policies-layout")}>
         <PolicyListPanel
