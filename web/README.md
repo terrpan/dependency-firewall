@@ -37,7 +37,6 @@ The dev server proxies `/api` requests to `VITE_DEV_PROXY_TARGET` (default `http
 
 - `VITE_API_BASE_URL` - control-plane REST base URL. Defaults to `/api/v1`.
 - `VITE_DOCS_URL` - docs endpoint. Defaults to `/api/docs`.
-- `VITE_OPENAPI_URL` - OpenAPI JSON endpoint. Defaults to `/api/openapi.json`.
 - `VITE_DEV_PROXY_TARGET` - Vite dev proxy target. Defaults to `http://localhost:8080`.
 - `VITE_FIREWALL_ROOT_URL` - explicit firewall root used for npm and OCI client examples. Defaults to `http://localhost:8080` in local web development.
 - `VITE_OTEL_ENABLED` - enable browser OpenTelemetry tracing. Defaults to `false`.

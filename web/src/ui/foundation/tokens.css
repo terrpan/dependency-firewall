@@ -27,7 +27,6 @@
   --focus-ring: 0 0 0 3px rgb(50 101 138 / 25%);
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
-  --page-max-width: 1600px;
   --space-page: 24px;
   --space-layout: 20px;
   --space-card: 18px;
@@ -35,12 +34,10 @@
   --space-item: 14px;
 
   /* Semantic application tokens shared by route-level CSS Modules. */
-  --shell-frame-background: var(--color-surface);
   --side-nav-background: var(--color-graphite-950);
   --shell-main-background: var(--color-canvas);
   --topbar-background: var(--color-surface);
   --card-background: var(--color-surface);
-  --side-card-background: var(--color-surface-subtle);
   --surface: var(--color-surface);
   --surface-muted: var(--color-surface-subtle);
   --surface-highlight: var(--color-surface-muted);
@@ -59,7 +56,6 @@
   --warning-surface: var(--color-warning-soft);
   --warning-border: color-mix(in srgb, var(--color-warning) 35%, transparent);
   --warning-text: var(--color-warning);
-  --warning-chart: var(--color-warning);
   --border-soft: var(--color-border);
   --border-strong: var(--color-border-strong);
   --text-strong: var(--color-text);

@@ -92,6 +92,7 @@ test('uses consistent colors for equivalent actions', async ({ page }) => {
   await page.getByLabel('Tenant name').fill('Platform Engineering')
   await page.getByRole('button', { name: 'Review details' }).click()
   const createTenant = page.getByRole('button', { name: 'Create tenant' })
+  await page.mouse.move(0, 0)
   const primaryColors = await createTenant.evaluate(element => {
     const style = getComputedStyle(element)
     return { background: style.backgroundColor, border: style.borderColor, color: style.color }

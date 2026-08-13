@@ -1,15 +1,5 @@
 /* Policy feature styles. */
-.policies-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 12px;
-  align-items: center;
-}
-
-.policy-section-meta,
 .policy-list-tools,
-.policy-filter-row,
 .policy-current-header,
 .policy-current-actions {
   display: flex;
@@ -17,7 +7,6 @@
   gap: 12px;
 }
 
-.policy-section-meta,
 .policy-list-tools,
 .policy-current-header,
 .policy-history-actions,
@@ -33,7 +22,6 @@
 }
 
 .policy-list-card,
-.policy-history-card,
 .policy-preview-card,
 .policy-current-card,
 .policy-history-item,
@@ -46,10 +34,6 @@
 .policy-diff-lines {
   display: grid;
   gap: var(--space-item);
-}
-
-.policy-history-card {
-  min-height: 0;
 }
 
 .policies-layout {
@@ -143,10 +127,6 @@
   color: var(--text-muted);
 }
 
-.policy-filter-row {
-  align-items: center;
-}
-
 .policy-detail-tabs {
   display: grid;
   grid-auto-flow: column;
@@ -180,32 +160,6 @@
 .policy-detail-tab:focus-visible {
   outline: 2px solid rgba(56, 189, 248, 0.55);
   outline-offset: 2px;
-}
-
-.policy-filter-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 9px 12px;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.policy-filter-button span {
-  color: var(--text-strong);
 }
 
 .policy-card-action {
@@ -249,22 +203,6 @@
 }
 
 .policy-card-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.policy-filter-button.active {
-  border-color: var(--accent-border);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.28);
-  transform: translateY(-1px);
-}
-
-.policy-filter-button:focus-visible {
-  outline: 2px solid rgba(56, 189, 248, 0.55);
-  outline-offset: 2px;
-}
-
-.policy-filter-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -838,8 +776,6 @@
     grid-auto-columns: 1fr;
   }
 
-  .policies-header-actions,
-  .policy-section-meta,
   .policy-section-heading,
   .policy-preview-header,
   .policy-current-header,

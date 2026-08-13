@@ -414,5 +414,3 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
 }
 
 export type ControlPlaneApi = ReturnType<typeof createControlPlaneApi>
-
-export const controlPlaneApi = createControlPlaneApi()

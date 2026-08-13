@@ -1,4 +1,4 @@
-export { createControlPlaneApi, controlPlaneApi, type ControlPlaneApi } from './client.ts'
+export { createControlPlaneApi, type ControlPlaneApi } from './client.ts'
 export { ApiError, isApiError } from './error.ts'
 export {
   asTypedPolicy,

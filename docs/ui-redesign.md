@@ -45,7 +45,7 @@ All reusable values belong in `web/src/ui/foundation/tokens.css`. Components mus
 
 ### Spacing, shape, and density
 
-- Use foundation spacing tokens and the shared `Panel`, `ResourceList`, `MetricGrid`, and `DefinitionList` patterns before adding one-off layout values.
+- Use foundation spacing tokens and the shared `Panel`, `ResourceList`, and feature-level summary or definition patterns before adding one-off layout values.
 - One-pixel borders and modest radii are the default. Pills are reserved for badges, compact filters, and statuses.
 - Primary actions appear once per local decision area. Secondary actions must not compete visually with the primary action.
 - Action color is semantic across routes: steel blue advances or creates, neutral surfaces cancel, refresh, or navigate, and restrained red identifies destructive actions.
@@ -84,8 +84,8 @@ All reusable values belong in `web/src/ui/foundation/tokens.css`. Components mus
 The supported internal import surface is `web/src/ui/index.ts`:
 
 - `foundation` owns tokens, typography, theme values, reset, motion, and breakpoints.
-- `primitives` owns Button, IconButton, Badge, Panel, Field, Input, Select, Checkbox, Tabs, Tooltip, and Dialog.
-- `patterns` owns PageHeader, Toolbar, MetricGrid, ResourceList, DefinitionList, FilterBar, EmptyState, and AsyncState.
+- `primitives` owns the currently shared Button, Badge, Panel, Field, and Input controls. Add another primitive only when a real route consumes it; do not keep speculative exports.
+- `patterns` owns the currently shared PageHeader, ResourceList, EmptyState, and AsyncState compositions. ModalDialog and ModalWizard remain shared application components until their contracts are moved behind the package-ready UI boundary.
 - Every route and route-level loading, empty, or error state uses `PageHeader` for its eyebrow, `h2` title, summary, and actions. Routes must not recreate page-header typography or responsive layout in feature CSS.
 
 UI code accepts data, callbacks, slots, native attributes, and renderable content. It must not import APIs, React Query, the router, tenant state, auth providers, or feature modules. Application composition belongs in layouts; domain behavior belongs in features. CSS Modules are the default for primitives, patterns, components, and features. Global CSS is limited to tokens, font declarations, reset, and document defaults after route migration is complete.

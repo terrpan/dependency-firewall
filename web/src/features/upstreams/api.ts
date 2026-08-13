@@ -295,20 +295,6 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
   }
 }
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
-
-export function formatUpstreamTimestamp(value: string): string {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    return value
-  }
-
-  return dateFormatter.format(parsed)
-}
-
 export function sortUpstreams(upstreams: readonly Upstream[]): Upstream[] {
   return [...upstreams].sort(
     (left, right) =>
