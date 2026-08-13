@@ -3,11 +3,14 @@ runtime:
 
 server:
   port: 8080
-  read_timeout: 30s
+  # Five seconds is the runtime default. Increase deliberately for slower clients.
+  read_timeout: 5s
   write_timeout: 0s
   idle_timeout: 120s
 
 oci_cache:
+  # Consumed by proxy routes in proxy/all-in-one modes. Disk is the only
+  # implemented backend. Selecting s3 or gcs currently fails startup.
   enabled: false
   backend: disk
   root_dir: "/tmp/dependency-firewall/oci"
@@ -15,11 +18,13 @@ oci_cache:
   max_age: 0s
   max_entries: 0
   s3:
+    # Reserved future configuration; not an active backend.
     bucket: ""
     prefix: ""
     region: ""
     endpoint: ""
   gcs:
+    # Reserved future configuration; not an active backend.
     bucket: ""
     prefix: ""
 
@@ -32,7 +37,8 @@ database:
   conn_max_lifetime: 5m
 
 valkey:
-  # Used by the valkey-go client; the endpoint/password/db config stays the same.
+  # Used by all-in-one, control-plane, and proxy modes. The graph worker does
+  # not connect to Valkey.
   addr: "localhost:6379"
   password: ""
   db: 0
@@ -53,6 +59,9 @@ telemetry:
   sample_ratio: 1.0
   stdout: false
   headers: {}
+  sql_tracing:
+    trim_sql_in_span_name: true
+    disable_sql_statement_in_attributes: true
 
 audit:
   enabled: true
@@ -62,7 +71,13 @@ audit:
   detail_level: summary
 
 health:
+  # Control-plane split mode only: optionally check the separate proxy health.
   proxy_url: ""
+
+secrets:
+  # Optional base64-encoded 32-byte AES key for OCI upstream credentials.
+  # Keep the same protected value across control-plane restarts.
+  upstream_auth_key: ""
 
 dependency_graph:
   # Resolver jobs normally run in runtime.mode=dependency-graph-worker, where the
@@ -80,12 +95,15 @@ dependency_graph:
   retry_delay: 5m
 
 bundle:
+  # listen_addr and authorized_clients are control-plane settings.
+  # control_plane_addr is used by proxy and graph-worker modes.
   listen_addr: ":9090"
   control_plane_addr: "127.0.0.1:9090"
   refresh_interval: 30s
   tls:
-    # Split control-plane/proxy mode should use mtls. all-in-one local
-    # development can keep insecure because bundle and ingest stay in-process.
+    # Proxy and graph-worker modes require mtls. Control-plane mode also
+    # requires mtls unless allow_insecure_control_plane is explicitly enabled
+    # for local development. all-in-one keeps these adapters in-process.
     mode: insecure
     ca_file: ""
     cert_file: ""

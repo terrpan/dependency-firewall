@@ -49,7 +49,7 @@ The examples below use DNS SANs because they are easy to issue and understand in
 
 ## Control-plane config
 
-The control plane listens for bundle and ingest gRPC on `bundle.listen_addr`. In split deployments, `bundle.tls.mode` should be `mtls`, and `bundle.tls.authorized_clients` must map client certificate identities to tenant IDs.
+The control plane listens for bundle and ingest gRPC on `bundle.listen_addr`. In split deployments, `bundle.tls.mode` must be `mtls`, and `bundle.tls.authorized_clients` must map client certificate identities to tenant IDs. The only exception is the explicit `allow_insecure_control_plane` local-development override described below.
 
 This config belongs in the control-plane process/container. It needs the CA bundle, the control-plane server certificate/key, and the list of proxy identities that may access tenants.
 

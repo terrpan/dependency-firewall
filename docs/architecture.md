@@ -1,488 +1,178 @@
 # Architecture
 
-## Goal
+## Purpose
 
-Build a multi-tenant dependency firewall that acts as a policy-aware proxy for npm and OCI registries.
+Dependency Firewall is a multi-tenant policy enforcement proxy for software package and artifact traffic. The system separates management, local request-path evaluation, durable state, and ecosystem-specific background work while shipping those compositions from one Go binary. The currently implemented protocols and their limits are listed in [`supported-ecosystems.md`](./supported-ecosystems.md).
 
-## Top-level shape
+This document is the canonical runtime, boundary, and API-responsibility overview. Protocol behavior belongs in [`proxy-behavior.md`](./proxy-behavior.md), policy semantics in [`policy-engine.md`](./policy-engine.md), state ownership in [`persistence.md`](./persistence.md), and transport identity in [`mtls.md`](./mtls.md).
 
-The system supports four runtime modes in one codebase:
+## Runtime topology
 
-1. Proxy mode
-   - registry-compatible proxy endpoints for package managers
-   - npm and OCI protocol adapters
-   - local request-path evaluation backed by cached tenant bundles
+| Mode | Responsibilities | Direct dependencies |
+| --- | --- | --- |
+| `control-plane` | Management HTTP API; OpenAPI/docs; bundle and ingest gRPC; migrations; durable repositories | PostgreSQL, Valkey; Node/npm only for an explicitly enabled in-process graph worker |
+| `proxy` | Supported ecosystem HTTP routes; bundle-backed evaluation; proxy health | Valkey, control-plane gRPC, upstream registries |
+| `all-in-one` | Control-plane and proxy HTTP on one mux; local bundle/ingest adapters | PostgreSQL, Valkey; Node/npm only for an explicitly enabled in-process graph worker |
+| `dependency-graph-worker` | Claim, resolve, complete, and fail npm graph jobs | Node/npm, upstream npm registry, control-plane gRPC |
 
-2. Control-plane mode
-   - management API for policies, policy rollback/history, upstreams, evaluations, audit events, and cache maintenance
-   - intended for UI and automation
-   - the React UI consumes generated TypeScript types from the Huma/OpenAPI document
-   - Huma is used only on control-plane endpoints where code explicitly uses it
-   - serves gRPC bundles for proxies
-   - owns durable npm dependency graph storage and resolver job APIs
-
-The client-rendered React/Vite console is an authenticated control-plane client rather than a separate server-rendered runtime. It consumes generated OpenAPI types, preserves route-level lazy loading, and accesses authentication and tenant state through application-owned provider boundaries. Its reusable UI system is dependency-free with respect to domain features and is documented in [`ui-redesign.md`](./ui-redesign.md).
-
-3. All-in-one mode
-   - local-development composition of the same control-plane and proxy boundaries
-
-4. Dependency-graph-worker mode
-   - isolated npm resolver process
-   - claims graph jobs and submits results through control-plane gRPC
-   - only runtime that needs Node/npm in split deployments
-   - does not receive PostgreSQL credentials
-   - uses the `bundle` config only for mTLS transport to the control plane, not for tenant bundle delivery
+`dependency_graph.run_in_process` defaults to `false`. All-in-one mode therefore needs either a separate worker or explicit in-process enablement to consume queued graph jobs.
 
 ## System context
 
 ```mermaid
 flowchart LR
-    developer[Developer / CI]
-    operator[Operator / UI / Automation]
-
-    developer -->|npm / docker / oci pull| dataplane[Proxy mode]
-    operator -->|HTTP API| controlplane[Control plane]
-
-    subgraph firewall[dependency-firewall]
-        controlplane --> bundle[delivery/bundlegrpc]
-        controlplane --> ingest[delivery/ingestgrpc]
-        dataplane --> deliveryProxy[delivery/npm + delivery/oci]
-        controlplane --> deliveryAPI[delivery/api]
-        bundle --> core
-        ingest --> core
-        deliveryProxy --> core[core services + policy engine]
-        deliveryProxy --> ociProxy[cache-backed OCI proxy path]
-        deliveryAPI --> core
-        controlplane --> postgres[(PostgreSQL)]
-        core --> valkey[(Valkey)]
-        graphWorker[npm dependency graph worker] --> ingest
-        graphWorker --> upstreams
-        ociProxy --> ociCache[(tenant/upstream-aware OCI artifact cache)]
-        core --> osv[OSV API]
-        core --> scorecard[Scorecard API]
-        deliveryProxy --> ingest
-        ociProxy --> upstreams[upstream registries]
-    end
+    browser[React/Vite SPA] -->|HTTP management API| cp[Control plane]
+    operator[Automation / operators] -->|HTTP management API| cp
+    clients[Ecosystem clients] -->|Artifact traffic| proxy[Proxy]
+    proxy <-->|mTLS bundle + ingest gRPC| cp
+    worker[Dependency graph worker] -->|mTLS ingest gRPC| cp
+    cp --> pg[(PostgreSQL)]
+    cp --> vk[(Valkey)]
+    proxy --> vk
+    proxy --> registries[Upstream registries]
+    worker --> registries
+    proxy --> enrichers[OSV / Scorecard]
+    proxy --> ocicache[(OCI disk cache)]
 ```
+
+The SPA is built and served independently. The Go server does not expose `web/dist`, and Compose does not currently deploy a web service.
+
+## Security boundaries
+
+### Internal gRPC
+
+Split proxy and worker connections to the control plane require mTLS. The control plane extracts the client certificate identity and authorizes the `tenant_id` associated with each RPC through `bundle.tls.authorized_clients`.
+
+Bundle secrets for authenticated OCI upstreams are encrypted to the requesting proxy certificate. Worker claim and watch requests carry `dependency_graph.tenant_id`; the control plane authorizes that scope against the worker certificate and filters claims and wake-up notifications by tenant. The default `"*"` scope preserves global-worker behavior and requires wildcard certificate authorization.
+
+### Public HTTP
+
+Management and proxy HTTP routes do not currently validate bearer tokens or enforce roles. Tenant middleware resolves tenant context from API headers or ecosystem-specific routing, but that is routing and scoping—not proof that a caller may act for the tenant.
+
+The SPA provides a provider-neutral authentication adapter, token attachment in the API client, and UI guard/state seams. Its default adapter is anonymous and current route guards do not require a session. Real IdP integration, Go JWT/JWKS validation, RBAC, and user-to-tenant membership enforcement remain future work. Deploy public HTTP behind a trusted network or an external authenticated gateway.
 
 ## Internal layers
 
 ### Delivery
-- HTTP handlers
-- npm and OCI protocol parsing
-- npm and OCI proxy routes stay on plain `net/http` handlers
-- OCI proxy delivery may resolve tenant identity from the request hostname for Docker-compatible traffic
-- npm delivery may resolve upstream identity from `/npm/t/{tenant_id}/u/{upstream_id}/...`
-- OCI delivery may resolve upstream identity from `u-{upstream_id}.{tenant_id}.{firewall-host}`
-- OCI delivery should support both direct registry-hostname usage in hosted deployments and optional Docker mirror usage for transparent local development
-- bundle gRPC delivery is control-plane only and serves proxy-ready tenant bundles
-- ingest gRPC delivery is control-plane only and persists proxy-emitted decisions and audit events
-- ingest gRPC delivery also accepts idempotent async npm dependency graph resolve requests from split-mode proxies
-- bundle and ingest gRPC use mTLS in split control-plane/proxy mode
-- control-plane gRPC authorizes proxy certificate identities against tenant IDs before serving bundles or accepting ingest writes
-- protocol-specific response rendering
-- control-plane request DTO parsing and response DTO rendering
-- Huma may be used on control-plane routes for OpenAPI/docs generation and typed request/response modeling
-- Huma remains control-plane only
-- the current Huma-backed control-plane set includes health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, audit-event listing, decision-cache clearing, and upstream CRUD
-- boundary request validation
-- handlers call core services, not repositories or parser packages
+
+Delivery owns HTTP/gRPC parsing, protocol behavior, boundary validation, and response rendering. Huma is limited to the control-plane API. Current ecosystem adapters use `net/http` handlers.
+
+Handlers normally orchestrate through core services. Some current delivery components receive repository ports directly for read-oriented workflows, including dependency-graph inspection and bundle-backed proxy lookups. The stable boundary is that delivery must not depend on concrete infrastructure implementations or issue direct SQL/Valkey operations; new business workflows should live in core services.
 
 ### Core
-- request normalization
-- policy evaluation
-- enrichment orchestration
-- npm dependency context lookup and async graph resolve enqueue orchestration
-- tenant-aware decision making
-- upstream-aware policy selection
-- upstream capability compatibility validation for policy authoring and upstream updates
-- control-plane business workflows
-- audit event emission and audit-query workflows
-- typed domain and policy config models
-- shared ports named in protocol-neutral terms where used across ecosystems
+
+Core owns artifact normalization, enrichment planning, policy evaluation, cache-aware access decisions, graph-context orchestration, policy lifecycle, audit workflows, and protocol-neutral ports. Policy evaluation is pure and deny-wins.
 
 ### Infrastructure
-- PostgreSQL repositories
-- PostgreSQL dependency graph and resolver job repository
-- encrypted upstream auth secret storage for OCI registry credentials
-- Valkey cache implementations
-- Valkey dependency context cache implementation
-- tenant and upstream-aware OCI artifact cache implementations
-- OSV and Scorecard-backed enrichers
-- upstream registry clients
-- OpenTelemetry exporters and transport instrumentation
-- gRPC bundle and ingest client adapters for proxy pulls and write-back
 
-## Layered component view
+Infrastructure implements PostgreSQL repositories, Valkey caches, bundle-backed repositories, gRPC clients, OCI disk caching, registry clients, enrichers, encryption, and telemetry adapters. It must not contain policy or HTTP behavior.
 
-```mermaid
-flowchart TB
-    subgraph delivery[delivery]
-        npmDelivery[npm registry handler]
-        ociDelivery[oci registry handler]
-        apiDelivery[control-plane API handlers]
-        middleware[tenant + logging + recovery middleware]
-    end
+## Control-plane HTTP API
 
-    subgraph core[core]
-        accessService[AccessService]
-        policyService[PolicyService]
-        upstreamService[UpstreamService]
-        tenantService[TenantService]
-        evaluationService[EvaluationService]
-        auditService[AuditService]
-        enrichmentService[EnrichmentService]
-        evaluator[policy evaluator + conditions]
-    end
+The control plane publishes OpenAPI at `/api/openapi` and interactive documentation at `/api/docs`. Registered Huma operations are authoritative.
 
-    subgraph infrastructure[infrastructure]
-        pgRepos[PostgreSQL repositories]
-        bundleRuntime[bundle-backed runtime repos]
-        auditSinks[audit sinks]
-        valkeyCache[Valkey caches]
-        upstreamClients[upstream clients]
-        cachedOCI[cache-backed OCI client]
-        ociCache[tenant/upstream-aware OCI artifact cache]
-        ociStorage[disk backend today / future S3 or GCS]
-        enrichers[OSV + npm/Scorecard enrichers]
-        grpcClients[gRPC bundle + ingest clients]
-    end
+| Resource | Operations |
+| --- | --- |
+| Health | health operation registered by the control-plane health handler |
+| Tenants | create, list, get, update, delete under `/api/v1/tenants` |
+| Upstreams | create, list, get, update, delete under `/api/v1/upstreams` |
+| Policies | create, list, get, update, delete under `/api/v1/policies` |
+| Policy lifecycle | list `/api/v1/policy-types`; import `/api/v1/policies/import`; list versions and rollback under `/api/v1/policies/{id}` |
+| Evaluations | list `/api/v1/evaluations` |
+| Audit events | list `/api/v1/audit/events` |
+| Caches | clear decision or metadata cache through `/api/v1/cache/decisions` and `/api/v1/cache/metadata` |
+| Dependency graphs | list `/api/v1/dependency-graphs`; get `/api/v1/dependency-graphs/{id}` |
 
-    middleware --> npmDelivery
-    middleware --> ociDelivery
-    middleware --> apiDelivery
+Audit-event browsing is API-only today; the SPA has no audit route.
 
-    npmDelivery --> accessService
-    ociDelivery --> accessService
-    apiDelivery --> policyService
-    apiDelivery --> upstreamService
-    apiDelivery --> tenantService
-    apiDelivery --> evaluationService
-    apiDelivery --> auditService
+## Internal gRPC responsibilities
 
-    accessService --> enrichmentService
-    accessService --> evaluator
-    accessService --> bundleRuntime
-    accessService --> auditSinks
-    accessService --> valkeyCache
-    accessService --> upstreamClients
-    policyService --> pgRepos
-    upstreamService --> pgRepos
-    tenantService --> pgRepos
-    evaluationService --> pgRepos
-    auditService --> pgRepos
-    enrichmentService --> valkeyCache
-    enrichmentService --> enrichers
-    ociDelivery --> cachedOCI
-    cachedOCI --> ociCache
-    cachedOCI --> upstreamClients
-    ociCache --> ociStorage
-    bundleRuntime --> grpcClients
-    auditSinks --> grpcClients
-```
+Wire constants and DTOs live under `internal/wire`; this inventory intentionally documents responsibilities rather than duplicating schemas.
 
-## Dependency direction
+### Bundle service
 
-- delivery depends on core
-- infrastructure depends on core ports and domain
-- core depends on neither delivery nor infrastructure
+- `GetTenantBundle`: return the tenant, enabled policies, upstreams, revision, and proxy-ready upstream auth envelopes for one authorized tenant.
 
-## Split-mode control-plane security
+### Proxy ingest service
 
-Split mode treats the proxy/control-plane gRPC connection as a tenant data boundary. mTLS authenticates both processes, then the control plane authorizes the proxy certificate identity for the requested tenant before serving bundles or accepting ingest writes. When bundles contain upstream auth secrets, delivery encrypts each secret to the requesting proxy certificate public key; proxy-side bundle infrastructure keeps the envelope in the runtime cache, and OCI upstream infrastructure decrypts it only while constructing outbound registry auth.
+- decision persistence and reads: `RecordDecision`, `GetDecisionByArtifact`, `ListDecisionsByTenant`, `HasRecentAllow`
+- audit persistence: `RecordAuditEvent`
+- graph queue lifecycle: `EnqueueDependencyGraphResolve`, `ClaimDependencyGraphResolve`, `CompleteDependencyGraphResolve`, `FailDependencyGraphResolve`, `WatchDependencyGraphResolve`
+- graph lookup: `LookupDependencyGraphContext`
 
-```mermaid
-flowchart LR
-    proxy[Proxy runtime]
-    cert[Proxy client certificate identity]
-    tls[mTLS transport]
-    authz[bundle.tls.authorized_clients]
-    bundle[Bundle service]
-    ingest[Ingest service]
-    tenantA[Tenant A runtime data]
-    tenantB[Tenant B runtime data]
+`HasRecentAllow` supports the OCI blob gate. Its current identity excludes `upstream_id`; see the documented constraint in [`proxy-behavior.md`](./proxy-behavior.md).
 
-    proxy --> cert
-    cert --> tls
-    tls --> authz
-    authz -->|allowed tenant_id| bundle
-    authz -->|allowed tenant_id| ingest
-    bundle --> tenantA
-    ingest --> tenantA
-    authz -.->|deny cross-tenant request| tenantB
-```
+## Request-path policy flow
 
-The authorization decision uses the decoded RPC request's `tenant_id`: bundle requests use the requested tenant, and ingest requests use the tenant embedded in the decision or audit payload. Delivery packages own extraction from their wire request types; the shared gRPC infrastructure only enforces the configured identity-to-tenant map. Bundle secret encryption stays in `internal/delivery/bundlegrpc`, while hybrid crypto primitives live in `internal/infra/secrets` and proxy-side decryption lives in `internal/infra/upstream`.
+For an enforceable artifact, the proxy:
 
-## Control-plane Huma boundary
+1. Resolves tenant and upstream context.
+2. Normalizes the artifact and resolves ecosystem-specific mutable references when necessary.
+3. Loads enabled policies from the cached tenant bundle.
+4. Looks up ecosystem-specific dependency context when an applicable target-aware policy needs it; this is currently implemented for npm.
+5. Computes cache identity and checks the decision cache.
+6. Runs only enrichment required by applicable policies.
+7. Evaluates every applicable rule in deterministic priority order.
+8. Persists/caches the decision and emits audit events.
 
-### In scope
+Any matching deny wins. Allow rules do not bypass a later deny. Evaluation errors fail closed. Priority determines ordering and which deny reason is surfaced first, not override precedence.
 
-- control-plane API delivery only
-- OpenAPI/docs generation at the HTTP boundary
-- typed request and response models for the control-plane endpoints that use Huma
-- current Huma-backed control-plane endpoints include health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, audit-event listing, decision-cache clearing, and upstream CRUD
-- per-endpoint Huma coverage remains explicit and human-controlled
+Bare npm packuments have no enforceable version and deliberately skip enrichment, decision caching, and decision persistence. OCI blobs do not rerun this flow; they require a recent manifest-level allow for the repository.
 
-### Out of scope
+## Bundle availability
 
-- npm delivery
-- OCI delivery
-- assuming every control-plane endpoint uses Huma
-- assuming every future control-plane endpoint must use Huma automatically
-- core service signatures or domain models
-- infrastructure repositories, caches, enrichers, or upstream clients
+The split proxy caches bundles in process and refreshes them on demand after `bundle.refresh_interval`. When refresh fails, an existing bundle is used as last-known-good; a tenant with no cached bundle cannot be served.
 
-## Observability
+This cache protects policy/upstream reads only. Decision and audit writes remain synchronous ingest dependencies for uncached requests, subject to configured audit failure behavior. Do not describe bundle caching as complete control-plane outage independence.
 
-- OpenTelemetry tracing is a cross-cutting runtime concern that stays outside core policy logic.
-- Delivery boundaries should propagate W3C trace context across HTTP and gRPC.
-- Core services may add business spans and span events for evaluation, enrichment, cache, and audit stages.
-- Infrastructure clients may instrument PostgreSQL, Valkey, OSV, and upstream registry calls.
-- Local development may use Aspire as the OTLP dashboard; this does not change runtime layering or introduce Prometheus requirements.
+## npm dependency graph architecture
 
-Huma is a delivery-layer tool. It must not move policy logic, tenant workflows, or persistence concerns out of core and infrastructure. Endpoint coverage stays human-controlled and must reflect explicit code changes, not inferred drift from shared helpers or documentation alone.
-
-## Boundary rules
-
-- delivery must not decode API payloads directly into domain models
-- YAML and JSON are boundary formats only; decode them into typed request DTOs and typed policy config structs before core workflows run
-- delivery and config packages may use declarative validators for boundary shape checks, but core invariants must stay explicit in typed domain validation
-- delivery must not call PostgreSQL or Valkey implementations directly
-- delivery must not orchestrate multi-step policy import or evaluation workflows
-- delivery must not expose raw PostgreSQL or Valkey errors to API clients; infrastructure errors should be translated to domain-safe errors and logged server-side
-- core types must not carry JSON response tags for delivery concerns
-- core policy config must use typed structs per policy type, not `map[string]any`
-- approved-license policies must keep missing license metadata behavior explicit; `license_allowlist` schema v1 is fail-closed and schema v2 makes unlicensed vs unavailable-metadata handling configurable
-- shared ports in core must avoid ecosystem-specific names such as manifest, blob, or tag unless the port is OCI-only
-- OCI artifact cache ports may be OCI-specific, but cache ownership, lookup, and lifecycle must remain scoped by `tenant_id` and `upstream_id` across the full app lifecycle
-
-## Data-plane evaluation flow
+The implemented graph subsystem resolves root npm package versions asynchronously:
 
 ```mermaid
 sequenceDiagram
-    participant client as Package manager
-    participant delivery as delivery/npm or delivery/oci
-    participant access as core.AccessService
-    participant dcache as Valkey decision cache
-    participant graph as dependency context cache / queue
-    participant enrich as core.EnrichmentService
-    participant bundle as tenant bundle provider
-    participant ingest as control-plane proxy ingest service
-    participant audit as audit sinks
-    participant ocicache as OCI artifact cache
-    participant upstream as upstream client
+    participant P as Proxy
+    participant C as Control plane
+    participant W as Worker
+    participant N as npm registry
 
-    client->>delivery: proxy request
-    delivery->>delivery: parse protocol request + resolve tenant_id + upstream_id
-    delivery->>audit: record request_received
-    delivery->>access: Evaluate(access request)
-    access->>access: normalize artifact identity
-    access->>bundle: load tenant bundle
-    bundle-->>access: policies + upstreams
-    access->>access: filter policies by upstream scope
-    access->>access: compute policy-set SHA-256
-    opt npm concrete version and target-aware policies enabled
-        access->>graph: lookup dependency context
-        alt graph miss
-            graph->>ingest: enqueue async resolve request
-            graph-->>access: unknown context
-        else graph hit
-            graph-->>access: direct/transitive context
-        end
-    end
-    access->>dcache: lookup decision by artifact + context hash
-
-    alt decision cache hit
-        dcache-->>access: cached decision
-        access->>audit: record cache hit
-    else decision cache miss
-        opt enabled policies require external metadata
-            access->>enrich: load metadata
-            enrich-->>access: metadata
-            access->>audit: record enrichment result
-        end
-        access->>access: evaluate policies
-        access->>dcache: store decision
-        access->>ingest: record decision with policy_hash
-        access->>audit: record matched policies + final decision
-    end
-
-    alt deny
-        access-->>delivery: deny decision
-        delivery->>audit: record denied response
-        delivery-->>client: protocol-specific denied response
-    else allow
-        access-->>delivery: allow decision
-        delivery->>audit: record allowed response
-        delivery->>ocicache: lookup tenant + upstream scoped digest entry
-        alt cache hit
-            ocicache-->>delivery: cached response stream
-        else cache miss
-            delivery->>audit: record upstream fetch
-            delivery->>upstream: fetch metadata/content
-            upstream-->>delivery: upstream response stream
-            delivery->>ocicache: opportunistic tenant + upstream scoped cache fill
-        end
-        delivery-->>client: registry-compatible response
-    end
+    P->>C: enqueue root (metadata miss or audit inference)
+    C-->>W: watch wake-up
+    W->>C: claim next job
+    W->>N: npm install in ephemeral workspace
+    W->>C: complete nodes/edges/hash or fail with retry time
+    P->>C: lookup dependency context
 ```
 
-## Control-plane flow
+PostgreSQL stores roots, nodes, edges, and context summaries. The worker uses a temporary workspace, disables scripts/audit/funding/git dependencies, and applies concurrency and timeout bounds. This is process/workspace isolation, not an OS or container sandbox.
 
-```mermaid
-sequenceDiagram
-    participant operator as UI / automation
-    participant api as delivery/api
-    participant service as core service
-    participant parser as core policy parser
-    participant repo as PostgreSQL repository
-    participant revisions as PostgreSQL policy revisions
-    participant dcache as Valkey decision cache
+Five-second polling is the fallback to the watch stream. Failed work retries indefinitely after a fixed delay. There is no attempt cap, dead-letter state, completed-root refresh, or invalidation API. See [`async-npm-dependency-graph.md`](./async-npm-dependency-graph.md).
 
-    operator->>api: POST /api/v1/policies/import
-    api->>api: parse content type + tenant_id header
-    api->>service: ImportPolicies(tenant_id, body)
-    service->>parser: parse + convert YAML or JSON
-    parser-->>service: typed domain policies
-    service->>repo: create tenant-scoped policies
-    repo-->>service: persisted policies
-    service->>repo: list tenant policies
-    service->>service: compute policy-set SHA-256
-    service->>revisions: persist tenant policy revision
-    service->>dcache: invalidate tenant decision generation
-    service-->>api: import result
-    api-->>operator: JSON response DTO
-```
+Project/environment-scoped uploaded graphs, revisions, and activation are a distinct possible future model; they are not a remaining phase of this resolver.
 
-## Main runtime flow
+## Deployment constraints
 
-1. Request enters delivery layer.
-2. Delivery resolves tenant and normalizes the request.
-3. Proxy refreshes the tenant bundle on demand when its cached copy is stale.
-4. Core evaluates access using the decision cache, effective policies, and enrichment only when a matched enabled policy needs metadata.
-5. Proxy persists durable decision and audit records through the control-plane ingestion boundary.
-6. If denied, delivery renders a protocol-specific error.
-7. If allowed, OCI delivery checks the tenant and upstream-aware artifact cache by digest before going upstream.
-8. On OCI cache miss, delivery streams content from upstream while opportunistically filling the cache.
+- Split `proxy` and `dependency-graph-worker` modes require mTLS.
+- Control-plane mode requires mTLS unless the explicit insecure local-development override is enabled.
+- Only control-plane/all-in-one open PostgreSQL and run migrations.
+- The proxy uses Valkey but no PostgreSQL.
+- The worker uses neither PostgreSQL nor Valkey.
+- Only the worker, or a process running it in-process, needs Node/npm.
+- OCI artifact caching supports only the disk backend; selecting `s3` or `gcs` fails startup.
+- OCI is currently GET-only/pull-only and does not authenticate client registry requests.
 
-## Audit logging rules
+## Telemetry
 
-- audit logging uses typed events emitted from delivery and core, not ad hoc text logs
-- core decides **when** evaluation audit events are emitted
-- infrastructure decides **where** audit events are written
-- phase 1 writes audit events to both:
-  - structured `slog`
-  - control-plane durable persistence backed by PostgreSQL `audit_events`
-- request correlation uses a human-readable `X-Request-ID`
-- audit sink failure is configurable and defaults to fail-closed
-- future external shipping must remain compatible with tenant-scoped routing without changing core service signatures
+All modes can emit OpenTelemetry spans. Instrumentation covers public HTTP, internal gRPC, PostgreSQL, Valkey, enrichment, upstream registry calls, core evaluation, and audit workflows. The browser can create route spans and propagate trace context through the shared API client.
 
-### Future audit performance
+## Future directions
 
-Durable audit writes currently sit on the request path. In split proxy mode, each persisted audit event can require proxy-side fanout, a gRPC ingest call to the control plane, and an individual PostgreSQL insert. This preserves strict fail-closed behavior, but it can add avoidable latency on high-volume OCI pulls where one client operation fans out into manifest and blob requests.
+The following are possible, not committed roadmap promises:
 
-Future optimization should preserve OCI/security semantics while reducing request-path work:
-
-- keep critical audit events synchronous when `audit.failure_mode=fail_closed`, especially request denials, authorization denials, security errors, and durable decision persistence failures
-- move informational lifecycle events such as request received, evaluation started, artifact normalized, policies loaded, request allowed, and upstream fetch started to async audit, tracing, or sampled logging
-- add a bounded in-process async audit queue for non-critical events, with explicit backpressure behavior instead of unbounded goroutines
-- batch proxy-to-control-plane audit ingest and PostgreSQL writes so one pull does not create one gRPC round trip and one insert per audit event
-- avoid duplicate hot-path sinks by allowing durable PostgreSQL audit without also writing every audit event to stdout
-
-Any async mode must document its loss/backpressure behavior and should remain opt-in for deployments that require strict audit durability before a request can proceed.
-
-## Deferred goal: graph-backed npm dependency context
-
-This is a **future goal**, not part of the current v1 delivery scope.
-
-### Problem
-
-The current npm flow is artifact-local:
-
-- delivery parses `package@version`
-- core evaluates one artifact at a time
-- policy does not know whether the artifact is direct, transitive, prod, dev, peer, or optional
-
-That keeps the hot path simple, but it limits how age and governance policies behave for transitive dependencies.
-
-### Recommended future direction
-
-Use a **project-scoped resolved dependency graph** as the source of truth for npm dependency context:
-
-- control plane accepts a lockfile or resolved graph upload per tenant_id + project + environment
-- PostgreSQL stores graph revisions, nodes, edges, and activation state
-- core derives a normalized dependency context per artifact within the active graph
-- delivery/npm stays thin and passes tenant + project + environment + artifact to core
-- Valkey caches active graph pointers, normalized artifact context summaries, and decisions
-
-### Future control-plane shape
-
-Recommended future capabilities:
-
-- upload a graph revision for a tenant_id + project + environment
-- list graph revisions
-- activate a graph revision
-- inspect graph-derived artifact context for audit and debugging
-
-### Future policy shape
-
-If this is implemented, policy schema should evolve with a shared selector block rather than package-specific allowlists:
-
-```yaml
-- name: block-stale-direct-deps
-  type: maximum_age
-  schema_version: 2
-  action: deny
-  priority: 25
-  target:
-    dependency_scope: [direct]
-    dependency_types: [prod, peer]
-    on_unknown: warn
-  config:
-    max_age_days: 730
-```
-
-### Cache and persistence impact
-
-PostgreSQL would become the source of truth for graph state:
-
-- `dependency_graph_revisions`
-- `dependency_graph_nodes`
-- `dependency_graph_edges`
-- activation state per tenant_id + project + environment
-
-Valkey would keep hot runtime lookups only:
-
-- active graph pointer
-- normalized artifact context summary per graph revision
-- decision cache keys that include policy generation + graph revision + context hash
-
-### Performance rules
-
-This design is only acceptable if the expensive work happens **off the request path**:
-
-- parse and normalize the graph at upload or activation time
-- precompute a small artifact context summary for runtime use
-- never walk dependency edges in PostgreSQL during normal npm tarball or metadata requests
-- never recompute direct vs transitive classification per request
-
-### Why deferred
-
-This would improve correctness for transitive dependency policy, but it adds:
-
-- more PostgreSQL storage
-- more Valkey memory
-- lower decision cache reuse
-- more operational complexity around project and environment identity
-
-Current direction:
-
-- keep v1 artifact-local
-- keep package-level exceptions small and explicit
-- revisit graph-backed evaluation when project-scoped dependency enforcement becomes a higher priority
-
-## Extension guides
-
-- Policy extension guide: `docs/adding-policy-type.md`
-- Upstream and ecosystem extension guide: `docs/adding-upstream.md`
+- client authentication, scoped firewall tokens, CLI/OIDC login, and registry-native challenges
+- IdP adapter integration, backend JWT/JWKS validation, RBAC, and organization mapping
+- S3/GCS OCI cache implementations
+- OCI Scorecard/license enrichment with explicit source provenance
+- asynchronous or batched audit persistence and external shipping
+- project-scoped graph upload/revision/activation
+- SSR only if public content or measured first-render requirements justify it
