@@ -54,7 +54,7 @@ export type ControlPlaneApiOptions = {
   rootUrl?: string
   fetch?: typeof globalThis.fetch
   getTenantId?: () => string | undefined
-  getSessionHeaders?: () => RequestHeaders
+  getAccessToken?: () => Promise<string | null>
   getHeaders?: () => RequestHeaders
 }
 
@@ -89,7 +89,11 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
   }: InternalRequestOptions<TBody>): Promise<TResponse> {
     const requestBaseUrl = scope === 'root' ? rootUrl : baseUrl
     const url = buildRequestUrl(requestBaseUrl, path, query)
-    const requestHeaders = mergeHeaders(options.getSessionHeaders?.(), options.getHeaders?.(), headers)
+    const accessToken = await options.getAccessToken?.()
+    const requestHeaders = mergeHeaders(options.getHeaders?.(), headers)
+    if (accessToken) {
+      requestHeaders.set('Authorization', `Bearer ${accessToken}`)
+    }
     const resolvedTenantId = tenantId ?? options.getTenantId?.()
     const normalizedPath = normalizeTracePath(path)
     const span = startSpan(`${method} ${normalizedPath}`, {

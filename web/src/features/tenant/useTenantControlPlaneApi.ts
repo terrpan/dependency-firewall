@@ -4,15 +4,15 @@ import { useAuth } from '../auth/useAuth.ts'
 import { useTenant } from './useTenant.ts'
 
 export function useTenantControlPlaneApi() {
-  const { getSessionHeaders } = useAuth()
+  const { getAccessToken } = useAuth()
   const { tenantId } = useTenant()
 
   return useMemo(
     () =>
       createControlPlaneApi({
         getTenantId: () => tenantId ?? undefined,
-        getSessionHeaders,
+        getAccessToken,
       }),
-    [getSessionHeaders, tenantId],
+    [getAccessToken, tenantId],
   )
 }
