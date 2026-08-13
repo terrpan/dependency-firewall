@@ -65,6 +65,12 @@ SaaS requests require an active external Organization. Personal-account sessions
 
 Authentication failures return `401`, known-scope permission denials return `403`, and forged or foreign resource identifiers return `404` without revealing whether the resource exists.
 
+Control-plane deployments select `auth.mode=clerk` and configure the server-only
+`auth.clerk.secret_key`, exact issuer and audience, and an allowlist of authorized
+browser origins. The optional `auth.clerk.jwt_key` pins a public verification key;
+otherwise the adapter caches Clerk JWKs and refreshes once on key rotation. The SPA
+uses only `VITE_CLERK_PUBLISHABLE_KEY`; the Clerk secret is never exposed to Vite.
+
 ### Session bootstrap and reconciliation
 
 `POST /api/v1/session/bootstrap` synchronously establishes the Tenant identity link and Principal after an account is created or activated. Webhooks reconcile changes, mark revocations, update names/status, and apply pending local assignments after invitation acceptance; webhook delivery is never an onboarding dependency.

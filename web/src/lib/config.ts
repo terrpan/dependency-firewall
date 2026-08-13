@@ -99,6 +99,7 @@ export const firewallRootUrl = trimTrailingSlash(
   ),
 )
 export const docsUrl = readEnv('VITE_DOCS_URL', joinUrlPath(controlPlaneRootUrl, '/api/docs'))
+export const clerkPublishableKey = readEnv('VITE_CLERK_PUBLISHABLE_KEY', '')
 export const telemetryEnabled = readBooleanEnv('VITE_OTEL_ENABLED', false)
 export const telemetryExporterUrl = readEnv(
   'VITE_OTEL_EXPORTER_URL',

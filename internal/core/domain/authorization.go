@@ -46,6 +46,16 @@ type AuthenticatedPrincipal struct {
 	ExternalAccountID string
 }
 
+// VerifiedIdentity is the provider-neutral result of human session verification.
+// It contains external identifiers only; local Tenant and Principal resolution is separate.
+type VerifiedIdentity struct {
+	Provider          string
+	Subject           string
+	ExternalAccountID string
+	TenantRole        TenantRole
+	SessionID         string
+}
+
 type AuthorizationScope struct {
 	TenantID       string
 	OrganizationID string

@@ -38,6 +38,7 @@ type dependencies struct {
 	organizationMembers  port.OrganizationMembershipRepository
 	teamRepo             port.TeamRepository
 	teamMembers          port.TeamMembershipRepository
+	sessionBootstrap     port.SessionBootstrapRepository
 	policyRepo           port.PolicyRepository
 	policyRevisionRepo   port.PolicyRevisionRepository
 	decisionRepo         port.DecisionRepository
@@ -141,6 +142,7 @@ func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
 	d.organizationMembers = postgres.NewOrganizationMembershipRepository(d.pool)
 	d.teamRepo = postgres.NewTeamRepository(d.pool)
 	d.teamMembers = postgres.NewTeamMembershipRepository(d.pool)
+	d.sessionBootstrap = postgres.NewSessionBootstrapRepository(d.pool)
 	d.policyRepo = postgres.NewPolicyRepository(d.pool)
 	d.policyRevisionRepo = postgres.NewPolicyRevisionRepository(d.pool)
 	d.decisionRepo = postgres.NewDecisionRepository(d.pool)

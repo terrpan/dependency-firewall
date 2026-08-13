@@ -4,8 +4,10 @@ go 1.26.1
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/clerk/clerk-sdk-go/v2 v2.7.0
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/exaring/otelpgx v0.10.0
+	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.1

@@ -17,6 +17,7 @@ import (
 	npmdelivery "github.com/danielterry/dependency-firewall/internal/delivery/npm"
 	ocidelivery "github.com/danielterry/dependency-firewall/internal/delivery/oci"
 	bundleinfra "github.com/danielterry/dependency-firewall/internal/infra/bundle"
+	clerkinfra "github.com/danielterry/dependency-firewall/internal/infra/clerk"
 	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
 )
 
@@ -27,9 +28,6 @@ func registerControlPlaneRoutes(
 	logger *slog.Logger,
 	info BuildInfo,
 ) error {
-	if cfg.Auth.Mode == "clerk" {
-		return fmt.Errorf("registering control-plane routes: auth.mode=clerk requires the Clerk adapter")
-	}
 	if cfg.Auth.Mode == "" || cfg.Auth.Mode == "disabled" {
 		logger.Error("SECURITY: human control-plane authentication is disabled; compatibility mode must not be exposed publicly")
 	}
@@ -64,7 +62,7 @@ func registerControlPlaneRoutes(
 	apidelivery.NewHealthHandler(healthService, logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	tenantService := service.NewTenantService(deps.tenantRepo)
-	sessionService := service.NewSessionService(deps.tenantRepo, deps.organizationRepo)
+	sessionService := service.NewSessionService(deps.tenantRepo, deps.organizationRepo, deps.organizationMembers)
 	policyService := service.NewPolicyService(
 		deps.policyRepo,
 		deps.policyRevisionRepo,
@@ -89,8 +87,32 @@ func registerControlPlaneRoutes(
 		parseAuditDetailLevel(cfg.Audit.DetailLevel),
 	)
 
+	var sessionBootstrapService *service.SessionBootstrapService
+	if cfg.Auth.Mode == "clerk" {
+		authenticator, err := clerkinfra.NewAuthenticator(cfg.Auth.Clerk)
+		if err != nil {
+			return fmt.Errorf("registering control-plane routes: %w", err)
+		}
+		directory := clerkinfra.NewDirectory(cfg.Auth.Clerk.SecretKey, telemetry.WrapHTTPClient(newOutboundHTTPClient(10*time.Second)))
+		sessionBootstrapService = service.NewSessionBootstrapService(directory, deps.sessionBootstrap)
+		identityService := service.NewIdentityService(deps.tenantIdentityLinks, deps.principalRepo)
+		authorizationService := service.NewAuthorizationService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers)
+		controlPlaneAPI.UseMiddleware(middleware.HumanAuthentication(
+			controlPlaneAPI, authenticator, identityService, authorizationService, directory,
+			func(operationID string) (middleware.HumanOperationPolicy, bool) {
+				policy, ok := apidelivery.ControlPlaneOperationPolicy(operationID)
+				return middleware.HumanOperationPolicy{
+					AuthenticationRequired: policy.AuthenticationRequired,
+					Permission:             policy.Permission,
+					Bootstrap:              policy.Bootstrap,
+					FreshMembership:        policy.FreshMembership,
+				}, ok
+			},
+		))
+	}
+
 	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewSessionHandler(sessionService, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewSessionHandler(sessionService, logger, sessionBootstrapService).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewCacheHandler(cacheService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)

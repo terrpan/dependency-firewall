@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
+	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
 // TenantHandler handles tenant CRUD endpoints.
@@ -107,6 +108,9 @@ type tenantListOutput struct {
 }
 
 func (h *TenantHandler) create(ctx context.Context, input *createTenantInput) (*tenantOutput, error) {
+	if _, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated {
+		return nil, huma.Error403Forbidden("accounts are provisioned through session bootstrap")
+	}
 	resp, err := h.createTenant(ctx, input.Body)
 	if err != nil {
 		return nil, err
@@ -118,6 +122,13 @@ func (h *TenantHandler) list(ctx context.Context, _ *struct{}) (*tenantListOutpu
 	ctx, cancel := withControlPlaneReadTimeout(ctx)
 	defer cancel()
 
+	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated {
+		tenant, err := h.tenants.GetByID(ctx, principal.TenantID)
+		if err != nil {
+			return nil, humaInternalError(ctx, h.logger, "listing active account", err, "failed to list account")
+		}
+		return &tenantListOutput{Body: toTenantsResponse([]domain.Tenant{*tenant})}, nil
+	}
 	tenants, err := h.tenants.List(ctx)
 	if err != nil {
 		return nil, humaInternalError(ctx, h.logger, "listing tenants", err, "failed to list tenants")
@@ -128,6 +139,9 @@ func (h *TenantHandler) list(ctx context.Context, _ *struct{}) (*tenantListOutpu
 func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantOutput, error) {
 	ctx, cancel := withControlPlaneReadTimeout(ctx)
 	defer cancel()
+	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated && input.ID != principal.TenantID {
+		return nil, huma.Error404NotFound("tenant not found")
+	}
 
 	tenant, err := h.tenants.GetByID(ctx, input.ID)
 	if err != nil {
@@ -148,6 +162,9 @@ func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantO
 }
 
 func (h *TenantHandler) update(ctx context.Context, input *updateTenantInput) (*tenantOutput, error) {
+	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated && input.ID != principal.TenantID {
+		return nil, huma.Error404NotFound("tenant not found")
+	}
 	resp, err := h.updateTenant(ctx, input.ID, input.Body)
 	if err != nil {
 		return nil, err
@@ -156,6 +173,9 @@ func (h *TenantHandler) update(ctx context.Context, input *updateTenantInput) (*
 }
 
 func (h *TenantHandler) delete(ctx context.Context, input *tenantIDInput) (*struct{}, error) {
+	if _, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated {
+		return nil, huma.Error403Forbidden("self-service account deletion is disabled")
+	}
 	if err := h.tenants.Delete(ctx, input.ID); err != nil {
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			return nil, huma.Error404NotFound("tenant not found")

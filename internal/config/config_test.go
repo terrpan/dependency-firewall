@@ -26,6 +26,37 @@ func TestConfigValidate(t *testing.T) {
 		assert.Contains(t, err.Error(), "auth.mode")
 	})
 
+	t.Run("clerk auth requires verification settings", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Auth.Mode = "clerk"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "auth.clerk.issuer")
+	})
+
+	t.Run("clerk auth accepts explicit JWT verification key", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Auth = AuthConfig{Mode: "clerk", Clerk: AuthClerkConfig{
+			SecretKey:         "sk_test_example",
+			JWTKey:            "verification-key",
+			Issuer:            "https://clerk.example.test",
+			Audience:          "dependency-firewall",
+			AuthorizedParties: []string{"https://console.example.test"},
+		}}
+
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("proxy does not require human Clerk secrets", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Runtime.Mode = RuntimeModeProxy
+		cfg.Bundle.TLS = validProxyTLSConfig()
+		cfg.Auth.Mode = "clerk"
+
+		require.NoError(t, cfg.Validate())
+	})
+
 	t.Run("invalid server port fails", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Server.Port = 0

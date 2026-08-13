@@ -5,30 +5,33 @@ import "github.com/danielterry/dependency-firewall/internal/core/domain"
 type OperationAuthorizationPolicy struct {
 	AuthenticationRequired bool
 	Permission             domain.Permission
+	Bootstrap              bool
+	FreshMembership        bool
 }
 
 var controlPlaneOperationPolicies = map[string]OperationAuthorizationPolicy{
 	"get-health":             {},
 	"get-session":            {AuthenticationRequired: true, Permission: domain.PermissionAccountRead},
+	"bootstrap-session":      {AuthenticationRequired: true, Permission: domain.PermissionAccountRead, Bootstrap: true},
 	"create-tenant":          {AuthenticationRequired: true, Permission: domain.PermissionOrganizationsCreate},
 	"list-tenants":           {AuthenticationRequired: true, Permission: domain.PermissionAccountRead},
 	"get-tenant":             {AuthenticationRequired: true, Permission: domain.PermissionAccountRead},
-	"update-tenant":          {AuthenticationRequired: true, Permission: domain.PermissionAccountManage},
-	"delete-tenant":          {AuthenticationRequired: true, Permission: domain.PermissionAccountDelete},
-	"create-policy":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite},
+	"update-tenant":          {AuthenticationRequired: true, Permission: domain.PermissionAccountManage, FreshMembership: true},
+	"delete-tenant":          {AuthenticationRequired: true, Permission: domain.PermissionAccountDelete, FreshMembership: true},
+	"create-policy":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite, FreshMembership: true},
 	"list-policies":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesRead},
 	"get-policy":             {AuthenticationRequired: true, Permission: domain.PermissionPoliciesRead},
-	"update-policy":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite},
-	"delete-policy":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesDelete},
+	"update-policy":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite, FreshMembership: true},
+	"delete-policy":          {AuthenticationRequired: true, Permission: domain.PermissionPoliciesDelete, FreshMembership: true},
 	"list-policy-versions":   {AuthenticationRequired: true, Permission: domain.PermissionPoliciesRead},
-	"rollback-policy":        {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite},
+	"rollback-policy":        {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite, FreshMembership: true},
 	"list-policy-types":      {AuthenticationRequired: true, Permission: domain.PermissionPoliciesRead},
-	"import-policies":        {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite},
-	"create-upstream":        {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsWrite},
+	"import-policies":        {AuthenticationRequired: true, Permission: domain.PermissionPoliciesWrite, FreshMembership: true},
+	"create-upstream":        {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsWrite, FreshMembership: true},
 	"list-upstreams":         {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsRead},
 	"get-upstream":           {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsRead},
-	"update-upstream":        {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsWrite},
-	"delete-upstream":        {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsDelete},
+	"update-upstream":        {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsWrite, FreshMembership: true},
+	"delete-upstream":        {AuthenticationRequired: true, Permission: domain.PermissionUpstreamsDelete, FreshMembership: true},
 	"list-evaluations":       {AuthenticationRequired: true, Permission: domain.PermissionEvaluationsRead},
 	"list-audit-events":      {AuthenticationRequired: true, Permission: domain.PermissionAuditRead},
 	"clear-decision-cache":   {AuthenticationRequired: true, Permission: domain.PermissionCacheInvalidate},

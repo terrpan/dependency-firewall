@@ -40,7 +40,20 @@ type Config struct {
 
 // AuthConfig selects the human control-plane authentication adapter.
 type AuthConfig struct {
-	Mode string `mapstructure:"mode" validate:"omitempty,oneof=disabled clerk"`
+	Mode  string          `mapstructure:"mode" validate:"omitempty,oneof=disabled clerk"`
+	Clerk AuthClerkConfig `mapstructure:"clerk"`
+}
+
+// AuthClerkConfig holds Clerk control-plane session verification settings.
+// SecretKey is server-only and must never be exposed to the SPA; JWTKey is an
+// optional pinned public verification key.
+type AuthClerkConfig struct {
+	SecretKey         string        `mapstructure:"secret_key"`
+	JWTKey            string        `mapstructure:"jwt_key"`
+	Issuer            string        `mapstructure:"issuer"`
+	Audience          string        `mapstructure:"audience"`
+	AuthorizedParties []string      `mapstructure:"authorized_parties"`
+	Leeway            time.Duration `mapstructure:"leeway" validate:"gte=0"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
@@ -252,6 +265,12 @@ func setDefaults(v *viper.Viper) {
 func setRuntimeServerDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.mode", string(RuntimeModeAllInOne))
 	v.SetDefault("auth.mode", "disabled")
+	v.SetDefault("auth.clerk.secret_key", "")
+	v.SetDefault("auth.clerk.jwt_key", "")
+	v.SetDefault("auth.clerk.issuer", "")
+	v.SetDefault("auth.clerk.audience", "")
+	v.SetDefault("auth.clerk.authorized_parties", []string{})
+	v.SetDefault("auth.clerk.leeway", 5*time.Second)
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.read_timeout", 5*time.Second)
 	v.SetDefault("server.write_timeout", 0)
@@ -343,6 +362,9 @@ func (c *Config) Validate() error {
 	if err := configValidator.Struct(c); err != nil {
 		return fmt.Errorf("invalid config: %s", validation.ErrorMessage(err))
 	}
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
 	if err := c.validateDatabase(); err != nil {
 		return err
 	}
@@ -368,6 +390,25 @@ func (c *Config) Validate() error {
 		return err
 	}
 	return c.validateBundleClient()
+}
+
+func (c *Config) validateAuth() error {
+	if c.Auth.Mode != "clerk" || c.Runtime.Mode == RuntimeModeProxy || c.Runtime.Mode == RuntimeModeDependencyGraphWorker {
+		return nil
+	}
+	if strings.TrimSpace(c.Auth.Clerk.Issuer) == "" {
+		return fmt.Errorf("invalid config: field %q is required when auth.mode is %q", "auth.clerk.issuer", "clerk")
+	}
+	if strings.TrimSpace(c.Auth.Clerk.Audience) == "" {
+		return fmt.Errorf("invalid config: field %q is required when auth.mode is %q", "auth.clerk.audience", "clerk")
+	}
+	if len(c.Auth.Clerk.AuthorizedParties) == 0 {
+		return fmt.Errorf("invalid config: field %q requires at least one value when auth.mode is %q", "auth.clerk.authorized_parties", "clerk")
+	}
+	if strings.TrimSpace(c.Auth.Clerk.SecretKey) == "" {
+		return fmt.Errorf("invalid config: field %q is required when auth.mode is %q", "auth.clerk.secret_key", "clerk")
+	}
+	return nil
 }
 
 func (c *Config) validateDatabase() error {

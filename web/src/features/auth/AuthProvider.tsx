@@ -3,7 +3,7 @@ import { AuthContext, type AuthContextValue } from './context.ts'
 import { localAuthAdapter, type AuthAdapter } from './adapter.ts'
 
 export function AuthProvider({ children, adapter = localAuthAdapter }: PropsWithChildren<{ adapter?: AuthAdapter }>) {
-  const snapshot = adapter.getSnapshot()
+	const snapshot = adapter.useSnapshot()
   const session = snapshot.session
 
   const getAccessToken = useCallback(() => snapshot.getAccessToken(), [snapshot])

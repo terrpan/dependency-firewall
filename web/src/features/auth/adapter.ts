@@ -10,7 +10,7 @@ export type AuthSnapshot = {
   accountControl?: ReactNode
 }
 
-export type AuthAdapter = { getSnapshot: () => AuthSnapshot }
+export type AuthAdapter = { useSnapshot: () => AuthSnapshot }
 
 declare global {
   interface Window {
@@ -22,7 +22,7 @@ declare global {
 }
 
 export const localAuthAdapter: AuthAdapter = {
-  getSnapshot() {
+	useSnapshot() {
     const testAuth = typeof window === 'undefined' ? undefined : window.__DEPENDENCY_FIREWALL_TEST_AUTH__
     if (testAuth?.state === 'authenticated') {
       return {

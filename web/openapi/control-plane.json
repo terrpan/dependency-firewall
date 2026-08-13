@@ -79,6 +79,30 @@
         ],
         "type": "object"
       },
+      "BootstrapSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/SessionPrincipalResponse"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantResponse"
+          },
+          "tenant_role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "principal",
+          "tenant_role",
+          "created"
+        ],
+        "type": "object"
+      },
       "CacheClearResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2526,6 +2550,87 @@
           }
         },
         "summary": "Get the active session",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/api/v1/session/bootstrap": {
+      "post": {
+        "description": "Synchronously establishes the local account and Principal projection after fresh provider membership verification.",
+        "operationId": "bootstrap-session",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapSessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Bootstrap the active session",
         "tags": [
           "session"
         ]

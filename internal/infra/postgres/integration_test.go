@@ -5,6 +5,7 @@ package postgres_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -371,6 +372,69 @@ func TestIdentityRepositories_CreateLinkAndResolve(t *testing.T) {
 		ExternalID: "different_external_account",
 	}
 	require.ErrorIs(t, linkRepo.Create(ctx, duplicate), domain.ErrTenantIdentityLinkConflict)
+}
+
+func TestSessionBootstrapRepository_IsAtomicIdempotentAndRaceSafe(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	repo := postgres.NewSessionBootstrapRepository(pool)
+	request := domain.SessionBootstrapRequest{
+		Provider: "clerk", ExternalAccountID: "org_bootstrap", AccountName: "Bootstrap Account",
+		ExternalSubject: "user_bootstrap", DisplayName: "Bootstrap Owner", Email: "owner@example.test",
+	}
+
+	first, err := repo.Bootstrap(ctx, request)
+	require.NoError(t, err)
+	assert.True(t, first.Created)
+
+	request.DisplayName = "Updated Owner"
+	second, err := repo.Bootstrap(ctx, request)
+	require.NoError(t, err)
+	assert.False(t, second.Created)
+	assert.Equal(t, first.Tenant.ID, second.Tenant.ID)
+	assert.Equal(t, first.Principal.ID, second.Principal.ID)
+	assert.Equal(t, "Updated Owner", second.Principal.DisplayName)
+
+	concurrent := request
+	concurrent.ExternalAccountID = "org_concurrent"
+	concurrent.ExternalSubject = "user_concurrent"
+	concurrent.AccountName = "Concurrent Account"
+	var wait sync.WaitGroup
+	results := make(chan *domain.SessionBootstrapResult, 2)
+	errors := make(chan error, 2)
+	for range 2 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			result, err := repo.Bootstrap(ctx, concurrent)
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- result
+		}()
+	}
+	wait.Wait()
+	close(results)
+	close(errors)
+	for err := range errors {
+		require.NoError(t, err)
+	}
+	var concurrentResults []*domain.SessionBootstrapResult
+	for result := range results {
+		concurrentResults = append(concurrentResults, result)
+	}
+	require.Len(t, concurrentResults, 2)
+	assert.Equal(t, concurrentResults[0].Tenant.ID, concurrentResults[1].Tenant.ID)
+	assert.Equal(t, concurrentResults[0].Principal.ID, concurrentResults[1].Principal.ID)
+
+	var tenantLinks, principalIdentities, organizations int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM tenant_identity_links WHERE provider = 'clerk' AND external_id IN ('org_bootstrap', 'org_concurrent')`).Scan(&tenantLinks))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM principal_identities WHERE provider = 'clerk' AND external_subject IN ('user_bootstrap', 'user_concurrent')`).Scan(&principalIdentities))
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM organizations WHERE tenant_id IN ($1, $2)`, first.Tenant.ID, concurrentResults[0].Tenant.ID).Scan(&organizations))
+	assert.Equal(t, 2, tenantLinks)
+	assert.Equal(t, 2, principalIdentities)
+	assert.Zero(t, organizations, "new accounts enter first-Organization onboarding; only migrated Tenants receive generated defaults")
 }
 
 func TestHierarchyRepositories_EnforceTenantAndOrganizationScope(t *testing.T) {

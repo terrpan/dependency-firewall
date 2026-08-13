@@ -66,6 +66,12 @@ type TeamMembershipRepository interface {
 	Delete(ctx context.Context, tenantID, organizationID, teamID, principalID string) error
 }
 
+// SessionBootstrapRepository atomically establishes the local account and
+// Principal identity for a verified session.
+type SessionBootstrapRepository interface {
+	Bootstrap(ctx context.Context, request domain.SessionBootstrapRequest) (*domain.SessionBootstrapResult, error)
+}
+
 // PolicyRepository manages policy persistence.
 type PolicyRepository interface {
 	GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error)

@@ -1,6 +1,22 @@
 runtime:
   mode: all-in-one
 
+auth:
+  # disabled is one-release local compatibility only and emits a security warning.
+  # Use clerk for a publicly reachable human control plane.
+  mode: disabled
+  clerk:
+    # Server-only Clerk Backend API secret. FIREWALL_AUTH_CLERK_SECRET_KEY is
+    # preferred over committing a value here.
+    secret_key: ""
+    # Optional pinned PEM public verification key. Otherwise JWKs are cached.
+    jwt_key: ""
+    issuer: "https://your-instance.clerk.accounts.dev"
+    audience: "dependency-firewall"
+    authorized_parties:
+      - "http://localhost:5173"
+    leeway: 5s
+
 server:
   port: 8080
   # Five seconds is the runtime default. Increase deliberately for slower clients.
