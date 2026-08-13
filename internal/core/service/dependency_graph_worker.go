@@ -19,6 +19,7 @@ import (
 // DependencyGraphWorkerConfig configures the npm dependency graph resolver.
 type DependencyGraphWorkerConfig struct {
 	Enabled      bool
+	TenantID     string
 	PollInterval time.Duration
 	Timeout      time.Duration
 	Concurrency  int
@@ -59,6 +60,10 @@ func (w *DependencyGraphWorker) Run(ctx context.Context) error {
 	if w.cfg.RetryDelay <= 0 {
 		w.cfg.RetryDelay = 5 * time.Minute
 	}
+	w.cfg.TenantID = strings.TrimSpace(w.cfg.TenantID)
+	if w.cfg.TenantID == "" {
+		w.cfg.TenantID = "*"
+	}
 
 	ticker := time.NewTicker(w.cfg.PollInterval)
 	defer ticker.Stop()
@@ -68,7 +73,7 @@ func (w *DependencyGraphWorker) Run(ctx context.Context) error {
 
 	var notifications <-chan struct{}
 	if w.watcher != nil {
-		notifications = w.watcher.WatchResolveJobs(ctx)
+		notifications = w.watcher.WatchResolveJobs(ctx, w.cfg.TenantID)
 	}
 
 	for {
@@ -88,7 +93,7 @@ func (w *DependencyGraphWorker) Run(ctx context.Context) error {
 
 func (w *DependencyGraphWorker) claimAvailableJobs(ctx context.Context, sem chan struct{}, wg *sync.WaitGroup) {
 	for len(sem) < cap(sem) {
-		job, err := w.resolver.ClaimNextResolveJob(ctx, time.Now().UTC())
+		job, err := w.resolver.ClaimNextResolveJob(ctx, w.cfg.TenantID, time.Now().UTC())
 		if err != nil {
 			w.logger.WarnContext(ctx, "dependency graph job claim failed", "error", err)
 			return

@@ -172,6 +172,7 @@ func RunDependencyGraphWorker(ctx context.Context, cfg *config.Config, logger *s
 
 	runtimeLogger.Info("starting dependency graph worker",
 		"control_plane_addr", cfg.Bundle.ControlPlaneAddr,
+		"tenant_id", cfg.DependencyGraph.TenantID,
 	)
 	return serve(ctx, runtimeLogger, dependencyGraphWorkerRunner(ctx, cfg, runtimeLogger, ingestClient, ingestClient))
 }
@@ -224,6 +225,7 @@ func controlPlaneGRPCServerOptions(cfg *config.Config, logger *slog.Logger, audi
 		)))
 		options = append(options, grpc.StreamInterceptor(controlplanegrpc.TenantAuthorizationStreamInterceptor(
 			cfg.Bundle.TLS.AuthorizedClients,
+			controlPlaneTenantIDFromRequest,
 			controlplanegrpc.WithTenantAuthorizationLogger(logger),
 			controlplanegrpc.WithTenantAuthorizationDeniedRecorder(controlPlaneAuthorizationDeniedRecorder(auditService)),
 		)))
@@ -291,6 +293,7 @@ func optionalDependencyGraphWorkerRunner(ctx context.Context, cfg *config.Config
 func dependencyGraphWorkerRunner(ctx context.Context, cfg *config.Config, logger *slog.Logger, resolver port.DependencyGraphResolver, watcher port.DependencyGraphJobWatcher) server {
 	worker := service.NewDependencyGraphWorker(resolver, watcher, service.DependencyGraphWorkerConfig{
 		Enabled:      cfg.DependencyGraph.Enabled,
+		TenantID:     cfg.DependencyGraph.TenantID,
 		PollInterval: cfg.DependencyGraph.PollInterval,
 		Timeout:      cfg.DependencyGraph.Timeout,
 		Concurrency:  cfg.DependencyGraph.Concurrency,

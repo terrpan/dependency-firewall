@@ -58,6 +58,7 @@ bundle:
           - "*"
       - identity: "dependency-graph-worker.firewall.local"
         tenant_ids:
-          # Local example only. Resolver workers that claim arbitrary jobs need
-          # wildcard access; tenant-dedicated workers can list explicit tenants.
+          # This example runs a global worker (dependency_graph.tenant_id="*").
+          # For a tenant worker, use the same concrete tenant ID here and in
+          # the worker's dependency_graph.tenant_id setting.
           - "*"

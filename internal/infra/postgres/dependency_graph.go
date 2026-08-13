@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -143,20 +144,29 @@ func (r *DependencyGraphRepository) EnqueueResolve(ctx context.Context, req doma
 }
 
 // ClaimNextResolveJob claims one pending or retryable failed job.
-func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, fmt.Errorf("claiming dependency graph resolve: tenant_id is required")
+	}
+	var tenantFilter any
+	if tenantID != "*" {
+		tenantFilter = tenantID
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning dependency graph claim: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	var tenantID, upstreamID, packageName, version, baseURL string
+	var claimedTenantID, upstreamID, packageName, version, baseURL string
 	err = tx.QueryRow(ctx,
 		`WITH next_job AS (
 		     SELECT id
 		     FROM dependency_graph_roots
 		     WHERE status IN ('pending', 'failed')
 		       AND updated_at <= $1
+		       AND ($2::uuid IS NULL OR tenant_id = $2::uuid)
 		     ORDER BY updated_at ASC
 		     LIMIT 1
 		     FOR UPDATE SKIP LOCKED
@@ -167,8 +177,8 @@ func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, now
 		 WHERE dgr.id = next_job.id
 		   AND u.id = dgr.upstream_id
 		 RETURNING dgr.tenant_id, dgr.upstream_id, dgr.package_name, dgr.version, u.base_url`,
-		now,
-	).Scan(&tenantID, &upstreamID, &packageName, &version, &baseURL)
+		now, tenantFilter,
+	).Scan(&claimedTenantID, &upstreamID, &packageName, &version, &baseURL)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -188,10 +198,10 @@ func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, now
 		return nil, fmt.Errorf("normalizing claimed root artifact: %w", err)
 	}
 	return &domain.DependencyGraphResolveRequest{
-		TenantID: tenantID,
+		TenantID: claimedTenantID,
 		Upstream: domain.Upstream{
 			ID:        upstreamID,
-			TenantID:  tenantID,
+			TenantID:  claimedTenantID,
 			Ecosystem: domain.EcosystemNPM,
 			BaseURL:   baseURL,
 		},

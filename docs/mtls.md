@@ -205,8 +205,30 @@ The proxy certificate DNS SAN is `proxy-a.firewall.local`, so the control-plane 
 - Issue separate certificates for each proxy and dependency graph worker deployment.
 - Keep control-plane, proxy, and dependency graph worker configs separate in split deployments; each process should receive only its own certificate/key.
 - Keep the worker's `bundle` config limited to the control-plane address and mTLS client credentials; it should not reuse proxy bundle cache settings.
-- Authorize each proxy and worker identity only for the tenants it should serve. Resolver workers that claim unscoped jobs need wildcard tenant authorization, so run tenant-scoped workers when tighter isolation is required.
+- Authorize each proxy and worker identity only for the tenants it should serve. Set a tenant-scoped worker's `dependency_graph.tenant_id` to the same concrete tenant ID. Use `"*"` in both places only for a global worker that should claim jobs across all tenants.
 - Rotate proxy certificates by adding the new identity to `authorized_clients`, deploying the new cert, then removing the old identity.
 - Protect key files with filesystem permissions readable only by the firewall process.
 - Use one CA bundle for the trust anchors that should be allowed to participate in control-plane gRPC.
 - Rotate proxy certificates deliberately: new bundle envelopes are encrypted to the active proxy certificate public key, so a running proxy must have the matching private key.
+
+## Tenant-scoped workers
+
+Worker claim and watch requests carry the configured `dependency_graph.tenant_id`. The control plane authorizes that tenant against the worker certificate, filters PostgreSQL claims to it, and sends only matching wake-up notifications. Completion and failure requests continue to be authorized using the tenant on the claimed job.
+
+For an authorization-enforced tenant worker, configure both sides with the same tenant:
+
+```yaml
+# worker.yaml
+dependency_graph:
+  tenant_id: "00000000-0000-0000-0000-000000000001"
+
+# control-plane.yaml
+bundle:
+  tls:
+    authorized_clients:
+      - identity: "tenant-a-worker.firewall.local"
+        tenant_ids:
+          - "00000000-0000-0000-0000-000000000001"
+```
+
+The default tenant scope is `"*"` for backward compatibility. It requires wildcard certificate authorization and is appropriate only for a worker intended to process every tenant.

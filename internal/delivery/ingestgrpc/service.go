@@ -20,10 +20,10 @@ type proxyIngestService interface {
 	HasRecentAllow(context.Context, string, domain.EcosystemType, string, string) (bool, error)
 	RecordAuditEvent(context.Context, *domain.AuditEvent) error
 	EnqueueDependencyGraphResolve(context.Context, domain.DependencyGraphResolveRequest) (bool, error)
-	ClaimDependencyGraphResolve(context.Context, time.Time) (*domain.DependencyGraphResolveRequest, error)
+	ClaimDependencyGraphResolve(context.Context, string, time.Time) (*domain.DependencyGraphResolveRequest, error)
 	CompleteDependencyGraphResolve(context.Context, domain.DependencyGraphResolveRequest, []domain.DependencyGraphNode, []domain.DependencyGraphEdge, string) error
 	FailDependencyGraphResolve(context.Context, domain.DependencyGraphResolveRequest, string, time.Time) error
-	WatchDependencyGraphResolve(context.Context) (<-chan struct{}, error)
+	WatchDependencyGraphResolve(context.Context, string) (<-chan struct{}, error)
 	LookupDependencyGraphContext(context.Context, domain.DependencyContextSummaryKey) (*domain.DependencyContext, error)
 }
 
@@ -37,7 +37,7 @@ type proxyIngestGRPCService interface {
 	ClaimDependencyGraphResolve(context.Context, *ClaimDependencyGraphResolveRequest) (*ClaimDependencyGraphResolveResponse, error)
 	CompleteDependencyGraphResolve(context.Context, *CompleteDependencyGraphResolveRequest) (*CompleteDependencyGraphResolveResponse, error)
 	FailDependencyGraphResolve(context.Context, *FailDependencyGraphResolveRequest) (*FailDependencyGraphResolveResponse, error)
-	WatchDependencyGraphResolve(context.Context) (<-chan struct{}, error)
+	WatchDependencyGraphResolve(context.Context, *WatchDependencyGraphResolveRequest) (<-chan struct{}, error)
 	LookupDependencyGraphContext(context.Context, *LookupDependencyGraphContextRequest) (*LookupDependencyGraphContextResponse, error)
 }
 

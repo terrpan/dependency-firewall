@@ -173,6 +173,7 @@ type SecretsConfig struct {
 type DependencyGraphConfig struct {
 	Enabled      bool          `mapstructure:"enabled"`
 	RunInProcess bool          `mapstructure:"run_in_process"`
+	TenantID     string        `mapstructure:"tenant_id"`
 	PollInterval time.Duration `mapstructure:"poll_interval"`
 	Timeout      time.Duration `mapstructure:"timeout"`
 	Concurrency  int           `mapstructure:"concurrency"`
@@ -252,6 +253,7 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 	v.SetDefault("secrets.upstream_auth_key", "")
 	v.SetDefault("dependency_graph.enabled", true)
 	v.SetDefault("dependency_graph.run_in_process", false)
+	v.SetDefault("dependency_graph.tenant_id", "*")
 	v.SetDefault("dependency_graph.poll_interval", 5*time.Second)
 	v.SetDefault("dependency_graph.timeout", 2*time.Minute)
 	v.SetDefault("dependency_graph.concurrency", 2)
@@ -326,6 +328,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Database.MaxIdleConns > c.Database.MaxOpenConns && c.Database.MaxOpenConns > 0 {
 		return fmt.Errorf("invalid config: field %q must be less than or equal to %q", "database.max_idle_conns", "database.max_open_conns")
+	}
+	if c.DependencyGraph.Enabled && strings.TrimSpace(c.DependencyGraph.TenantID) == "" {
+		return fmt.Errorf("invalid config: field %q is required when dependency graph resolution is enabled", "dependency_graph.tenant_id")
 	}
 	if c.OCICache.Enabled && strings.EqualFold(c.OCICache.Backend, "disk") && strings.TrimSpace(c.OCICache.RootDir) == "" {
 		return fmt.Errorf("invalid config: field %q is required when OCI cache backend is %q", "oci_cache.root_dir", "disk")
