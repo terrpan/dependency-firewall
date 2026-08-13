@@ -26,15 +26,15 @@ type SearchFilterBarProps<T extends string> = {
 function toneClassName(tone: FilterChipTone | undefined): string {
   switch (tone) {
     case 'success':
-      return 'filter-chip-success'
+      return styles.success
     case 'danger':
-      return 'filter-chip-danger'
+      return styles.danger
     case 'warning':
-      return 'filter-chip-warning'
+      return styles.warning
     case 'info':
-      return 'filter-chip-info'
+      return styles.info
     case 'muted':
-      return 'filter-chip-muted'
+      return styles.muted
     default:
       return ''
   }
@@ -56,10 +56,10 @@ export function SearchFilterBar<T extends string>({
   clearFiltersLabel = 'Clear filters',
 }: SearchFilterBarProps<T>) {
   return (
-    <div className="filter-toolbar">
-      <label className={`filter-search-field${searchFieldClassName ? ` ${searchFieldClassName}` : ''}`} htmlFor={searchInputId}>
+    <div className={styles.toolbar}>
+      <label className={`${styles.search}${searchFieldClassName ? ` ${searchFieldClassName}` : ''}`} htmlFor={searchInputId}>
         <span>{searchLabel}</span>
-        <input
+        <Input
           id={searchInputId}
           type="search"
           value={searchValue}
@@ -69,7 +69,7 @@ export function SearchFilterBar<T extends string>({
         {searchHelpText ? <small>{searchHelpText}</small> : null}
       </label>
 
-      <div className="filter-chip-row" role="group" aria-label={filterGroupLabel}>
+      <div className={styles.row} role="group" aria-label={filterGroupLabel}>
         {filterOptions.map((filter) => {
           const isActive = activeFilters.includes(filter.id)
           const toneClass = toneClassName(filter.tone)
@@ -78,22 +78,24 @@ export function SearchFilterBar<T extends string>({
             <button
               key={filter.id}
               aria-pressed={isActive}
-              className={`filter-chip${toneClass ? ` ${toneClass}` : ''}${isActive ? ' filter-chip-active' : ''}`}
+              className={`${styles.chip}${toneClass ? ` ${toneClass}` : ''}`}
               onClick={() => onToggleFilter(filter.id)}
               type="button"
             >
               {filter.label}
-              {typeof filter.count === 'number' ? <span className="filter-chip-count">{filter.count}</span> : null}
+              {typeof filter.count === 'number' ? <span className={styles.count}>{filter.count}</span> : null}
             </button>
           )
         })}
 
         {activeFilters.length > 0 ? (
-          <button className="secondary-button" onClick={onClearFilters} type="button">
+          <Button onClick={onClearFilters} type="button">
             {clearFiltersLabel}
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
   )
 }
+import { Button, Input } from '../../ui/index.ts'
+import styles from './SearchFilterBar.module.css'

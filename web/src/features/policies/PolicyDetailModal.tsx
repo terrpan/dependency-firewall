@@ -1,5 +1,6 @@
 // PolicyDetailModal renders policy overview and retained version history.
 import { ModalDialog } from '../../components/modal/index.ts'
+import { policyClass } from './styles.ts'
 import type { TypedPolicy, TypedPolicyVersion, Upstream } from '../../lib/api/index.ts'
 import { getPolicyTypeLabel, isPolicyDryRun } from './draft.ts'
 import {
@@ -74,7 +75,7 @@ export function PolicyDetailModal({
       eyebrow="Policy details"
       headerMeta={
         policy && detailTab === 'history' ? (
-          <span className="status-pill status-pill-neutral">Retention limit 3</span>
+          <span className={policyClass("status-pill status-pill-neutral")}>Retention limit 3</span>
         ) : null
       }
       closeOnEscape={!hasOpenDiff}
@@ -85,11 +86,11 @@ export function PolicyDetailModal({
       title={policy ? policy.name : 'Policy details'}
     >
       {policy ? (
-        <div className="policy-history-modal">
-          <div className="policy-detail-tabs" aria-label="Policy detail views">
+        <div className={policyClass("policy-history-modal")}>
+          <div className={policyClass("policy-detail-tabs")} aria-label="Policy detail views">
             <button
               aria-pressed={detailTab === 'overview'}
-              className={`policy-detail-tab${detailTab === 'overview' ? ' active' : ''}`}
+              className={policyClass('policy-detail-tab', detailTab === 'overview' && 'active')}
               onClick={() => onDetailTabChange('overview')}
               type="button"
             >
@@ -97,7 +98,7 @@ export function PolicyDetailModal({
             </button>
             <button
               aria-pressed={detailTab === 'history'}
-              className={`policy-detail-tab${detailTab === 'history' ? ' active' : ''}`}
+              className={policyClass('policy-detail-tab', detailTab === 'history' && 'active')}
               onClick={() => onDetailTabChange('history')}
               type="button"
             >
@@ -105,21 +106,21 @@ export function PolicyDetailModal({
             </button>
           </div>
 
-          <section className="policy-current-card">
-            <div className="policy-current-header">
-              <div className="policy-list-item-badges">
-                <span className={`policy-badge ${getActionTone(policy.action)}`}>{policy.action}</span>
-                <span className={`policy-badge ${getEnabledTone(policy.enabled)}`}>
+          <section className={policyClass("policy-current-card")}>
+            <div className={policyClass("policy-current-header")}>
+              <div className={policyClass("policy-list-item-badges")}>
+                <span className={policyClass('policy-badge', getActionTone(policy.action))}>{policy.action}</span>
+                <span className={policyClass('policy-badge', getEnabledTone(policy.enabled))}>
                   {policy.enabled ? 'enabled' : 'disabled'}
                 </span>
                 {isPolicyDryRun(policy) ? (
-                  <span className="policy-badge policy-badge-muted">dry run</span>
+                  <span className={policyClass("policy-badge policy-badge-muted")}>dry run</span>
                 ) : null}
               </div>
-              <div className="policy-current-actions">
-                <div className="policy-list-item-actions">
+              <div className={policyClass("policy-current-actions")}>
+                <div className={policyClass("policy-list-item-actions")}>
                   <button
-                    className="policy-card-action policy-card-action-danger"
+                    className={policyClass("policy-card-action policy-card-action-danger")}
                     disabled={policy.enabled || Boolean(deletePendingPolicyId)}
                     onClick={() => onDelete(policy)}
                     title={policy.enabled ? 'Disable the policy before deleting it.' : undefined}
@@ -128,10 +129,10 @@ export function PolicyDetailModal({
                     {policy.enabled ? 'Disable first' : isDeletePending ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
-                <div className="policy-inline-toggle">
-                  <span className="policy-inline-toggle-label">Enabled</span>
+                <div className={policyClass("policy-inline-toggle")}>
+                  <span className={policyClass("policy-inline-toggle-label")}>Enabled</span>
                   <button
-                    className={`policy-enabled-toggle${policy.enabled ? ' active' : ''}`}
+                    className={policyClass('policy-enabled-toggle', policy.enabled && 'active')}
                     disabled={isTogglePending}
                     onClick={() => onTogglePolicy(policy)}
                     type="button"
@@ -143,17 +144,17 @@ export function PolicyDetailModal({
             </div>
 
             {isDeleteError ? (
-              <div className="policy-error-panel">
+              <div className={policyClass("policy-error-panel")}>
                 <h4>Unable to delete policy</h4>
-                <p className="muted">{deleteErrorMessage}</p>
+                <p className={policyClass("muted")}>{deleteErrorMessage}</p>
               </div>
             ) : null}
 
-            <div className="policy-config-summary">
-              <span className="policy-config-label">{getPolicyConfigDetail(policy).label}</span>
-              <span className="policy-config-value">{getPolicyConfigDetail(policy).value}</span>
+            <div className={policyClass("policy-config-summary")}>
+              <span className={policyClass("policy-config-label")}>{getPolicyConfigDetail(policy).label}</span>
+              <span className={policyClass("policy-config-value")}>{getPolicyConfigDetail(policy).value}</span>
             </div>
-            <dl className="metadata-list compact-metadata-list">
+            <dl className={policyClass("metadata-list compact-metadata-list")}>
               <div>
                 <dt>Policy id</dt>
                 <dd>
@@ -184,18 +185,18 @@ export function PolicyDetailModal({
           </section>
 
           {detailTab === 'overview' ? (
-            <section className="policy-metadata-card">
+            <section className={policyClass("policy-metadata-card")}>
               <h4>Configuration</h4>
-              <div className="policy-config-field-list">
+              <div className={policyClass("policy-config-field-list")}>
                 {getPolicyConfigFields(policy).map((field) => (
-                  <div key={field.label} className="policy-config-field-card">
-                    <span className="policy-config-field-label">{field.label}</span>
+                  <div key={field.label} className={policyClass("policy-config-field-card")}>
+                    <span className={policyClass("policy-config-field-label")}>{field.label}</span>
                     {field.values.length === 1 ? (
-                      <strong className="policy-config-field-value">{field.values[0]}</strong>
+                      <strong className={policyClass("policy-config-field-value")}>{field.values[0]}</strong>
                     ) : (
-                      <div className="policy-config-chip-row">
+                      <div className={policyClass("policy-config-chip-row")}>
                         {field.values.map((value) => (
-                          <span key={value} className="policy-chip">
+                          <span key={value} className={policyClass("policy-chip")}>
                             {value}
                           </span>
                         ))}
@@ -210,42 +211,42 @@ export function PolicyDetailModal({
           {detailTab === 'history' ? (
             <>
               {isVersionsError ? (
-                <div className="policy-error-panel">
+                <div className={policyClass("policy-error-panel")}>
                   <h4>Unable to load policy versions</h4>
-                  <p className="muted">{versionsErrorMessage}</p>
+                  <p className={policyClass("muted")}>{versionsErrorMessage}</p>
                 </div>
               ) : null}
 
               {isVersionsPending ? (
-                <div className="policy-empty-state">
+                <div className={policyClass("policy-empty-state")}>
                   <h4>Loading history</h4>
-                  <p className="muted">Pulling retained versions for this policy.</p>
+                  <p className={policyClass("muted")}>Pulling retained versions for this policy.</p>
                 </div>
               ) : null}
 
               {!isVersionsPending && !isVersionsError && versions.length === 0 ? (
-                <div className="policy-empty-state">
+                <div className={policyClass("policy-empty-state")}>
                   <h4>No retained versions yet</h4>
-                  <p className="muted">
+                  <p className={policyClass("muted")}>
                     Version history appears after the first update or rollback snapshot is stored by the backend.
                   </p>
                 </div>
               ) : null}
 
-              <div className="policy-history-list">
+              <div className={policyClass("policy-history-list")}>
                 {versions.map((version) => (
-                  <article key={version.version} className="policy-history-item">
-                    <div className="policy-history-item-header">
+                  <article key={version.version} className={policyClass("policy-history-item")}>
+                    <div className={policyClass("policy-history-item-header")}>
                       <div>
                         <h4>Version {version.version}</h4>
-                        <p className="muted">{formatPolicyTimestamp(version.created_at)}</p>
+                        <p className={policyClass("muted")}>{formatPolicyTimestamp(version.created_at)}</p>
                       </div>
-                      <div className="policy-history-actions">
-                        <button className="policy-card-action" onClick={() => onOpenDiff(version)} type="button">
+                      <div className={policyClass("policy-history-actions")}>
+                        <button className={policyClass("policy-card-action")} onClick={() => onOpenDiff(version)} type="button">
                           Compare
                         </button>
                         <button
-                          className="secondary-button"
+                          className={policyClass("secondary-button")}
                           disabled={isRollbackPending}
                           onClick={() => onRollback(policy.id, version.version)}
                           type="button"
@@ -254,23 +255,23 @@ export function PolicyDetailModal({
                         </button>
                       </div>
                     </div>
-                    <div className="policy-list-item-badges">
-                      <span className={`policy-badge ${getActionTone(version.action)}`}>{version.action}</span>
-                      <span className={`policy-badge ${getEnabledTone(version.enabled)}`}>
+                    <div className={policyClass("policy-list-item-badges")}>
+                      <span className={policyClass('policy-badge', getActionTone(version.action))}>{version.action}</span>
+                      <span className={policyClass('policy-badge', getEnabledTone(version.enabled))}>
                         {version.enabled ? 'enabled' : 'disabled'}
                       </span>
-                      {isPolicyDryRun(version) ? <span className="policy-badge policy-badge-muted">dry run</span> : null}
+                      {isPolicyDryRun(version) ? <span className={policyClass("policy-badge policy-badge-muted")}>dry run</span> : null}
                     </div>
-                    <div className="policy-config-field-list policy-config-field-list-compact">
+                    <div className={policyClass("policy-config-field-list policy-config-field-list-compact")}>
                       {getPolicyConfigFields(version).map((field) => (
-                        <div key={field.label} className="policy-config-field-card">
-                          <span className="policy-config-field-label">{field.label}</span>
+                        <div key={field.label} className={policyClass("policy-config-field-card")}>
+                          <span className={policyClass("policy-config-field-label")}>{field.label}</span>
                           {field.values.length === 1 ? (
-                            <strong className="policy-config-field-value">{field.values[0]}</strong>
+                            <strong className={policyClass("policy-config-field-value")}>{field.values[0]}</strong>
                           ) : (
-                            <div className="policy-config-chip-row">
+                            <div className={policyClass("policy-config-chip-row")}>
                               {field.values.map((value) => (
-                                <span key={value} className="policy-chip">
+                                <span key={value} className={policyClass("policy-chip")}>
                                   {value}
                                 </span>
                               ))}
@@ -279,7 +280,7 @@ export function PolicyDetailModal({
                         </div>
                       ))}
                     </div>
-                    <dl className="metadata-list compact-metadata-list">
+                    <dl className={policyClass("metadata-list compact-metadata-list")}>
                       <div>
                         <dt>Scope</dt>
                         <dd>{formatPolicyScopeLabel(version, upstreamsByID)}</dd>
@@ -302,9 +303,9 @@ export function PolicyDetailModal({
               </div>
 
               {isRollbackError ? (
-                <div className="policy-error-panel">
+                <div className={policyClass("policy-error-panel")}>
                   <h4>Rollback request failed</h4>
-                  <p className="muted">{rollbackErrorMessage}</p>
+                  <p className={policyClass("muted")}>{rollbackErrorMessage}</p>
                 </div>
               ) : null}
             </>

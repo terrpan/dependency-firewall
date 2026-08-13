@@ -17,7 +17,7 @@ import {
   summarizeEvaluations,
 } from '../features/evaluations/model.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
-import '../features/evaluations/evaluations.css'
+import { evaluationClass } from '../features/evaluations/styles.ts'
 
 export function EvaluationsPage() {
   const { tenantId } = useTenant()
@@ -121,20 +121,20 @@ export function EvaluationsPage() {
   ] as const
 
   return (
-    <section className="page">
-      <header className="page-header">
+    <section className={evaluationClass("page")}>
+      <header className={evaluationClass("page-header")}>
         <div>
-          <p className="eyebrow">Decision history</p>
+          <p className={evaluationClass("eyebrow")}>Decision history</p>
           <h2>Evaluations</h2>
-          <p className="page-summary">Stored allow and deny decisions for the selected tenant.</p>
+          <p className={evaluationClass("page-summary")}>Stored allow and deny decisions for the selected tenant.</p>
         </div>
 
-        <div className="page-actions">
+        <div className={evaluationClass("page-actions")}>
           {evaluationsQuery.isFetching && !evaluationsQuery.isPending ? (
-            <span className="status-pill">Refreshing</span>
+            <span className={evaluationClass("status-pill")}>Refreshing</span>
           ) : null}
           <button
-            className="secondary-button"
+            className={evaluationClass("secondary-button")}
             onClick={() => void evaluationsQuery.refetch()}
             type="button"
           >
@@ -143,24 +143,24 @@ export function EvaluationsPage() {
         </div>
       </header>
 
-      <div className="evaluations-layout">
-        <div className="evaluations-side-stack">
-          <section className="card">
-            <div className="section-header">
+      <div className={evaluationClass("evaluations-layout")}>
+        <div className={evaluationClass("evaluations-side-stack")}>
+          <section className={evaluationClass("card")}>
+            <div className={evaluationClass("section-header")}>
               <div>
                 <h3>Page summary</h3>
-                <p className="muted">
+                <p className={evaluationClass("muted")}>
                   {evaluations.length > 0
                     ? `Showing results ${rangeStart}-${rangeEnd}${hasArtifactSearch || hasActiveFilters ? ' for the current search and filters.' : '.'}`
                     : `Showing page ${page + 1}.`}
                 </p>
               </div>
-              <span className="status-pill status-pill-neutral">Page {page + 1}</span>
+              <span className={evaluationClass("status-pill status-pill-neutral")}>Page {page + 1}</span>
             </div>
 
-            <div className="button-row">
+            <div className={evaluationClass("button-row")}>
               <button
-                className="secondary-button"
+                className={evaluationClass("secondary-button")}
                 disabled={!canGoBack || evaluationsQuery.isPending}
                 onClick={() => updatePage((currentPage) => Math.max(currentPage - 1, 0))}
                 type="button"
@@ -168,7 +168,7 @@ export function EvaluationsPage() {
                 Previous
               </button>
               <button
-                className="secondary-button"
+                className={evaluationClass("secondary-button")}
                 disabled={!canGoForward || evaluationsQuery.isPending}
                 onClick={() => updatePage((currentPage) => currentPage + 1)}
                 type="button"
@@ -196,7 +196,7 @@ export function EvaluationsPage() {
             ) : (
               <>
                 <SummaryMetrics items={summaryMetrics} />
-                <p className="muted">
+                <p className={evaluationClass("muted")}>
                   Latest result on this page: {formatTimestamp(evaluationSummary.latestEvaluatedAt)}
                   . Policies represented: {evaluationSummary.uniquePolicies}. Cached results:{' '}
                   {evaluationSummary.cachedCount}.
@@ -206,8 +206,8 @@ export function EvaluationsPage() {
           </section>
         </div>
 
-        <section className="card evaluations-log-card">
-          <div className="section-header">
+        <section className={evaluationClass("card evaluations-log-card")}>
+          <div className={evaluationClass("section-header")}>
             <div>
               <h3>Audit log</h3>
             </div>

@@ -1,4 +1,5 @@
 import type { Evaluation, Health } from '../../lib/api/index.ts'
+import { evaluationClass } from './styles.ts'
 import {
   formatArtifact,
   formatCachedAt,
@@ -28,18 +29,18 @@ export type SummaryMetric = {
 
 function toneClassName(baseClassName: string, tone: Tone | undefined): string {
   if (tone === 'success') {
-    return `${baseClassName} ${baseClassName}-success`
+    return evaluationClass(baseClassName, `${baseClassName}-success`)
   }
 
   if (tone === 'danger') {
-    return `${baseClassName} ${baseClassName}-danger`
+    return evaluationClass(baseClassName, `${baseClassName}-danger`)
   }
 
   if (tone === 'warning') {
-    return `${baseClassName} ${baseClassName}-warning`
+    return evaluationClass(baseClassName, `${baseClassName}-warning`)
   }
 
-  return baseClassName
+  return evaluationClass(baseClassName)
 }
 
 function StatusPill({ label, tone }: { label: string; tone?: Tone }) {
@@ -48,12 +49,12 @@ function StatusPill({ label, tone }: { label: string; tone?: Tone }) {
 
 export function SummaryMetrics({ items }: { items: readonly SummaryMetric[] }) {
   return (
-    <div className="metric-grid">
+    <div className={evaluationClass("metric-grid")}>
       {items.map((item) => (
         <article key={item.label} className={toneClassName('metric-card', item.tone)}>
-          <span className="metric-label">{item.label}</span>
-          <strong className="metric-value">{item.value}</strong>
-          {item.hint ? <p className="muted">{item.hint}</p> : null}
+          <span className={evaluationClass("metric-label")}>{item.label}</span>
+          <strong className={evaluationClass("metric-value")}>{item.value}</strong>
+          {item.hint ? <p className={evaluationClass("muted")}>{item.hint}</p> : null}
         </article>
       ))}
     </div>
@@ -74,14 +75,14 @@ export function QueryStateNotice({
   onAction,
 }: QueryStateNoticeProps) {
   return (
-    <div className="state-notice">
+    <div className={evaluationClass("state-notice")}>
       <div>
         <strong>{title}</strong>
-        <p className="muted">{message}</p>
+        <p className={evaluationClass("muted")}>{message}</p>
       </div>
       {onAction ? (
-        <div className="button-row">
-          <button className="secondary-button" onClick={onAction} type="button">
+        <div className={evaluationClass("button-row")}>
+          <button className={evaluationClass("secondary-button")} onClick={onAction} type="button">
             {actionLabel}
           </button>
         </div>
@@ -108,7 +109,7 @@ export function EvaluationList({
   }
 
   return (
-    <ul className={compact ? 'evaluation-list evaluation-list-compact' : 'evaluation-list'}>
+    <ul className={evaluationClass('evaluation-list', compact && 'evaluation-list-compact')}>
       {evaluations.map((evaluation) => {
         const primaryReason = getPrimaryReason(evaluation)
         const matchedReasons = (evaluation.reasons ?? []).filter(
@@ -120,27 +121,27 @@ export function EvaluationList({
         const isDryRun = hasDryRunWarning(evaluation)
 
         return (
-          <li key={evaluation.id} className="evaluation-item">
-            <div className="evaluation-header">
-              <div className="stack-sm">
-                <p className="route-label">{evaluation.artifact.ecosystem}</p>
-                <h4 className="evaluation-title">{formatArtifact(evaluation.artifact)}</h4>
-                <p className="muted">
+          <li key={evaluation.id} className={evaluationClass("evaluation-item")}>
+            <div className={evaluationClass("evaluation-header")}>
+              <div className={evaluationClass("stack-sm")}>
+                <p className={evaluationClass("route-label")}>{evaluation.artifact.ecosystem}</p>
+                <h4 className={evaluationClass("evaluation-title")}>{formatArtifact(evaluation.artifact)}</h4>
+                <p className={evaluationClass("muted")}>
                   {formatTimestamp(evaluation.evaluated_at)} · {formatRelativeTime(evaluation.evaluated_at)}
                 </p>
               </div>
 
-              <div className="pill-group">
+              <div className={evaluationClass("pill-group")}>
                 <StatusPill label={evaluation.outcome.toUpperCase()} tone={getOutcomeTone(evaluation.outcome)} />
                 {isDryRun ? <StatusPill label="DRY RUN" tone="warning" /> : null}
                 {evaluation.cached_at ? <StatusPill label="CACHED" /> : null}
               </div>
             </div>
 
-            <p className="evaluation-reason">{primaryReason}</p>
+            <p className={evaluationClass("evaluation-reason")}>{primaryReason}</p>
 
             {matchedReasons.length > 0 && !compact ? (
-              <ul className="detail-list">
+              <ul className={evaluationClass("detail-list")}>
                 {matchedReasons.slice(0, 3).map((reason) => (
                   <li
                     key={`${evaluation.id}-${reason.policy_id}-${reason.category}-${reason.message}`}
@@ -156,12 +157,12 @@ export function EvaluationList({
             ) : null}
 
             {warningTags.length > 0 ? (
-              <div className="tag-list">
+              <div className={evaluationClass("tag-list")}>
                 {compact ? (
-                  <span className="tag">{warningTags.length} warning{warningTags.length > 1 ? 's' : ''}</span>
+                  <span className={evaluationClass("tag")}>{warningTags.length} warning{warningTags.length > 1 ? 's' : ''}</span>
                 ) : (
                   warningTags.map((warning) => (
-                    <span key={`${evaluation.id}-${warning}`} className="tag">
+                    <span key={`${evaluation.id}-${warning}`} className={evaluationClass("tag")}>
                       {warning}
                     </span>
                   ))
@@ -170,7 +171,7 @@ export function EvaluationList({
             ) : null}
 
             {!compact ? (
-              <dl className="detail-grid">
+              <dl className={evaluationClass("detail-grid")}>
                 <div>
                   <dt>Policy</dt>
                   <dd>{formatPolicyReference(evaluation)}</dd>
@@ -217,11 +218,11 @@ export function ControlPlaneHealthCard({
 }: ControlPlaneHealthCardProps) {
   if (isLoading) {
     return (
-      <section className="card">
-        <div className="section-header">
+      <section className={evaluationClass("card")}>
+        <div className={evaluationClass("section-header")}>
           <div>
             <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
-            {!compact ? <p className="muted">Loading health and dependency status.</p> : null}
+            {!compact ? <p className={evaluationClass("muted")}>Loading health and dependency status.</p> : null}
           </div>
           <StatusPill label="Loading" />
         </div>
@@ -235,11 +236,11 @@ export function ControlPlaneHealthCard({
 
   if (!health || error) {
     return (
-      <section className="card">
-        <div className="section-header">
+      <section className={evaluationClass("card")}>
+        <div className={evaluationClass("section-header")}>
           <div>
             <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
-            {!compact ? <p className="muted">Health and dependency status.</p> : null}
+            {!compact ? <p className={evaluationClass("muted")}>Health and dependency status.</p> : null}
           </div>
           <StatusPill label="Unavailable" tone="danger" />
         </div>
@@ -255,17 +256,17 @@ export function ControlPlaneHealthCard({
   const { dependencies, degradedCount, total } = summarizeDependencies(health)
 
   return (
-    <section className="card">
-      <div className="section-header">
+    <section className={evaluationClass("card")}>
+      <div className={evaluationClass("section-header")}>
         <div>
           <h3>{compact ? 'Health' : 'Control-plane status'}</h3>
-          {!compact ? <p className="muted">Health and dependency status.</p> : null}
+          {!compact ? <p className={evaluationClass("muted")}>Health and dependency status.</p> : null}
         </div>
         <StatusPill label={health.status.toUpperCase()} tone={getStatusTone(health.status)} />
       </div>
 
       {!compact ? (
-        <dl className="detail-grid">
+        <dl className={evaluationClass("detail-grid")}>
           <div>
             <dt>Service</dt>
             <dd>{health.service_name}</dd>
@@ -298,33 +299,33 @@ export function ControlPlaneHealthCard({
       {total > 0 ? (
         <>
           {!compact ? (
-            <p className="muted">
+            <p className={evaluationClass("muted")}>
               {degradedCount === 0
                 ? `${total} dependencies are healthy.`
                 : `${degradedCount} of ${total} dependencies need review.`}
             </p>
           ) : null}
 
-          <ul className="dependency-list">
+          <ul className={evaluationClass("dependency-list")}>
             {dependencies.map(([name, dependency]) => (
-              <li key={name} className="dependency-item">
+              <li key={name} className={evaluationClass("dependency-item")}>
                 <div>
                   <strong>{name}</strong>
-                  <p className="muted">
+                  <p className={evaluationClass("muted")}>
                     {dependency.message?.trim() || `Checked ${formatRelativeTime(dependency.timestamp)}.`}
                   </p>
                 </div>
 
-                <div className="dependency-meta">
+                <div className={evaluationClass("dependency-meta")}>
                   <StatusPill label={dependency.status.toUpperCase()} tone={getStatusTone(dependency.status)} />
-                  <span className="muted">{formatDuration(dependency.duration_ms)}</span>
+                  <span className={evaluationClass("muted")}>{formatDuration(dependency.duration_ms)}</span>
                 </div>
               </li>
             ))}
           </ul>
         </>
       ) : (
-        <p className="muted">The health payload did not include dependency details.</p>
+        <p className={evaluationClass("muted")}>The health payload did not include dependency details.</p>
       )}
     </section>
   )

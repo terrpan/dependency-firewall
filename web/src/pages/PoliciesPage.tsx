@@ -53,7 +53,7 @@ import {
   upstreamSupportsPolicyType,
   upstreamsQueryKey,
 } from '../features/upstreams/api.ts'
-import '../features/policies/policies.css'
+import { policyClass } from '../features/policies/styles.ts'
 
 const PolicyDetailModal = lazy(() =>
   import('../features/policies/PolicyDetailModal.tsx').then(({ PolicyDetailModal }) => ({
@@ -855,26 +855,26 @@ export function PoliciesPage() {
   }
 
   return (
-    <section className="page">
-      <header className="page-header">
+    <section className={policyClass("page")}>
+      <header className={policyClass("page-header")}>
         <div>
-          <p className="eyebrow">Policy control plane</p>
+          <p className={policyClass("eyebrow")}>Policy control plane</p>
           <h2>Policies</h2>
-          <p className="page-summary">Rules evaluated for this tenant.</p>
+          <p className={policyClass("page-summary")}>Rules evaluated for this tenant.</p>
         </div>
-        <div className="policies-header-status">
-          <span className="status-pill status-pill-neutral">{policies.length} policies</span>
+        <div className={policyClass("policies-header-status")}>
+          <span className={policyClass("status-pill status-pill-neutral")}>{policies.length} policies</span>
           <span
-            className={`status-pill ${enabledPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral'}`}
+            className={policyClass('status-pill', enabledPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral')}
           >
             {enabledPoliciesCount} enabled
           </span>
-          {dryRunPoliciesCount > 0 ? <span className="status-pill status-pill-neutral">{dryRunPoliciesCount} dry run</span> : null}
-          {policyTypesQuery.isError ? <span className="status-pill status-pill-neutral">Fallback metadata</span> : null}
+          {dryRunPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-neutral")}>{dryRunPoliciesCount} dry run</span> : null}
+          {policyTypesQuery.isError ? <span className={policyClass("status-pill status-pill-neutral")}>Fallback metadata</span> : null}
         </div>
       </header>
 
-      <div className="policies-layout">
+      <div className={policyClass("policies-layout")}>
         <PolicyListPanel
           activeFilters={activeFilters}
           canOpenCreateModal={canOpenCreateModal}
