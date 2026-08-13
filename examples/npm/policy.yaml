@@ -77,8 +77,7 @@ policies:
         - "BSD"
     enabled: true
 
-  # Allow packages from your own private registry namespace without restriction.
-  # This must run BEFORE generic deny rules that might match internal packages.
+  # Record a positive match for internal namespaces. Deny rules still win.
   - name: allow-internal-packages
     type: allowlist
     schema_version: 1

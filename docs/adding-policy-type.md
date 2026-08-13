@@ -66,6 +66,8 @@ The evaluator must stay pure:
 - no Valkey
 - no upstream calls
 
+The shared `target` block is evaluated by the policy engine before the type-specific condition. New conditions should consume the already-selected artifact and metadata; do not duplicate dependency-scope/type matching inside a condition. Add target-aware evaluator tests when the new type has unusual interactions with `dry_run`, missing metadata, or `on_unknown` warning behavior.
+
 ### 5. Extend validation rules
 
 Update `internal/core/policy/validate.go` when the new type has action-specific rules or other business invariants.
@@ -104,6 +106,8 @@ At minimum, cover:
 - config decode + validation
 - the condition evaluator
 - catalog registration
+- descriptor metadata consumed by the API and policy-authoring UI
+- target-aware evaluation with direct, transitive, and unknown context where relevant
 - policy service behavior if compatibility or lifecycle rules changed
 - API behavior if request/response metadata changed
 
@@ -119,6 +123,7 @@ Typical files to update:
 Update docs when behavior changes:
 
 - `docs/policy-engine.md` for semantics and requirements
+- `GET /api/v1/policy-types` example/descriptor text used by API and UI clients
 - `README.md` if the policy is user-facing
 - `web/README.md` if the UI or API generation workflow changed
 

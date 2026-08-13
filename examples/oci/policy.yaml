@@ -20,18 +20,6 @@ policies:
         - edge
     enabled: true
 
-  # Deny images with a high CVSS vulnerability score.
-  # Requires OSV enrichment. OCI enrichment is limited in v1 — this rule
-  # will have no effect until OCI enrichment is wired in.
-  - name: block-vulnerable-images
-    type: cvss_threshold
-    schema_version: 1
-    action: deny
-    priority: 20
-    config:
-      max_cvss: 8.0
-    enabled: true
-
   # Block images from untrusted registries or organizations.
   - name: block-untrusted-registries
     type: blocklist
@@ -44,8 +32,7 @@ policies:
         - "malicious-org"
     enabled: true
 
-  # Allow images from your own internal registry without restriction.
-  # Set this at a lower priority number so it is checked first.
+  # Record a positive match for internal namespaces. Deny rules still win.
   - name: allow-internal-images
     type: allowlist
     schema_version: 1

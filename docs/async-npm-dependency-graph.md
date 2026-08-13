@@ -1,119 +1,166 @@
-# Async NPM Dependency Graph Resolution
+# Async npm dependency graphs
 
-## Summary
+The dependency-graph subsystem resolves concrete npm root packages outside the proxy request path, persists their node/edge graph, and exposes normalized dependency context to target-aware policies.
 
-Add graph-backed npm dependency context without putting expensive resolution on the proxy hot path.
+## Runtime composition
 
-Use PostgreSQL as the durable graph store and Valkey as the hot lookup cache. On graph miss, the proxy continues evaluating with `dependency_context=unknown`, enqueues an async sandbox resolution job, and later requests use the completed graph context. Conflicting graph evidence is classified as `unknown`.
+The recommended split topology runs `runtime.mode=dependency-graph-worker`. That process is the only split service that needs Node/npm and it receives neither PostgreSQL nor Valkey credentials. It uses the ingest gRPC client for claim, completion, failure, watch, and context responsibilities.
 
-## Key Changes
+`dependency_graph.run_in_process` defaults to `false`. In all-in-one or control-plane mode, queued jobs remain unresolved unless a separate worker runs or this option is explicitly enabled.
 
-- Add npm dependency graph domain types:
-  - `DependencyGraphRoot`: tenant, upstream, root package, root version, status, graph hash, timestamps, error.
-  - `DependencyGraphNode`: normalized npm artifact identity plus depth/context summary.
-  - `DependencyGraphEdge`: parent, child, dependency type: `prod`, `dev`, `peer`, `optional`.
-  - `DependencyContext`: `scope=direct|transitive|unknown`, dependency types, graph IDs, context hash.
-- Add core ports and services:
-  - `DependencyGraphRepository` for Postgres-backed graph/job persistence.
-  - `DependencyContextCache` for Valkey context lookup.
-  - `DependencyGraphQueue` for idempotent async resolve requests.
-  - `DependencyContextService` used by `AccessService` after npm version resolution and before policy evaluation.
-- Extend policy targeting:
+Configuration defaults:
 
-  ```yaml
-  target:
-    dependency_scope: [direct, transitive]
-    dependency_types: [prod, peer, optional]
-    on_unknown: warn
-  ```
+```yaml
+dependency_graph:
+  enabled: true
+  run_in_process: false
+  tenant_id: "*"
+  poll_interval: 5s
+  timeout: 2m
+  concurrency: 2
+  retry_delay: 5m
+```
 
-  Default `on_unknown` is `warn`, matching async graph-miss behavior. Policies without `target` keep current behavior.
-- Update evaluation and cache behavior:
-  - Attach dependency context to `domain.AccessRequest`.
-  - Include `context_hash` in decision cache keys so direct/transitive decisions do not reuse artifact-only decisions.
-  - Persist dependency context summary on decisions/audit payloads for debugging.
-  - Only run graph lookup for concrete npm versions; bare packuments still skip version-sensitive work.
-- Discover graph roots from native npm install snapshots:
-  - npm reports the complete resolved install set through its built-in audit request (`POST /-/npm/v1/security/advisories/bulk`) after `npm install`/`npm ci` unless `--no-audit` is set; no custom client tooling is required.
-  - npm gzips the audit request body (`Content-Encoding: gzip`); the proxy decodes it transparently.
-  - The proxy serves this endpoint, captures the snapshot, and answers with an empty advisory set so the npm client proceeds normally. Real upstream advisory data is not forwarded yet; vulnerability enforcement happens through firewall policies.
-  - npm sends this request even when the install later fails on a denied tarball, so a denied first install still teaches the system; once the graph resolves, a retried install evaluates with real direct/transitive context.
-  - `NPMInstallSnapshotService` infers roots off the hot path via name-level set difference: a snapshot package is a root when no other snapshot package declares its name as a dependency (manifest dependency names are fetched from the upstream with bounded concurrency).
-  - Only inferred roots are enqueued as graph-resolution jobs, so one install produces a handful of root jobs instead of one job per tarball; tarball requests never enqueue.
-  - If manifest lookups are unreliable and inference degenerates into "everything is a root", the snapshot is skipped instead of fanning out.
-- Add sandbox resolver worker:
-  - Runs as a separate `dependency-graph-worker` runtime in split deployments.
-  - Does not receive PostgreSQL credentials; it claims jobs and submits graph results through authenticated control-plane gRPC.
-  - Sends `dependency_graph.tenant_id` in claim/watch requests. Concrete tenant scopes are certificate-authorized and filter claims and wake-up signals; `"*"` selects the global-worker behavior.
-  - Subscribes to the `WatchDependencyGraphResolve` server stream for instant wake-up when jobs are enqueued; interval polling remains the fallback for failed-job retries and missed signals.
-  - Can still run in-process for local all-in-one/control-plane compatibility when `dependency_graph.run_in_process=true`; in-process workers receive the same wake-up signals through the shared in-memory notifier.
-  - Uses bounded concurrency, timeout, retry/backoff, and idempotent job keys.
-  - For each root package/version, creates an ephemeral temp workspace with a minimal `package.json`.
-  - Runs npm against the configured upstream registry with:
+## Job creation
 
-    ```sh
-    npm install <pkg>@<version> --package-lock-only --ignore-scripts --no-audit --no-fund --allow-git=none
-    ```
+Two paths enqueue roots:
 
-  - Reads `package-lock.json` and converts it into normalized nodes, edges, dependency types, and precomputed context summaries.
-  - Does not call the firewall npm proxy as its registry to avoid recursive graph-resolution loops.
+1. A target-aware policy requests context for a concrete npm metadata artifact, no stored context exists, and the request is eligible to become a root.
+2. The native npm bulk-audit endpoint captures an install snapshot, infers likely roots, and enqueues them asynchronously.
 
-## Persistence And Runtime Shape
+Tarball requests never enqueue graph work. Bare packuments do not have a version and cannot enqueue a concrete root.
 
-- Add migrations for graph roots, nodes, edges, context summaries, and resolution jobs.
-- Keep proxy mode free of direct PostgreSQL access.
-- In split mode, proxy uses Valkey for context cache lookups and sends async graph-resolution requests through a control-plane gRPC ingestion-style boundary.
-- On a Valkey context-cache miss, the split-mode proxy loads graph context through the `LookupDependencyGraphContext` ingest RPC (tenant-authorized like other ingest calls) and re-populates the Valkey cache; DB-owning runtimes look up Postgres directly.
-- Control plane owns durable writes and resolver job lifecycle APIs.
-- Dependency graph worker owns npm execution only.
-- Valkey stores:
-  - active/completed graph context summaries
-  - graph miss debounce keys
-  - decision cache entries keyed by tenant generation + artifact + context hash
+Jobs are idempotent through the PostgreSQL uniqueness constraint on:
 
-## Important Edge Cases
+```text
+tenant_id + upstream_id + root package + root version
+```
 
-- Graph missing: evaluate with `unknown`, enqueue once, audit `dependency_graph_miss`.
-- Tarball graph miss: evaluate with `unknown`, but do not enqueue a root graph job because tarballs do not identify whether the package is the install root.
-- Graph resolving: evaluate with `unknown`, do not enqueue duplicate jobs.
-- Resolver failure: store failure status and retry window; continue using `unknown`.
-- Conflicting evidence: classify as `unknown`.
-- Artifact appears only as non-root in completed graphs: classify as `transitive`.
-- Artifact has exact root graph and no conflicting transitive evidence: classify as `direct`.
-- No target-aware policies enabled: skip graph lookup/enqueue to avoid unnecessary resolver work.
+There is no separate Valkey debounce key.
 
-## Test Plan
+## Claim and wake-up lifecycle
 
-- Unit tests for lockfile-to-graph parsing:
-  - scoped and unscoped packages
-  - prod, peer, optional dependency edges
-  - duplicate package/version nodes
-  - malformed lockfile and missing version cases
-- Core service tests:
-  - graph miss enqueues async job and evaluates with unknown context
-  - graph hit attaches direct context
-  - graph hit attaches transitive context
-  - conflicting context becomes unknown
-  - decision cache key changes with context hash
-  - no target-aware policy skips graph lookup
-- Repository/cache tests:
-  - idempotent graph job enqueue
-  - graph replacement is transactional
-  - context summaries are tenant/upstream scoped
-  - Valkey miss/hit/error behavior matches existing cache fail-open style
-- Delivery/proxy tests:
-  - npm concrete metadata/tarball requests preserve current allow/deny behavior
-  - bare packuments do not trigger version-sensitive graph lookup
-  - audit events include graph miss/hit/resolver-request metadata
+```mermaid
+sequenceDiagram
+    participant Proxy
+    participant Control as Control plane
+    participant Worker
+    participant Registry as npm upstream
 
-## Assumptions
+    Proxy->>Control: EnqueueDependencyGraphResolve
+    Control-->>Worker: WatchDependencyGraphResolve event
+    Worker->>Control: ClaimDependencyGraphResolve
+    Worker->>Registry: npm install --package-lock-only
+    alt success
+        Worker->>Control: CompleteDependencyGraphResolve
+    else failure or timeout
+        Worker->>Control: FailDependencyGraphResolve(retry_after)
+    end
+```
 
-- V1 uses existing PostgreSQL rather than adding Neo4j or another graph database.
-- V1 graph scope is `tenant + upstream + root npm package + root version`.
-- Graph resolution is async; request-path npm installs are not held open.
-- Unknown/conflicting dependency context does not silently become direct or transitive.
-- NPM upstream authentication is not currently modeled for npm upstreams, so resolver auth support is deferred until npm upstream auth exists.
+The watch stream reduces pickup latency. Five-second polling remains active as fallback for missed events, reconnects, and retryable failed rows. Claim uses `FOR UPDATE SKIP LOCKED`, so multiple workers can claim different roots concurrently.
 
-## Worker tenant scope
+Claim and watch RPCs carry `dependency_graph.tenant_id`. Set it to a concrete tenant ID and authorize the worker certificate for that same tenant to filter claims and wake-up notifications. The default `"*"` scope preserves global-worker behavior and requires wildcard certificate authorization. Completion and failure requests are authorized against the tenant on the claimed job.
 
-`dependency_graph.tenant_id` defaults to `"*"`, which allows a global worker to claim jobs from every tenant when its certificate is also authorized for `"*"`. Set it to a concrete tenant ID and authorize the worker certificate for that same tenant to restrict claim queries, watch notifications, completion, and failure calls to that tenant.
+## npm execution
+
+Each job:
+
+1. creates a temporary workspace;
+2. writes a private minimal `package.json`;
+3. invokes npm for `root@version` against the configured upstream;
+4. creates a package lock without installing runtime files;
+5. parses nodes, edges, minimum depth, and dependency types;
+6. hashes the normalized graph;
+7. removes the temporary workspace.
+
+The npm invocation uses:
+
+```text
+--package-lock-only
+--ignore-scripts
+--no-audit
+--no-fund
+--allow-git=none
+```
+
+Concurrency and per-job timeout are bounded. This is an ephemeral workspace with a hardened npm invocation; the Go implementation does not create an OS, VM, or container sandbox.
+
+npm upstream authentication is not currently supplied to the resolver.
+
+## Persistence
+
+PostgreSQL stores:
+
+- `dependency_graph_roots`: tenant/upstream root and job status;
+- `dependency_graph_nodes`: normalized artifact, minimum depth, dependency types;
+- `dependency_graph_edges`: parent, child, and relationship type;
+- `dependency_context_summaries`: artifact lookup context per root.
+
+Completion transactionally replaces nodes and summaries for the root, writes edges, stores the graph hash, and marks the root complete.
+
+Dependency scope is derived as:
+
+- root: direct context for itself;
+- depth 1: direct dependency;
+- depth greater than 1: transitive dependency;
+- absent or conflicting evidence: unknown.
+
+Dependency types are `prod`, `dev`, `peer`, and `optional`.
+
+## Request-path lookup
+
+For an applicable target-aware npm policy, the proxy checks:
+
+1. Valkey context cache, keyed by tenant, upstream, and artifact;
+2. durable context summary through local or gRPC lookup;
+3. eligible root enqueue on a miss;
+4. unknown context while work is pending or unavailable.
+
+Context is cached for 30 minutes. Its normalized hash is included in decision-cache identity.
+
+## Retry and refresh limitations
+
+Current recovery behavior is deliberately simple:
+
+- failures are marked `failed` with an error and `updated_at` set to the fixed retry time;
+- failed jobs are retried indefinitely after `dependency_graph.retry_delay`;
+- there is no exponential backoff, attempt counter, maximum-attempt policy, or dead-letter state;
+- completion is reused because a duplicate enqueue conflicts with the unique root key;
+- completed roots are not automatically refreshed when upstream metadata changes;
+- there is no graph invalidation, requeue, or force-refresh API;
+- a worker crash while a row is `resolving` has no documented lease-recovery mechanism.
+
+Operators can inspect status/error through the API and logs. Recovery beyond the automatic fixed-delay retry currently requires direct operational intervention; no supported mutation endpoint exists.
+
+## Control-plane API
+
+| Operation | Endpoint | Behavior |
+| --- | --- | --- |
+| List roots | `GET /api/v1/dependency-graphs` | tenant-scoped status inventory; `limit` 1–500, default 100 |
+| Get snapshot | `GET /api/v1/dependency-graphs/{id}` | tenant-scoped root, nodes, and edges |
+
+Both require `X-Tenant-ID` for scoping. Current public HTTP does not authenticate that header.
+
+## UI workflow
+
+The Dependency Graphs page provides:
+
+- root inventory and pending/resolving/complete/failed status;
+- graph selection and status/error detail;
+- D3 relationship visualization;
+- package-name/version search;
+- maximum-depth filtering;
+- prod/dev/peer/optional type filters;
+- node and edge detail;
+- zoom, reset, and drag interactions.
+
+The UI reads only the two API operations above; it cannot enqueue, retry, invalidate, or refresh a root.
+
+## Observability
+
+Worker logs include tenant, upstream, artifact, duration, node/edge counts, and failure detail. gRPC and core work participate in OpenTelemetry when telemetry is enabled.
+
+## Separate possible future model
+
+Project/environment-scoped graph uploads, revisions, activation, and client-supplied lockfiles are a distinct possible future design. They are not unfinished phases of the implemented root-package resolver.
