@@ -122,7 +122,33 @@ export const evaluationOverviewFixtures = [
   },
 ] as const
 
+export const dependencyGraphRootFixtures = [
+  {
+    id: 'root-react', tenant_id: 'tenant-acme', upstream_id: 'npm', package_name: 'react-app', version: '1.0.0',
+    status: 'complete', graph_hash: 'abc123def456', created_at: '2026-08-08T10:00:00Z',
+    updated_at: '2026-08-08T10:00:00Z', resolved_at: '2026-08-08T10:00:00Z',
+  },
+] as const
+
+export const dependencyGraphFixtures: Record<string, Record<string, unknown>> = {
+  'root-react': {
+    root: dependencyGraphRootFixtures[0],
+    nodes: [
+      { id: 'node-root', artifact: { ecosystem: 'npm', name: 'react-app', version: '1.0.0' }, min_depth: 0, dependency_types: ['prod'] },
+      { id: 'node-react', artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' }, min_depth: 1, dependency_types: ['prod'] },
+      { id: 'node-scheduler', artifact: { ecosystem: 'npm', name: 'scheduler', version: '0.27.0' }, min_depth: 2, dependency_types: ['prod'] },
+    ],
+    edges: [
+      { id: 'edge-react', parent_node_id: 'node-root', child_node_id: 'node-react', dependency_type: 'prod' },
+      { id: 'edge-scheduler', parent_node_id: 'node-react', child_node_id: 'node-scheduler', dependency_type: 'prod' },
+    ],
+  },
+}
+
 type ApiFixtureOptions = {
+  dependencyGraphListFailures?: number
+  dependencyGraphRoots?: readonly Record<string, unknown>[]
+  dependencyGraphs?: Record<string, Record<string, unknown>>
   evaluationListFailures?: number
   evaluations?: readonly Record<string, unknown>[]
   policies?: readonly unknown[]
@@ -140,6 +166,7 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
   let remainingTenantListFailures = options.tenantListFailures ?? 0
   let remainingUpstreamListFailures = options.upstreamListFailures ?? 0
   let remainingEvaluationListFailures = options.evaluationListFailures ?? 0
+  let remainingDependencyGraphListFailures = options.dependencyGraphListFailures ?? 0
 
   await page.route('**/healthz', route => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
   await page.route('**/api/v1/**', async route => {
@@ -219,19 +246,20 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
     }
     if (path.endsWith('/policy-types')) return route.fulfill({ json: [{ type: 'blocklist', summary: 'Block selected namespaces.', description: 'Deny packages from explicitly blocked namespaces.', help: 'Add one namespace per line.', example: 'namespaces: [blocked]', supported_actions: ['deny', 'allow'], supported_schema_versions: [1], current_schema_version: 1, supported_ecosystems: ['npm', 'oci'], required_capabilities: [] }] })
     if (path.endsWith('/policies')) return route.fulfill({ json: options.policies ?? [] })
-    if (path.endsWith('/dependency-graphs/root-react')) return route.fulfill({ json: {
-      root: { id: 'root-react', tenant_id: 'tenant-acme', upstream_id: 'npm', package_name: 'react-app', version: '1.0.0', status: 'complete', graph_hash: 'abc123def456', created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z', resolved_at: '2026-08-08T10:00:00Z' },
-      nodes: [
-        { id: 'node-root', artifact: { ecosystem: 'npm', name: 'react-app', version: '1.0.0' }, min_depth: 0, dependency_types: ['prod'] },
-        { id: 'node-react', artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' }, min_depth: 1, dependency_types: ['prod'] },
-        { id: 'node-scheduler', artifact: { ecosystem: 'npm', name: 'scheduler', version: '0.27.0' }, min_depth: 2, dependency_types: ['prod'] },
-      ],
-      edges: [
-        { id: 'edge-react', parent_node_id: 'node-root', child_node_id: 'node-react', dependency_type: 'prod' },
-        { id: 'edge-scheduler', parent_node_id: 'node-react', child_node_id: 'node-scheduler', dependency_type: 'prod' },
-      ],
-    } })
-    if (path.endsWith('/dependency-graphs')) return route.fulfill({ json: [{ id: 'root-react', tenant_id: 'tenant-acme', upstream_id: 'npm', package_name: 'react-app', version: '1.0.0', status: 'complete', graph_hash: 'abc123def456', created_at: '2026-08-08T10:00:00Z', updated_at: '2026-08-08T10:00:00Z', resolved_at: '2026-08-08T10:00:00Z' }] })
+    if (/\/dependency-graphs\/[^/]+$/.test(path)) {
+      const rootId = path.split('/').at(-1) ?? ''
+      const graph = (options.dependencyGraphs ?? dependencyGraphFixtures)[rootId]
+      return graph
+        ? route.fulfill({ json: graph })
+        : route.fulfill({ status: 404, json: { error: 'dependency graph not found' } })
+    }
+    if (path.endsWith('/dependency-graphs')) {
+      if (remainingDependencyGraphListFailures > 0) {
+        remainingDependencyGraphListFailures -= 1
+        return route.fulfill({ status: 503, json: { error: 'dependency graph inventory unavailable' } })
+      }
+      return route.fulfill({ json: options.dependencyGraphRoots ?? dependencyGraphRootFixtures })
+    }
     return route.fulfill({ json: {} })
   })
 }
