@@ -745,6 +745,122 @@
         ],
         "type": "object"
       },
+      "SessionOrganizationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_default": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "is_default",
+          "role",
+          "permissions",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "SessionPrincipalResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "email",
+          "status"
+        ],
+        "type": "object"
+      },
+      "SessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "account_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "compatibility_mode": {
+            "type": "boolean"
+          },
+          "organizations": {
+            "items": {
+              "$ref": "#/components/schemas/SessionOrganizationResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "principal": {
+            "$ref": "#/components/schemas/SessionPrincipalResponse"
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/TenantResponse"
+          },
+          "tenant_role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "principal",
+          "tenant_role",
+          "organizations",
+          "account_permissions",
+          "compatibility_mode"
+        ],
+        "type": "object"
+      },
       "TenantResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2330,6 +2446,88 @@
         "summary": "List policy types",
         "tags": [
           "policies"
+        ]
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "description": "Returns the active account, local Organizations, and effective permissions. In disabled compatibility mode X-Tenant-ID selects the account.",
+        "operationId": "get-session",
+        "parameters": [
+          {
+            "description": "Compatibility-mode Tenant identifier",
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "schema": {
+              "description": "Compatibility-mode Tenant identifier",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Get the active session",
+        "tags": [
+          "session"
         ]
       }
     },

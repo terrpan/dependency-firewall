@@ -24,6 +24,7 @@ func defaultOCICacheRootDir() string {
 // Config holds all application configuration sections.
 type Config struct {
 	Runtime         RuntimeConfig         `mapstructure:"runtime"          validate:"required"`
+	Auth            AuthConfig            `mapstructure:"auth"`
 	Server          ServerConfig          `mapstructure:"server"           validate:"required"`
 	OCICache        OCICacheConfig        `mapstructure:"oci_cache"`
 	Database        DatabaseConfig        `mapstructure:"database"`
@@ -35,6 +36,11 @@ type Config struct {
 	Bundle          BundleConfig          `mapstructure:"bundle"           validate:"required"`
 	Secrets         SecretsConfig         `mapstructure:"secrets"`
 	DependencyGraph DependencyGraphConfig `mapstructure:"dependency_graph"`
+}
+
+// AuthConfig selects the human control-plane authentication adapter.
+type AuthConfig struct {
+	Mode string `mapstructure:"mode" validate:"omitempty,oneof=disabled clerk"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
@@ -245,6 +251,7 @@ func setDefaults(v *viper.Viper) {
 
 func setRuntimeServerDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.mode", string(RuntimeModeAllInOne))
+	v.SetDefault("auth.mode", "disabled")
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.read_timeout", 5*time.Second)
 	v.SetDefault("server.write_timeout", 0)

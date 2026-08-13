@@ -256,6 +256,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the active session
+         * @description Returns the active account, local Organizations, and effective permissions. In disabled compatibility mode X-Tenant-ID selects the account.
+         */
+        get: operations["get-session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants": {
         parameters: {
             query?: never;
@@ -590,6 +610,32 @@ export interface components {
             upstream_id?: string;
             /** Format: int64 */
             version: number;
+        };
+        SessionOrganizationResponse: {
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            is_default: boolean;
+            name: string;
+            permissions: string[] | null;
+            role: string;
+            status: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SessionPrincipalResponse: {
+            display_name: string;
+            email: string;
+            id: string;
+            status: string;
+        };
+        SessionResponse: {
+            account_permissions: string[] | null;
+            compatibility_mode: boolean;
+            organizations: components["schemas"]["SessionOrganizationResponse"][] | null;
+            principal: components["schemas"]["SessionPrincipalResponse"];
+            tenant: components["schemas"]["TenantResponse"];
+            tenant_role: string;
         };
         TenantResponse: {
             /** Format: date-time */
@@ -1611,6 +1657,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PolicyTypeResponse"][] | null;
+                };
+            };
+            499: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Gateway Timeout */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+        };
+    };
+    "get-session": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Compatibility-mode Tenant identifier */
+                "X-Tenant-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumaErrorResponse"];
                 };
             };
             499: {

@@ -17,6 +17,15 @@ func TestConfigValidate(t *testing.T) {
 		require.NoError(t, cfg.Validate())
 	})
 
+	t.Run("unknown auth mode fails", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Auth.Mode = "trusted-headers"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "auth.mode")
+	})
+
 	t.Run("invalid server port fails", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Server.Port = 0

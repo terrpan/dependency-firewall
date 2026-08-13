@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -26,6 +27,12 @@ func registerControlPlaneRoutes(
 	logger *slog.Logger,
 	info BuildInfo,
 ) error {
+	if cfg.Auth.Mode == "clerk" {
+		return fmt.Errorf("registering control-plane routes: auth.mode=clerk requires the Clerk adapter")
+	}
+	if cfg.Auth.Mode == "" || cfg.Auth.Mode == "disabled" {
+		logger.Error("SECURITY: human control-plane authentication is disabled; compatibility mode must not be exposed publicly")
+	}
 	controlPlaneAPI := apidelivery.NewControlPlaneAPI(mux, info.Version)
 
 	healthOptions := []service.HealthOption{}
@@ -57,6 +64,7 @@ func registerControlPlaneRoutes(
 	apidelivery.NewHealthHandler(healthService, logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	tenantService := service.NewTenantService(deps.tenantRepo)
+	sessionService := service.NewSessionService(deps.tenantRepo, deps.organizationRepo)
 	policyService := service.NewPolicyService(
 		deps.policyRepo,
 		deps.policyRevisionRepo,
@@ -82,6 +90,7 @@ func registerControlPlaneRoutes(
 	)
 
 	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewSessionHandler(sessionService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewCacheHandler(cacheService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
