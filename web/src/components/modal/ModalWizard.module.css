@@ -169,6 +169,26 @@
   min-width: 0;
 }
 
+.actions {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.actionsLeading,
+.actionsPrimary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.actionsPrimary {
+  justify-content: flex-end;
+}
+
 .aside {
   display: grid;
   gap: var(--space-card);
@@ -204,5 +224,15 @@
 
   .stepItemInactive {
     display: none;
+  }
+
+  .actions {
+    display: grid;
+  }
+
+  .actionsLeading,
+  .actionsPrimary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 }

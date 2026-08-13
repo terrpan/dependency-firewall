@@ -437,7 +437,6 @@
 .upstreams-modal-form,
 .upstreams-wizard-section,
 .upstreams-wizard-copy,
-.upstreams-wizard-footer,
 .upstreams-review-card {
   display: grid;
   gap: var(--space-card);
@@ -479,16 +478,6 @@
   gap: 18px;
 }
 
-.upstreams-wizard-footer {
-  width: 100%;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: center;
-}
-
-.upstreams-wizard-footer > *:last-child {
-  justify-content: flex-end;
-}
-
 @media (max-width: 1180px) {
   .upstreams-layout {
     grid-template-columns: 1fr;
@@ -500,13 +489,5 @@
   .upstreams-wizard-section,
   .upstreams-auth-detail-fields {
     grid-template-columns: 1fr;
-  }
-
-  .upstreams-wizard-footer {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .upstreams-wizard-footer > *:last-child {
-    justify-content: flex-end;
   }
 }

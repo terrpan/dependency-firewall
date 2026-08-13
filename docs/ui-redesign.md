@@ -69,13 +69,14 @@ All reusable values belong in `web/src/ui/foundation/tokens.css`. Components mus
 - Disabled controls need an adjacent explanation when the reason is not obvious from context.
 - Success feedback confirms the completed operation without interrupting the next task.
 - Dashboards summarize tenant protection with decision, enforcement, and upstream counts once; then prioritize required setup, blocks, and warnings. Internal service health and implementation details such as cache ratios do not compete with tenant actions.
-- Tenant inventories make the active workspace unmistakable, describe context changes as switching rather than opening, and reveal the creation form on request. When no tenant exists, creation becomes the immediate inline recovery path.
+- Tenant inventories make the active workspace unmistakable and describe context changes as switching rather than opening. Tenant creation uses the shared modal wizard, including when the inventory is empty, so creation behavior does not change between setup states.
 - Upstream inventories lead with source, ecosystem, credential readiness, and available policy coverage. Client setup is the primary next action after selection; identifiers and timestamps are progressively disclosed, removal is confirmed inline, and generated setup must never recommend weakening transport security.
 - Policy inventories lead with a plain-language effect, enforcement state, upstream scope, dependency target, and evaluation order. Schema, identifiers, versions, and timestamps are progressively disclosed in details rather than competing with the rule itself.
 - Evaluation history leads with the outcome, artifact, human-readable reason, and responsible policy. Page-level signals stay separate from filtered row counts; combined filters narrow results predictably, while hashes, identifiers, cache timestamps, and secondary matches remain progressively disclosed.
 - Dependency graphs explain direct and transitive package relationships before exposing graph identifiers or hashes. Completed roots are preferred by default, failed roots keep their actionable error visible, map targets have equivalent keyboard and pointer semantics, and selected details never reduce the usable graph viewport.
 - Disabled and dry-run policies describe what they would do, never what they currently enforce.
 - Dialogs have a labelled title, a predictable dismissal path, contained focus, and an action order consistent across features.
+- Creation wizards share one progress treatment and footer contract: Cancel and optional reset actions on the left, Back and the primary continuation or completion action on the right. Domain complexity may change the number of steps, not the interaction grammar.
 - Selection must remain visually distinct from hover and keyboard focus. Graph nodes and edges expose the same selection behavior to Enter/Space and pointer activation.
 
 ## Component contract

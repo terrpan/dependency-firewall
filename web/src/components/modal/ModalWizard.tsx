@@ -20,6 +20,15 @@ export type ModalWizardProps = Omit<ModalDialogProps, 'children'> & {
   onStepChange?: (step: number) => void
 }
 
+export function ModalWizardActions({ leading, children }: { leading?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={styles.actions}>
+      <div className={styles.actionsLeading}>{leading}</div>
+      <div className={styles.actionsPrimary}>{children}</div>
+    </div>
+  )
+}
+
 export function ModalWizard({
   steps,
   currentStep,

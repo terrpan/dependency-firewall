@@ -1,6 +1,7 @@
 // CreateUpstreamModal renders the tenant-scoped upstream creation wizard.
 import type { FormEventHandler, RefObject } from 'react'
-import { ModalWizard, type ModalWizardStep } from '../../components/modal/index.ts'
+import { ModalWizard, ModalWizardActions, type ModalWizardStep } from '../../components/modal/index.ts'
+import { Button } from '../../ui/index.ts'
 import { upstreamClass } from './styles.ts'
 import {
   formatUpstreamCapabilityLabel,
@@ -117,51 +118,23 @@ export function CreateUpstreamModal({
       : 'Review details'
 
   const footer = (
-    <div className={upstreamClass("upstreams-wizard-footer")}>
-      <div className={upstreamClass("upstreams-form-actions")}>
-        <button
-          className={upstreamClass("upstreams-secondary-button")}
-          disabled={isPending}
-          onClick={onClose}
-          type="button"
-        >
-          Cancel
-        </button>
-      </div>
-
-      <div className={upstreamClass("upstreams-form-actions")}>
+    <ModalWizardActions leading={<Button disabled={isPending} onClick={onClose}>Cancel</Button>}>
         {currentStep > 0 ? (
-          <button
-            className={upstreamClass("upstreams-secondary-button")}
-            disabled={isPending}
-            onClick={onBack}
-            type="button"
-          >
+          <Button disabled={isPending} onClick={onBack}>
             Back
-          </button>
+          </Button>
         ) : null}
 
         {!isReviewStep ? (
-          <button
-            className={upstreamClass("primary-button")}
-            disabled={!tenantId || isPending}
-            form="create-upstream-form"
-            type="submit"
-          >
+          <Button variant="primary" disabled={!tenantId || isPending} form="create-upstream-form" type="submit">
             {nextLabel}
-          </button>
+          </Button>
         ) : (
-          <button
-            className={upstreamClass("primary-button")}
-            disabled={isPending || !tenantId}
-            form="create-upstream-form"
-            type="submit"
-          >
+          <Button variant="primary" disabled={isPending || !tenantId} form="create-upstream-form" type="submit">
             {isPending ? 'Creating...' : 'Create upstream'}
-          </button>
+          </Button>
         )}
-      </div>
-    </div>
+    </ModalWizardActions>
   )
 
   return (
@@ -176,6 +149,8 @@ export function CreateUpstreamModal({
       onClose={onClose}
       open={open}
       size="wide"
+      showStepDescriptions={false}
+      stepGuideVariant="compact"
       steps={wizardSteps}
       title="Create upstream"
     >

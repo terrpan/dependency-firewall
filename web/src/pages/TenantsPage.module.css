@@ -4,12 +4,9 @@
   align-items: start;
 }
 
-.layoutWithForm {
-  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.75fr);
-}
-
 .inventory,
 .form,
+.wizardSection,
 .identity,
 .formHeader > div {
   display: grid;
@@ -145,12 +142,11 @@
   text-decoration: underline;
 }
 
-.createPanel {
-  position: sticky;
-  top: 84px;
+.form {
+  gap: var(--space-card);
 }
 
-.form {
+.wizardSection {
   gap: var(--space-card);
 }
 
@@ -169,22 +165,36 @@
   height: 36px;
 }
 
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
+.reviewCard {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-subtle);
+  overflow: hidden;
 }
 
-@media (max-width: 960px) {
-  .layoutWithForm {
-    grid-template-columns: 1fr;
-  }
+.reviewCard > div {
+  display: grid;
+  grid-template-columns: minmax(120px, .7fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
 
-  .createPanel {
-    position: static;
-    grid-row: 1;
-  }
+.reviewCard > div:last-child {
+  border-bottom: 0;
+}
+
+.reviewCard dt {
+  color: var(--color-text-muted);
+}
+
+.reviewCard dd {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {
@@ -216,7 +226,8 @@
     display: grid;
   }
 
-  .actions > * {
-    flex: 1 1 auto;
+  .reviewCard > div {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 }

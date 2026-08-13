@@ -23,16 +23,21 @@ test('makes the active workspace and tenant switching explicit', async ({ page }
   await expect.poll(() => page.evaluate(() => localStorage.getItem('dependency-firewall.tenant-id'))).toBe('tenant-platform')
 })
 
-test('presents creation inline when no tenant exists', async ({ page }) => {
+test('guides first tenant creation through the shared wizard', async ({ page }) => {
   await installApi(page, { tenants: [] })
   await page.goto('/tenants')
 
   await expect(page.getByRole('heading', { name: 'No tenants yet' })).toBeVisible()
-  await expect(page.getByRole('form', { name: 'Create tenant' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'New tenant' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Create tenant' })).toBeDisabled()
+  await page.getByRole('button', { name: 'New tenant' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Create tenant' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('Step 1 of 2')
+  await expect(page.getByRole('button', { name: 'Review details' })).toBeDisabled()
 
   await page.getByLabel('Tenant name').fill('Security Engineering')
+  await page.getByRole('button', { name: 'Review details' }).click()
+  await expect(page.getByRole('heading', { name: 'Review workspace' })).toBeVisible()
+  await expect(dialog).toContainText('Security Engineering')
   await page.getByRole('button', { name: 'Create tenant' }).click()
   await expect(page.getByText('Tenant created')).toBeVisible()
   await expect(page.getByRole('listitem').filter({ hasText: 'Security Engineering' })).toContainText('Active workspace')

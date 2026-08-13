@@ -503,23 +503,6 @@
   margin: 0;
 }
 
-.wizard-actions {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.wizard-actions-modal {
-  width: 100%;
-}
-
-.wizard-actions-right {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 .policy-list-item:disabled,
 .policy-type-card:disabled {
   cursor: not-allowed;
@@ -879,20 +862,6 @@
   .policy-list-state-actions {
     width: 100%;
     justify-content: space-between;
-  }
-
-  .wizard-actions,
-  .wizard-actions-right {
-    flex-wrap: nowrap;
-    align-items: center;
-  }
-
-  .wizard-actions-right {
-    margin-left: auto;
-  }
-
-  .wizard-actions button {
-    white-space: nowrap;
   }
 
   .policy-diff-table-header,

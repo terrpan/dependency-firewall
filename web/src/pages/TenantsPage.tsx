@@ -1,14 +1,19 @@
-import { useState, type FormEvent } from 'react'
-import { Building2, Plus, X } from 'lucide-react'
+import { useRef, useState, type FormEvent } from 'react'
+import { Building2, Plus } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { ModalWizard, ModalWizardActions, type ModalWizardStep } from '../components/modal/index.ts'
 import { useSessionControlPlaneApi } from '../features/auth/useSessionControlPlaneApi.ts'
 import { useNotifications } from '../features/notifications/useNotifications.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
-import { AsyncState, Badge, Button, EmptyState, Field, Input, PageHeader, Panel, ResourceList } from '../ui/index.ts'
+import { AsyncState, Badge, Button, EmptyState, Field, Input, PageHeader, ResourceList } from '../ui/index.ts'
 import { applicationClass } from '../ui/foundation/applicationStyles.ts'
 import styles from './TenantsPage.module.css'
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+const createTenantSteps = [
+  { id: 'details', label: 'Details', description: 'Name the workspace.' },
+  { id: 'review', label: 'Review', description: 'Confirm the new tenant.' },
+] satisfies readonly ModalWizardStep[]
 
 function formatDate(value: string) {
   const date = new Date(value)
@@ -22,13 +27,20 @@ export function TenantsPage() {
   const [name, setName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const showCreateForm = status === 'empty' || isCreateOpen
+  const [createStep, setCreateStep] = useState(0)
+  const nameInputRef = useRef<HTMLInputElement>(null)
 
-  function toggleCreateForm() {
-    if (showCreateForm) {
-      setName('')
-    }
-    setIsCreateOpen((current) => !current)
+  function openCreateWizard() {
+    setName('')
+    setCreateStep(0)
+    setIsCreateOpen(true)
+  }
+
+  function closeCreateWizard() {
+    if (isCreating) return
+    setName('')
+    setCreateStep(0)
+    setIsCreateOpen(false)
   }
 
   async function createTenant(event: FormEvent) {
@@ -36,12 +48,18 @@ export function TenantsPage() {
     const trimmedName = name.trim()
     if (!trimmedName) return
 
+    if (createStep === 0) {
+      setCreateStep(1)
+      return
+    }
+
     setIsCreating(true)
     try {
       const tenant = await api.tenants.create({ name: trimmedName })
       await reloadTenants()
       setTenantId(tenant.id)
       setName('')
+      setCreateStep(0)
       setIsCreateOpen(false)
       notifySuccess('Tenant created', `${tenant.name} is now the active workspace.`)
     } catch (error) {
@@ -66,21 +84,17 @@ export function TenantsPage() {
                   ? 'Unavailable'
                   : `${tenants.length} tenant${tenants.length === 1 ? '' : 's'}`}
             </Badge>
-            {status === 'ready' ? (
-              <Button
-                aria-expanded={showCreateForm}
-                onClick={toggleCreateForm}
-                variant={showCreateForm ? 'default' : 'primary'}
-              >
-                {showCreateForm ? <X size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
-                {showCreateForm ? 'Close form' : 'New tenant'}
+            {status === 'ready' || status === 'empty' ? (
+              <Button onClick={openCreateWizard} variant="primary">
+                <Plus size={16} aria-hidden="true" />
+                New tenant
               </Button>
             ) : null}
           </>
         )}
       />
 
-      <div className={[styles.layout, showCreateForm && styles.layoutWithForm].filter(Boolean).join(' ')}>
+      <div className={styles.layout}>
         <section className={styles.inventory} aria-labelledby="tenant-workspaces-heading">
           <div className={styles.inventoryHeader}>
             <div>
@@ -146,46 +160,69 @@ export function TenantsPage() {
           ) : null}
         </section>
 
-        {showCreateForm ? (
-          <Panel className={styles.createPanel} padding="lg">
-            <form aria-label="Create tenant" className={styles.form} onSubmit={createTenant}>
+      </div>
+
+      <ModalWizard
+        currentStep={createStep}
+        description="Create an isolated workspace for one team, business unit, or environment."
+        dismissible={!isCreating}
+        footer={(
+          <ModalWizardActions leading={<Button disabled={isCreating} onClick={closeCreateWizard}>Cancel</Button>}>
+            {createStep > 0 ? <Button disabled={isCreating} onClick={() => setCreateStep(0)}>Back</Button> : null}
+            <Button variant="primary" disabled={isCreating || !name.trim()} form="create-tenant-form" type="submit">
+              {createStep === 0 ? 'Review details' : isCreating ? 'Creating…' : 'Create tenant'}
+            </Button>
+          </ModalWizardActions>
+        )}
+        initialFocusRef={nameInputRef}
+        onClose={closeCreateWizard}
+        open={isCreateOpen}
+        showStepDescriptions={false}
+        size="regular"
+        stepGuideVariant="compact"
+        steps={createTenantSteps}
+        title="Create tenant"
+      >
+        <form aria-label="Create tenant" className={styles.form} id="create-tenant-form" onSubmit={createTenant}>
+          {createStep === 0 ? (
+            <div className={styles.wizardSection}>
               <div className={styles.formHeader}>
                 <span className={styles.formIcon} aria-hidden="true"><Building2 size={20} /></span>
                 <div>
-                  <h3>Create tenant</h3>
-                  <p>A tenant is an isolated boundary for one team, business unit, or environment.</p>
+                  <h3>Name the workspace</h3>
+                  <p>Use the name operators already use for this team or environment.</p>
                 </div>
               </div>
 
-              <Field
-                label="Tenant name"
-                hint="Use the name operators already use for this team or environment."
-              >
+              <Field label="Tenant name">
                 <Input
                   autoComplete="organization"
                   maxLength={120}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Platform Engineering"
+                  ref={nameInputRef}
                   required
                   value={name}
                 />
               </Field>
-
-              <div className={styles.actions}>
-                {status !== 'empty' ? (
-                  <Button onClick={() => { setIsCreateOpen(false); setName('') }} type="button">
-                    Cancel
-                  </Button>
-                ) : null}
-                <Button variant="primary" disabled={isCreating || !name.trim()} type="submit">
-                  <Plus size={16} aria-hidden="true" />
-                  {isCreating ? 'Creating…' : 'Create tenant'}
-                </Button>
+            </div>
+          ) : (
+            <div className={styles.wizardSection}>
+              <div className={styles.formHeader}>
+                <span className={styles.formIcon} aria-hidden="true"><Building2 size={20} /></span>
+                <div>
+                  <h3>Review workspace</h3>
+                  <p>The new tenant becomes active immediately after creation.</p>
+                </div>
               </div>
-            </form>
-          </Panel>
-        ) : null}
-      </div>
+              <dl className={styles.reviewCard}>
+                <div><dt>Workspace name</dt><dd>{name.trim()}</dd></div>
+                <div><dt>Scope</dt><dd>Isolated tenant</dd></div>
+              </dl>
+            </div>
+          )}
+        </form>
+      </ModalWizard>
     </section>
   )
 }
