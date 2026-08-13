@@ -284,7 +284,7 @@ function GraphMap({ nodes, edges, selection, onSelect }: { nodes: GraphNode[]; e
     }
   }
 
-  return <div className={graphClass("graph-map-stage")}><div className={graphClass("graph-zoom-controls")} role="group" aria-label="Graph zoom controls"><button aria-label="Zoom out" disabled={zoomLevel <= 0.65} onClick={() => zoomBy(0.75)} type="button">−</button><span>{Math.round(zoomLevel * 100)}%</span><button aria-label="Zoom in" disabled={zoomLevel >= 2.5} onClick={() => zoomBy(1.25)} type="button">+</button><button aria-label="Reset graph zoom" onClick={resetZoom} type="button">Reset</button></div><div className={graphClass("graph-map-scroll")}><svg ref={svgRef} className={graphClass("graph-map")} role="group" aria-label="Interactive dependency graph" viewBox={`0 0 ${graphWidth} ${graphHeight}`} /></div></div>
+  return <div className={graphClass("graph-map-stage")}><div className={graphClass("graph-zoom-controls")} role="group" aria-label="Graph zoom controls"><button aria-label="Zoom out" disabled={zoomLevel <= 0.65} onClick={() => zoomBy(0.75)} title="Zoom out" type="button">−</button><button aria-label="Reset graph zoom" className={graphClass("graph-zoom-level")} onClick={resetZoom} title="Reset zoom" type="button">{Math.round(zoomLevel * 100)}%</button><button aria-label="Zoom in" disabled={zoomLevel >= 2.5} onClick={() => zoomBy(1.25)} title="Zoom in" type="button">+</button></div><div className={graphClass("graph-map-scroll")}><svg ref={svgRef} className={graphClass("graph-map")} role="group" aria-label="Interactive dependency graph" viewBox={`0 0 ${graphWidth} ${graphHeight}`} /></div></div>
 }
 
 function GraphWorkspace({ graph }: { graph: DependencyGraph }) {

@@ -63,6 +63,8 @@ test('filters, selects, highlights, zooms, and deselects graph nodes', async ({ 
 
   await page.getByRole('button', { name: 'Zoom in' }).click()
   await expect(page.getByText('125%')).toBeVisible()
+  await page.getByRole('button', { name: 'Reset graph zoom' }).click()
+  await expect(page.getByRole('button', { name: 'Reset graph zoom' })).toHaveText('100%')
   const productionFilter = page.getByRole('button', { name: 'Production', exact: true })
   await productionFilter.click()
   await expect(productionFilter).toHaveAttribute('aria-pressed', 'true')

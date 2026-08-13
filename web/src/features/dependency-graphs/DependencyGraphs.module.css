@@ -39,11 +39,11 @@
 .graph-map-stage { position: relative; height: clamp(420px, 62vh, 720px); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); }
 .graph-map-scroll { width: 100%; height: 100%; overflow: hidden; padding: 0; border-radius: var(--radius-md); touch-action: none; background: var(--color-surface-subtle); }
 .graph-map { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: visible; background: var(--color-surface-subtle); }
-.graph-zoom-controls { position: absolute; z-index: 2; top: 16px; right: 16px; display: inline-flex; align-items: center; gap: 4px; padding: 5px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface-raised); box-shadow: var(--shadow-soft); }
-.graph-zoom-controls button { min-width: 30px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text-strong); font-weight: 800; cursor: pointer; }
+.graph-zoom-controls { position: absolute; z-index: 2; top: 12px; right: 12px; display: inline-grid; grid-template-columns: 30px 48px 30px; align-items: center; padding: 3px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-raised); box-shadow: var(--shadow-sm); }
+.graph-zoom-controls button { min-width: 0; height: 30px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-strong); font-weight: 800; cursor: pointer; }
 .graph-zoom-controls button:hover:not(:disabled), .graph-zoom-controls button:focus-visible { background: var(--accent-surface); color: var(--accent-bright); }
 .graph-zoom-controls button:disabled { cursor: not-allowed; opacity: .4; }
-.graph-zoom-controls span { min-width: 42px; color: var(--text-muted); font-size: .76rem; font-variant-numeric: tabular-nums; text-align: center; }
+.graph-zoom-controls .graph-zoom-level { border-inline: 1px solid var(--border-soft); border-radius: 0; color: var(--text-muted); font-size: .74rem; font-variant-numeric: tabular-nums; font-weight: 600; }
 .graph-map-background { fill: var(--color-surface-subtle); stroke: var(--color-border); stroke-dasharray: 4 8; }
 .graph-edge-group { cursor: pointer; }
 .graph-edge-group:focus { outline: none; }
@@ -78,4 +78,4 @@
 .graph-technical-details summary { width: fit-content; color: var(--accent); cursor: pointer; font-weight: 600; }
 .graph-technical-details .graph-detail-list { margin-top: 14px; }
 @media (max-width: 1020px) { .dependency-graphs-layout { grid-template-columns: 1fr; } .graph-root-items { grid-auto-flow: column; grid-auto-columns: minmax(220px, 280px); overflow-x: auto; padding-bottom: 4px; } }
-@media (max-width: 720px) { .graph-heading { display: grid; } .graph-workspace-meta { display: grid; } .graph-result-count { padding-inline: 4px; } .graph-legend { gap: 8px 12px; } .graph-map-stage { height: clamp(380px, 58vh, 580px); } .graph-zoom-controls { top: 10px; right: 10px; } }
+@media (max-width: 720px) { .graph-heading { display: grid; } .graph-workspace-meta { display: grid; } .graph-result-count { padding-inline: 4px; } .graph-legend { gap: 8px 12px; } .graph-map-stage { height: clamp(380px, 58vh, 580px); } .graph-zoom-controls { top: 8px; right: 8px; } }
