@@ -9,12 +9,14 @@ Dependency Firewall is a multi-tenant, policy-aware proxy for software packages 
 
 Select a mode with `runtime.mode`, `FIREWALL_RUNTIME_MODE`, or `-mode`.
 
-| Mode | HTTP | gRPC | PostgreSQL | Valkey | Node/npm |
+| Mode | HTTP | gRPC | PostgreSQL | Valkey | External resolver tools |
 | --- | --- | --- | --- | --- | --- |
-| `control-plane` | Management API, OpenAPI, API docs | Bundle and ingest server | Required; runs migrations | Required | Only when `dependency_graph.run_in_process=true` |
-| `proxy` | Supported ecosystem routes and `/healthz` | Bundle and ingest client | No | Required | No |
-| `all-in-one` | Management and proxy routes on one mux | Local adapters; no listener | Required; runs migrations | Required | Only when `dependency_graph.run_in_process=true` |
-| `dependency-graph-worker` | None | Ingest client | No | No | Required |
+| `control-plane` | Management API, OpenAPI, API docs | Bundle and ingest server | Required; runs migrations | Required | Node.js/npm only when `dependency_graph.run_in_process=true` |
+| `proxy` | Supported ecosystem routes and `/healthz` | Bundle and ingest client | No | Required | None |
+| `all-in-one` | Management and proxy routes on one mux | Local adapters; no listener | Required; runs migrations | Required | Node.js/npm only when `dependency_graph.run_in_process=true` |
+| `dependency-graph-worker` | None | Ingest client | No | No | Node.js/npm |
+
+External resolver tools are executables used by background dependency-graph resolution; this column does not describe which ecosystem protocols a mode can proxy. The current dependency-graph resolver uses Node.js/npm.
 
 `dependency_graph.run_in_process` defaults to `false`. Consequently, the default all-in-one process can enqueue dependency-graph jobs but cannot resolve them unless a separate worker runs or in-process resolution is explicitly enabled.
 
