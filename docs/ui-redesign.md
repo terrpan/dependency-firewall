@@ -1,169 +1,123 @@
-# Dependency Firewall UI redesign RFC
+# UI architecture and design guidance
 
-Status: implemented
+The operator console is an implemented client-rendered React/TypeScript/Vite application. It is built and deployed separately from the Go runtime and consumes the control-plane API through generated OpenAPI types.
 
-Reference experience: light theme
+Current routes are Dashboard, Tenants, Upstreams, Policies, Evaluations, Dependency Graphs, and Not Found. Audit events have an API but no UI route.
 
-Architecture: client-rendered React/Vite application
+## Current authentication boundary
 
-## Goals and principles
+The console is **not currently authenticated**. The local/default adapter returns an anonymous state, and route guards deliberately allow access while reporting placeholder session/role enforcement. Public Go HTTP routes do not validate bearer tokens or enforce RBAC.
 
-Dependency Firewall is an authenticated security operations console. The interface uses solid graphite navigation, warm neutral work surfaces, steel-blue actions, one-pixel borders, and restrained semantic colors. Elevation communicates overlays rather than decoration. IBM Plex Sans is the interface face; IBM Plex Mono is reserved for identifiers, hashes, versions, and commands. Neon, purple, glass effects, and speculative “futuristic” decoration are out of scope.
+Implemented extension seams are:
 
-The reference layouts are 390, 768, 1024, and 1440 pixels wide. Every workflow must provide visible keyboard focus, WCAG 2.2 AA contrast, useful labels, reduced-motion behavior, and explicit loading, empty, error, disabled, destructive, warning, and success states.
+- provider-neutral loading, anonymous, authenticated, unauthorized, and error states;
+- provider-neutral user, role, organization, sign-in/sign-out, and account-control fields;
+- asynchronous `getAccessToken()`;
+- API-client attachment of `Authorization: Bearer <token>` when a token exists;
+- explicit route-guard and expired-session UI states.
+
+These seams are not an authority boundary. A production IdP adapter, session enforcement, Go JWT/JWKS validation, RBAC, and IdP-organization-to-tenant mapping remain future work. Backend authorization must remain authoritative and must not trust client role claims.
 
 ## Product design principles
 
-1. **Operational clarity before decoration.** Put the current scope, risk, state, and next action ahead of branding or visual novelty. Every screen should answer where the operator is, what needs attention, and what can be done next.
-2. **Calm by default, emphatic by exception.** Neutral surfaces carry normal work. Semantic color is reserved for information that changes a decision: success, warning, destructive action, or active selection.
-3. **Progressive disclosure for dense systems.** Lists and summaries expose the fields needed to choose an item. Panels, dialogs, and graph details expose the full record without making the inventory unreadable.
-4. **Consistency is a safety feature.** The same action, state, and resource type should look and behave the same across routes. Prefer an existing primitive or pattern before adding a route-specific control.
-5. **The tenant is always explicit.** Tenant context remains visible in the shell and tenant-scoped work must never rely on an operator remembering an earlier selection.
-6. **Keyboard and pointer behavior are peers.** Focus, selection, dismissal, navigation, graph inspection, and form submission must be complete without a mouse.
-7. **Responsive means re-composed, not compressed.** Columns collapse, actions wrap, and navigation becomes a drawer. Information must not become illegible merely to preserve a desktop arrangement.
+1. **Operational clarity before decoration.** Put scope, risk, state, and next action first.
+2. **Calm by default, emphatic by exception.** Reserve semantic color for information that changes a decision.
+3. **Progressive disclosure for dense systems.** Inventories support selection; details expose full records.
+4. **Consistency is a safety feature.** Reuse the same control and state language across routes.
+5. **Tenant context is explicit.** The shell always shows the active workspace.
+6. **Keyboard and pointer behavior are peers.** Navigation, dialogs, filters, and graph inspection work without a mouse.
+7. **Responsive means recomposed, not compressed.** Columns collapse and actions wrap rather than shrinking into illegibility.
 
-## Visual language
+The visual direction is restrained industrial security: graphite navigation, warm neutral work surfaces, steel-blue actions, one-pixel borders, and restrained status colors. Avoid neon, purple, glass-heavy, or speculative futuristic decoration.
 
-### Color and elevation
+## Visual system
 
-- Warm neutral canvas and white/light-neutral surfaces are the light-theme reference.
-- The graphite navigation rail establishes application context. On desktop it remains pinned to the viewport while long route content scrolls; on mobile it becomes a fixed modal drawer with a scrim.
-- Steel blue identifies primary actions, active navigation, links, and interactive focus. It is not used as ambient decoration.
-- Green, amber, and red communicate success, caution, and danger respectively. Never use color as the only state indicator; pair it with text, an icon, or both.
-- Borders establish grouping. Shadows are limited to overlays, drawers, menus, and the light separation required for raised panels.
-- Dark theme preserves the same hierarchy and semantics rather than simply inverting colors.
+Reusable values live in `web/src/ui/foundation/tokens.css`. Components consume semantic tokens; add a token only when it has a clear semantic role or multiple consumers.
 
-All reusable values belong in `web/src/ui/foundation/tokens.css`. Components must consume semantic tokens instead of introducing unexplained hex values. A new token needs more than one credible consumer or a documented semantic role.
+- IBM Plex Sans: interface copy.
+- IBM Plex Mono: identifiers, hashes, versions, coordinates, and commands.
+- Borders establish grouping; shadows are mostly for overlays and drawers.
+- Green, amber, and red indicate success, caution, and danger, always with text/icon support.
+- Light theme is the reference; dark theme preserves hierarchy rather than merely inverting colors.
+- Metrics use tabular figures with visible labels and units.
+- Pills are reserved for compact status, badge, and filter roles.
 
-### Typography and data
+## Responsive shell
 
-- IBM Plex Sans is used for interface copy. IBM Plex Mono is limited to identifiers, hashes, versions, package coordinates, and commands.
-- Page titles describe the resource or operation. Eyebrows provide short context and are not substitutes for headings.
-- Numeric metrics use tabular figures. Labels and units remain visible so a number is not presented without meaning.
-- Sentence case is the default for headings, labels, buttons, tabs, and status copy.
-- Dense data should remain scannable through alignment, spacing, and grouping; reducing the font size is the last resort.
+- Desktop uses a 260px navigation rail and flexible content column.
+- The rail stays visible while route content scrolls; avoid accidental overflow ancestors that break sticky positioning.
+- The utility bar exposes tenant/account context separately from the page heading.
+- Below 768px, navigation becomes a labelled modal drawer with a scrim, keyboard dismissal, expanded state, and focus recovery.
+- Route content owns page height. Fixed heights are reserved for bounded surfaces such as the graph viewport.
+- Verify behavior at 390, 768, 1024, and 1440 pixels.
 
-### Spacing, shape, and density
+## Reusable UI boundary
 
-- Use foundation spacing tokens and the shared `Panel`, `ResourceList`, and feature-level summary or definition patterns before adding one-off layout values.
-- One-pixel borders and modest radii are the default. Pills are reserved for badges, compact filters, and statuses.
-- Primary actions appear once per local decision area. Secondary actions must not compete visually with the primary action.
-- Action color is semantic across routes: steel blue advances or creates, neutral surfaces cancel, refresh, or navigate, and restrained red identifies destructive actions.
-- Destructive actions require explicit wording and confirmation proportional to their impact.
+The supported import surface is `web/src/ui/index.ts`:
 
-## Shell and responsive behavior
+- `foundation`: tokens, typography, themes, reset, motion, breakpoints;
+- `primitives`: domain-neutral controls such as Button, Badge, Panel, Field, and Input;
+- `patterns`: reusable compositions such as PageHeader, ResourceList, EmptyState, and AsyncState.
 
-- The desktop shell is a two-column grid with a 260px navigation rail and a flexible content column.
-- The rail uses viewport-sticky positioning. Ancestors of a sticky element must not introduce clipping or scrolling through `overflow: hidden`, `auto`, or `scroll` unless that ancestor is intentionally the scroll container.
-- The utility bar remains visible while route content scrolls and exposes tenant/account context without displacing the page heading.
-- The navigation rail keeps tenant switching compact: one workspace label and one selector. Tenant IDs, readiness explanations, and detailed management belong on the Tenants page rather than in persistent navigation.
-- Below 768px, navigation is a fixed drawer. Opening and closing it must work by keyboard, expose an accessible expanded state, and restore a usable focus path.
-- Route content owns vertical page growth. Avoid fixed content heights except for bounded interactive surfaces such as the graph viewport.
-- Test meaningful behavior at 390px, 768px, 1024px, and 1440px; do not infer mobile behavior solely from desktop resizing.
+Package-ready UI code accepts data, callbacks, slots, renderable content, and native attributes. It must not import APIs, React Query, router state, tenant state, auth providers, or feature modules.
 
-## Interaction and state language
+Application composition lives in pages/layouts; domain behavior lives in `web/src/features`. CSS Modules are the default. Global CSS is limited to tokens, fonts, reset, and document defaults.
 
-- Loading states say what is loading and preserve surrounding context where possible.
-- Empty states explain why the area is empty and provide a useful next action when one exists.
-- Error states describe the failed operation, avoid leaking implementation details, and offer retry or recovery when safe.
-- Disabled controls need an adjacent explanation when the reason is not obvious from context.
-- Success feedback confirms the completed operation without interrupting the next task.
-- Dashboards summarize tenant protection with decision, enforcement, and upstream counts once; then prioritize required setup, blocks, and warnings. Internal service health and implementation details such as cache ratios do not compete with tenant actions.
-- Tenant inventories make the active workspace unmistakable and describe context changes as switching rather than opening. Tenant creation uses the shared modal wizard, including when the inventory is empty, so creation behavior does not change between setup states.
-- Upstream inventories lead with source, ecosystem, credential readiness, and available policy coverage. Client setup is the primary next action after selection; identifiers and timestamps are progressively disclosed, removal is confirmed inline, and generated setup must never recommend weakening transport security.
-- Policy inventories lead with a plain-language effect, enforcement state, upstream scope, dependency target, and evaluation order. Schema, identifiers, versions, and timestamps are progressively disclosed in details rather than competing with the rule itself.
-- Evaluation history leads with the outcome, artifact, human-readable reason, and responsible policy. Page-level signals stay separate from filtered row counts; combined filters narrow results predictably, while hashes, identifiers, cache timestamps, and secondary matches remain progressively disclosed.
-- Dependency graphs explain direct and transitive package relationships before exposing graph identifiers or hashes. Completed roots are preferred by default, failed roots keep their actionable error visible, map targets have equivalent keyboard and pointer semantics, and selected details never reduce the usable graph viewport.
-- Disabled and dry-run policies describe what they would do, never what they currently enforce.
-- Dialogs have a labelled title, a predictable dismissal path, contained focus, and an action order consistent across features.
-- Creation wizards share one progress treatment and footer contract: Cancel and optional reset actions on the left, Back and the primary continuation or completion action on the right. Domain complexity may change the number of steps, not the interaction grammar.
-- Selection must remain visually distinct from hover and keyboard focus. Graph nodes and edges expose the same selection behavior to Enter/Space and pointer activation.
+When a shared primitive or pattern replaces a route-specific implementation, remove superseded selectors, components, tokens, and tests in the same change.
 
-## Component contract
+## Route behavior
 
-The supported internal import surface is `web/src/ui/index.ts`:
+- **Dashboard:** summarize tenant protection and required setup; internal implementation metrics do not displace operator actions.
+- **Tenants:** make the active workspace unmistakable and use shared creation dialog behavior.
+- **Upstreams:** lead with source, ecosystem, credential readiness, policy coverage, and client setup.
+- **Policies:** lead with plain-language effect, enabled/dry-run state, upstream scope, dependency target, and ordering. Technical schema/version data stays in details.
+- **Evaluations:** lead with outcome, artifact, human-readable reason, and policy. Search/filter state must not blur page-level totals.
+- **Dependency Graphs:** show root status/inventory, search, depth/type filters, D3 relationships, keyboard/pointer selection, zoom, and node/edge detail. Failed roots keep errors visible.
 
-- `foundation` owns tokens, typography, theme values, reset, motion, and breakpoints.
-- `primitives` owns the currently shared Button, Badge, Panel, Field, and Input controls. Add another primitive only when a real route consumes it; do not keep speculative exports.
-- `patterns` owns the currently shared PageHeader, ResourceList, EmptyState, and AsyncState compositions. ModalDialog and ModalWizard remain shared application components until their contracts are moved behind the package-ready UI boundary.
-- Every route and route-level loading, empty, or error state uses `PageHeader` for its eyebrow, `h2` title, summary, and actions. Routes must not recreate page-header typography or responsive layout in feature CSS.
+Loading, empty, error, disabled, destructive, warning, and success states use explicit language. Disabled controls explain non-obvious reasons. Destructive actions require proportional confirmation.
 
-UI code accepts data, callbacks, slots, native attributes, and renderable content. It must not import APIs, React Query, the router, tenant state, auth providers, or feature modules. Application composition belongs in layouts; domain behavior belongs in features. CSS Modules are the default for primitives, patterns, components, and features. Global CSS is limited to tokens, font declarations, reset, and document defaults after route migration is complete.
+## Rendering and performance
 
-### Styling ownership and cleanup
+Routes are lazy-loaded. D3 remains behind the dependency-graph route boundary and must not enter the initial chunk. Avoid module-scope browser reads; guard them or use lifecycle boundaries.
 
-- A component or feature owns its CSS Module. Shared application compositions live in `ui/foundation/Application.module.css`; reusable controls belong in their primitive or pattern module.
-- Class-name helpers may combine a feature module with shared application classes, but must not become a second undocumented public UI API.
-- Do not add route rules to `index.css`, `reset.css`, or `tokens.css`.
-- When a route adopts a primitive or pattern, delete the superseded selectors, tokens, components, and tests in the same change. Do not retain speculative compatibility CSS.
-- Before removing a dynamic class, account for generated names such as semantic tones. Verify deletion with lint, a production build, and the affected browser workflows.
-- Avoid module-scope browser reads. Layout behavior should be expressed in CSS unless JavaScript is required for interaction state.
+SSR is intentionally deferred because the console has no public SEO/content requirement. Consider React Router framework mode only if public pages or measured first-render needs create a concrete trigger.
 
-## Rendering and authentication
+Theme storage uses `dependency-firewall-theme`; tenant selection remains persisted by the application tenant boundary.
 
-The console remains a React/Vite SPA. SSR adds operational complexity without an SEO or public-content benefit. Route modules remain lazy and D3 stays behind the dependency-graph route boundary. If public pages or measured first-render requirements emerge, React Router framework mode is the preferred migration path.
+## Accessibility
 
-Clerk is not installed by this redesign. Features consume an application-owned auth contract with `loading`, `anonymous`, `authenticated`, `unauthorized`, and `error` states; provider-neutral identity, roles, and optional organization ID; asynchronous `getAccessToken()`; and optional sign-in, sign-out, and account-control slots. The API client awaits tokens and adds a bearer header. The Go backend remains the authority for authorization. A future Clerk adapter must validate short-lived session JWTs in Go using middleware or JWKS and must not trust client role claims. Dependency Firewall tenants remain separate from identity-provider organizations until a mapping is explicitly designed.
+- Maintain WCAG 2.2 AA contrast in both themes.
+- Provide logical tab order and visible `:focus-visible` treatment.
+- Give icon-only controls accessible names and hide decorative icons.
+- Associate form labels, hints, validation, required state, and errors programmatically.
+- Use live regions for meaningful state changes without announcing static content repeatedly.
+- Respect `prefers-reduced-motion`.
+- Never communicate risk, selection, or graph relationships through color alone.
+- Dialogs have labelled titles, contained focus, predictable dismissal, and consistent action order.
 
-Browser globals are read behind runtime guards or component lifecycle boundaries so server rendering remains possible later. The existing theme storage key, `dependency-firewall-theme`, and tenant storage behavior are preserved.
+## Playwright strategy
 
-## Route migration
+`npm run test:e2e` runs deterministic mocked desktop and 390px mobile Chromium projects. Tests intercept `/api/v1/**` and `/healthz`, fix tenant/auth data, and cover core workflows plus anonymous/authenticated/unauthorized/expired adapter states.
 
-The URLs and API payloads do not change.
+Selective screenshots cover stable shell and graph states. Behavioral assertions remain primary: prefer roles, labels, keyboard input, and observable layout/interaction outcomes. Use `data-*` selectors only when generated SVG or CSS-module output has no stable accessible selector.
 
-1. Foundation: UI boundary, fonts/icons, auth/API contract, shell, responsive drawer, and browser-test foundation.
-2. Core pages: Dashboard, Tenants, Upstreams, and Not Found use shared headers, metrics, resource lists, detail panels, forms, usage instructions, and async states.
-3. Policy operations: Policies and Evaluations use shared filters, dense readable lists, dialogs, diffs, and wizards. The `unknown` dependency scope must round-trip unchanged.
-4. Dependency intelligence: graph visuals adopt foundation tokens without changing drag, zoom, search, filtering, selection, connected-node highlighting, endpoint placement, or details. Remaining legacy global CSS is removed here.
-
-## Playwright and CI
-
-The normal suite intercepts `/api/v1/**` and `/healthz`, fixes tenant/auth data, and runs desktop and 390px mobile Chromium. Auth adapters cover anonymous, authenticated, unauthorized, and expired-session behavior. Selective captures cover the light dashboard shell, mobile navigation, dark shell, and graph default/selected states. Tests avoid timing-dependent data.
-
-`npm run test:e2e` runs mocked tests; `npm run test:e2e:update` refreshes visual baselines; `npm run test:ui` opens Playwright UI. `npm run test:e2e:live` is a read-only smoke test gated by `PLAYWRIGHT_LIVE_BASE_URL` and a prepared tenant. CI runs `npm ci`, lint, build, mocked Playwright tests, and uploads the report on failure.
-
-Browser tests should prefer roles, labels, and user-visible names. Use `data-testid` or `data-*` state only where generated SVG/CSS-module output lacks a stable accessible selector. Layout regressions require behavioral assertions—for example, scrolling a tall page and measuring a sticky rail—rather than screenshots alone. Screenshots remain selective and support review; they are not the only acceptance mechanism.
-
-## Accessibility requirements
-
-- Maintain WCAG 2.2 AA contrast in both themes, including muted text, focus indicators, badges, and disabled states.
-- Every interactive element is reachable in a logical tab order and has a visible `:focus-visible` treatment.
-- Icon-only controls have accessible names. Decorative icons are hidden from assistive technology.
-- Forms associate labels, hints, validation messages, and errors with their controls. Required state is communicated programmatically.
-- Status changes use an appropriate live region without repeatedly announcing static content.
-- Respect `prefers-reduced-motion`; motion must not be necessary to understand state or location.
-- Do not communicate risk, selection, or graph relationships through color alone.
+`npm run test:e2e:live` is an optional read-only smoke test gated by `PLAYWRIGHT_LIVE_BASE_URL` and a prepared tenant.
 
 ## Review checklist
 
-Before merging a UI change, confirm:
-
-- The tenant, resource state, and primary action are clear.
-- Existing primitives and patterns were reused where appropriate.
+- Tenant, resource state, and primary action are clear.
+- Existing primitives/patterns are reused where appropriate.
 - Light/dark and desktop/mobile layouts remain coherent.
-- Loading, empty, error, disabled, and success paths affected by the change are represented.
-- Keyboard operation, focus visibility, labels, and reduced motion remain correct.
-- New styling is in the owning CSS Module and obsolete styling was deleted.
-- Route lazy loading and the D3 route boundary remain intact.
-- Relevant Playwright workflows, `npm run lint`, `npm run build`, and `git diff --check` pass.
+- Affected async, empty, error, disabled, and success states are represented.
+- Keyboard operation, focus, labels, contrast, and reduced motion remain correct.
+- Styling lives with its owner and obsolete styling is removed.
+- Route lazy loading and the D3 boundary remain intact.
+- `npm run lint`, `npm run build`, relevant Playwright tests, and `git diff --check` pass.
 
-## Stack ownership
+## Possible future work
 
-The stack is rooted at refreshed `main`:
-
-- `ui-redesign/foundation`: this RFC, UI system, fonts/icons, auth-ready interfaces, async bearer tokens, shell, navigation, themes, and Playwright/CI foundation.
-- `ui-redesign/core-pages`: Dashboard, Tenants, Upstreams, Not Found, and their route tests.
-- `ui-redesign/policy-operations`: Policies, Evaluations, their dialogs/diffs/wizards, and policy/evaluation tests.
-- `ui-redesign/dependency-intelligence`: dependency graph, final legacy-CSS removal, and graph interaction/visual tests.
-
-Each PR links this RFC and lists owned components, routes, tests, and visual criteria. Every layer passes lint, TypeScript/Vite build, relevant Playwright and keyboard checks, and `git diff --check` before draft submission.
-
-## Acceptance criteria
-
-- Light and dark themes are coherent, readable, and retain the existing storage key.
-- Navigation, tenant context, account context, and mobile drawer work with keyboard and pointer input.
-- Auth-provider details do not escape the auth adapter and API token acquisition is asynchronous.
-- All existing URLs, payloads, tenant behavior, policy semantics, and graph interactions remain intact.
-- Loading, empty, error, disabled, destructive, warning, and success states use consistent components and language.
-- Route chunks remain lazy; D3 is absent from the initial application chunk.
-- Mocked desktop/mobile Playwright tests and the web CI workflow are deterministic.
+- real Clerk/OIDC adapter and session bootstrap;
+- backend bearer validation and RBAC;
+- identity-provider organization mapping;
+- an Audit Events UI route;
+- SSR/framework mode only after a concrete product or performance trigger.

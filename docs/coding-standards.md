@@ -15,7 +15,7 @@
 - Services orchestrate business workflows.
 - Repositories only persist and load data.
 - Policy packages evaluate policy and do not perform I/O.
-- Control-plane handlers call core services, not repositories.
+- Control-plane handlers normally call core services. Existing read-oriented handlers may consume core repository ports; delivery must not depend on infrastructure implementations or issue direct SQL/Valkey operations.
 - Delivery request bodies must decode into delivery-layer request DTOs, not domain models.
 - Delivery response DTOs stay in delivery. Core types must not be shaped around JSON responses.
 - Shared ports in core must use protocol-neutral names when they are used by more than one ecosystem.
@@ -38,7 +38,7 @@
 - **Always use response DTOs in the delivery layer**, never return domain models directly.
 - Response DTOs must define `json` tags with lowercase, snake_case field names (e.g., `json:"created_at"`).
 - Create converter functions to transform domain models to response DTOs (e.g., `toTenantResponse(t *domain.Tenant)`).
-- Centralize all response DTOs and converters in `internal/delivery/api/response.go`.
+- Keep response DTOs and converters in delivery-owned, domain-focused files. Use `response.go` for genuinely shared API response shapes; do not force unrelated resource DTOs into one file.
 - This ensures:
   - API contracts are stable and decoupled from internal domain model changes
   - JSON serialization uses consistent, developer-friendly lowercase naming

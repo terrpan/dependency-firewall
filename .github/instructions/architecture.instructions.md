@@ -7,13 +7,13 @@ description: "Repository-specific layering and naming rules for dependency-firew
 
 Follow these architecture rules when adding or modifying code in this repository. They enforce separation of concerns, consistent naming, and multi-tenant isolation.
 
-Consult `docs/architecture.md` for a system overview. Update it whenever core functionality changes. If it is outdated or missing, contact the architecture owner before proceeding.
+Consult `docs/architecture.md` for the canonical runtime, endpoint-family, and gRPC responsibility overview. Update it whenever core functionality changes; do not duplicate evolving inventories in this instruction file.
 
 ## Layer boundaries
 
 ### Delivery
 
-- Delivery handlers must call **core services**, not repositories, parser packages, or evaluator packages directly.
+- Delivery handlers should call core services for business workflows. Read-oriented handlers may consume core repository ports where the documented architecture explicitly does so, but they must not depend on concrete infrastructure repositories or issue direct SQL/Valkey operations.
 - Delivery is responsible for HTTP/protocol parsing and response rendering only.
 - Delivery request payloads must decode into delivery-layer request DTOs. Do not decode JSON directly into domain models.
 - Boundary formats such as JSON and YAML must be decoded into typed structs before entering core workflows.
@@ -24,7 +24,7 @@ Consult `docs/architecture.md` for a system overview. Update it whenever core fu
 ### Huma (control-plane only)
 
 - Huma is a delivery-layer concern only. Use it in control-plane handlers for OpenAPI/docs generation and typed request/response models at the boundary.
-- Huma remains limited to control-plane handlers. The current Huma-backed set includes health, tenants, policy CRUD, policy version history, policy rollback, policy type listing, policy import, evaluation listing, decision-cache clearing, and upstream CRUD.
+- Huma remains limited to control-plane handlers. Use the registered operations and `docs/architecture.md` as the current endpoint inventory.
 - Do not introduce Huma into `internal/delivery/npm` or `internal/delivery/oci` unless the architecture docs are explicitly updated for that expansion.
 - Do not document or assume a control-plane endpoint is Huma-backed unless that endpoint has been explicitly migrated in code.
 - Do not import, reference, or directly use Huma request, response, operation, or OpenAPI types in core or infrastructure packages.
@@ -69,7 +69,7 @@ Consult `docs/architecture.md` for a system overview. Update it whenever core fu
 
 ### License policies
 
-- For approved-license policies, keep missing license metadata behavior explicit. The current `license_allowlist` policy must fail closed when license metadata is unavailable.
+- For approved-license policies, keep missing license metadata behavior explicit per schema. `license_allowlist` schema v1 fails closed; schema v2 independently configures unlicensed and unavailable-metadata behavior.
 - License policies should use **SPDX identifiers** as their vocabulary. Keep SPDX mapping/normalization at the enrichment or condition edge, not in delivery handlers.
 
 ## Naming
