@@ -10,12 +10,12 @@ import (
 )
 
 type claimRecordingResolver struct {
-	claims chan time.Time
+	claims chan string
 }
 
-func (r *claimRecordingResolver) ClaimNextResolveJob(_ context.Context, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (r *claimRecordingResolver) ClaimNextResolveJob(_ context.Context, tenantID string, _ time.Time) (*domain.DependencyGraphResolveRequest, error) {
 	select {
-	case r.claims <- now:
+	case r.claims <- tenantID:
 	default:
 	}
 	return nil, nil
@@ -32,10 +32,11 @@ func (r *claimRecordingResolver) FailResolve(context.Context, domain.DependencyG
 func TestDependencyGraphWorker_WakesOnJobNotification(t *testing.T) {
 	t.Parallel()
 
-	resolver := &claimRecordingResolver{claims: make(chan time.Time, 1)}
+	resolver := &claimRecordingResolver{claims: make(chan string, 1)}
 	notifier := NewDependencyGraphJobNotifier()
 	worker := NewDependencyGraphWorker(resolver, notifier, DependencyGraphWorkerConfig{
 		Enabled:      true,
+		TenantID:     "tenant-a",
 		PollInterval: time.Hour,
 	}, slog.New(slog.DiscardHandler))
 
@@ -59,9 +60,12 @@ func TestDependencyGraphWorker_WakesOnJobNotification(t *testing.T) {
 	// Wait for the worker subscription to be registered, then notify.
 	deadline := time.After(2 * time.Second)
 	for {
-		notifier.Notify()
+		notifier.Notify("tenant-a")
 		select {
-		case <-resolver.claims:
+		case tenantID := <-resolver.claims:
+			if tenantID != "tenant-a" {
+				t.Fatalf("worker claimed tenant %q, want tenant-a", tenantID)
+			}
 		case <-time.After(20 * time.Millisecond):
 			continue
 		case <-deadline:
@@ -81,7 +85,7 @@ func TestDependencyGraphWorker_WakesOnJobNotification(t *testing.T) {
 func TestDependencyGraphWorker_RunsWithoutWatcher(t *testing.T) {
 	t.Parallel()
 
-	resolver := &claimRecordingResolver{claims: make(chan time.Time, 1)}
+	resolver := &claimRecordingResolver{claims: make(chan string, 1)}
 	worker := NewDependencyGraphWorker(resolver, nil, DependencyGraphWorkerConfig{
 		Enabled:      true,
 		PollInterval: 10 * time.Millisecond,

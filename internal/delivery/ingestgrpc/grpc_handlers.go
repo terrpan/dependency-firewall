@@ -161,7 +161,7 @@ func (s *Server) watchDependencyGraphResolveHandler(srv any, stream grpc.ServerS
 	if err := stream.RecvMsg(req); err != nil {
 		return err
 	}
-	notifications, err := srv.(proxyIngestGRPCService).WatchDependencyGraphResolve(stream.Context())
+	notifications, err := srv.(proxyIngestGRPCService).WatchDependencyGraphResolve(stream.Context(), req)
 	if err != nil {
 		return err
 	}

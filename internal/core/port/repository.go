@@ -58,7 +58,7 @@ type DependencyGraphContextLookup interface {
 
 // DependencyGraphResolver claims and completes graph-resolution jobs.
 type DependencyGraphResolver interface {
-	ClaimNextResolveJob(ctx context.Context, now time.Time) (*domain.DependencyGraphResolveRequest, error)
+	ClaimNextResolveJob(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error)
 	CompleteResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error
 	FailResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error
 }
@@ -71,7 +71,7 @@ type DependencyGraphQueue interface {
 // DependencyGraphJobWatcher streams wake-up signals emitted when graph-resolution
 // jobs are enqueued. The returned channel is closed when ctx is canceled.
 type DependencyGraphJobWatcher interface {
-	WatchResolveJobs(ctx context.Context) <-chan struct{}
+	WatchResolveJobs(ctx context.Context, tenantID string) <-chan struct{}
 }
 
 // UpstreamRepository manages upstream registry configs.

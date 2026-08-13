@@ -16,10 +16,10 @@ func TestDependencyGraphJobNotifier_DeliversSignalToSubscribers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	first := notifier.WatchResolveJobs(ctx)
-	second := notifier.WatchResolveJobs(ctx)
+	first := notifier.WatchResolveJobs(ctx, "tenant-a")
+	second := notifier.WatchResolveJobs(ctx, "*")
 
-	notifier.Notify()
+	notifier.Notify("tenant-a")
 
 	select {
 	case <-first:
@@ -40,10 +40,10 @@ func TestDependencyGraphJobNotifier_CoalescesPendingSignals(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	subscriber := notifier.WatchResolveJobs(ctx)
-	notifier.Notify()
-	notifier.Notify()
-	notifier.Notify()
+	subscriber := notifier.WatchResolveJobs(ctx, "tenant-a")
+	notifier.Notify("tenant-a")
+	notifier.Notify("tenant-a")
+	notifier.Notify("tenant-a")
 
 	select {
 	case <-subscriber:
@@ -57,13 +57,43 @@ func TestDependencyGraphJobNotifier_CoalescesPendingSignals(t *testing.T) {
 	}
 }
 
+func TestDependencyGraphJobNotifier_FiltersTenantSignals(t *testing.T) {
+	t.Parallel()
+
+	notifier := NewDependencyGraphJobNotifier()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tenantA := notifier.WatchResolveJobs(ctx, "tenant-a")
+	tenantB := notifier.WatchResolveJobs(ctx, "tenant-b")
+	wildcard := notifier.WatchResolveJobs(ctx, "*")
+
+	notifier.Notify("tenant-a")
+
+	for name, subscriber := range map[string]<-chan struct{}{
+		"matching tenant": tenantA,
+		"wildcard":        wildcard,
+	} {
+		select {
+		case <-subscriber:
+		case <-time.After(time.Second):
+			t.Fatalf("%s subscriber did not receive notification", name)
+		}
+	}
+	select {
+	case <-tenantB:
+		t.Fatal("non-matching tenant subscriber received notification")
+	default:
+	}
+}
+
 func TestDependencyGraphJobNotifier_ClosesChannelOnContextCancel(t *testing.T) {
 	t.Parallel()
 
 	notifier := NewDependencyGraphJobNotifier()
 	ctx, cancel := context.WithCancel(context.Background())
 
-	subscriber := notifier.WatchResolveJobs(ctx)
+	subscriber := notifier.WatchResolveJobs(ctx, "tenant-a")
 	cancel()
 
 	select {
@@ -73,12 +103,12 @@ func TestDependencyGraphJobNotifier_ClosesChannelOnContextCancel(t *testing.T) {
 		t.Fatal("channel was not closed after context cancellation")
 	}
 
-	require.NotPanics(t, notifier.Notify)
+	require.NotPanics(t, func() { notifier.Notify("tenant-a") })
 }
 
 func TestDependencyGraphJobNotifier_NilNotifyIsSafe(t *testing.T) {
 	t.Parallel()
 
 	var notifier *DependencyGraphJobNotifier
-	require.NotPanics(t, notifier.Notify)
+	require.NotPanics(t, func() { notifier.Notify("tenant-a") })
 }

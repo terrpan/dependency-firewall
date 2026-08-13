@@ -71,6 +71,9 @@ dependency_graph:
   # compatibility.
   enabled: true
   run_in_process: false
+  # Use an explicit tenant ID for a tenant-scoped worker. The wildcard keeps
+  # the historical behavior of claiming jobs across all tenants.
+  tenant_id: "*"
   poll_interval: 5s
   timeout: 2m
   concurrency: 2

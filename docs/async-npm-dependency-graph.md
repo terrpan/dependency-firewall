@@ -44,6 +44,7 @@ Use PostgreSQL as the durable graph store and Valkey as the hot lookup cache. On
 - Add sandbox resolver worker:
   - Runs as a separate `dependency-graph-worker` runtime in split deployments.
   - Does not receive PostgreSQL credentials; it claims jobs and submits graph results through authenticated control-plane gRPC.
+  - Sends `dependency_graph.tenant_id` in claim/watch requests. Concrete tenant scopes are certificate-authorized and filter claims and wake-up signals; `"*"` selects the global-worker behavior.
   - Subscribes to the `WatchDependencyGraphResolve` server stream for instant wake-up when jobs are enqueued; interval polling remains the fallback for failed-job retries and missed signals.
   - Can still run in-process for local all-in-one/control-plane compatibility when `dependency_graph.run_in_process=true`; in-process workers receive the same wake-up signals through the shared in-memory notifier.
   - Uses bounded concurrency, timeout, retry/backoff, and idempotent job keys.
@@ -112,3 +113,7 @@ Use PostgreSQL as the durable graph store and Valkey as the hot lookup cache. On
 - Graph resolution is async; request-path npm installs are not held open.
 - Unknown/conflicting dependency context does not silently become direct or transitive.
 - NPM upstream authentication is not currently modeled for npm upstreams, so resolver auth support is deferred until npm upstream auth exists.
+
+## Worker tenant scope
+
+`dependency_graph.tenant_id` defaults to `"*"`, which allows a global worker to claim jobs from every tenant when its certificate is also authorized for `"*"`. Set it to a concrete tenant ID and authorize the worker certificate for that same tenant to restrict claim queries, watch notifications, completion, and failure calls to that tenant.

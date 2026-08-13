@@ -121,7 +121,7 @@ func (s *stubDependencyGraphRepository) EnqueueResolve(context.Context, domain.D
 	return false, nil
 }
 
-func (s *stubDependencyGraphRepository) ClaimNextResolveJob(context.Context, time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (s *stubDependencyGraphRepository) ClaimNextResolveJob(context.Context, string, time.Time) (*domain.DependencyGraphResolveRequest, error) {
 	return nil, nil
 }
 

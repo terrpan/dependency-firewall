@@ -105,15 +105,18 @@ func (s *Server) EnqueueDependencyGraphResolve(ctx context.Context, req *Enqueue
 
 // ClaimDependencyGraphResolve claims the next async npm dependency graph resolve job.
 func (s *Server) ClaimDependencyGraphResolve(ctx context.Context, req *ClaimDependencyGraphResolveRequest) (*ClaimDependencyGraphResolveResponse, error) {
+	if req == nil || strings.TrimSpace(req.TenantID) == "" {
+		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
+	}
 	now := time.Now().UTC()
-	if req != nil && strings.TrimSpace(req.Now) != "" {
+	if strings.TrimSpace(req.Now) != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, req.Now)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid now: %v", err)
 		}
 		now = parsed
 	}
-	job, err := s.service.ClaimDependencyGraphResolve(ctx, now)
+	job, err := s.service.ClaimDependencyGraphResolve(ctx, req.TenantID, now)
 	if err != nil {
 		return nil, toStatusError(err)
 	}
@@ -169,8 +172,11 @@ func (s *Server) LookupDependencyGraphContext(ctx context.Context, req *LookupDe
 }
 
 // WatchDependencyGraphResolve streams wake-up events for queued dependency graph jobs.
-func (s *Server) WatchDependencyGraphResolve(ctx context.Context) (<-chan struct{}, error) {
-	notifications, err := s.service.WatchDependencyGraphResolve(ctx)
+func (s *Server) WatchDependencyGraphResolve(ctx context.Context, req *WatchDependencyGraphResolveRequest) (<-chan struct{}, error) {
+	if req == nil || strings.TrimSpace(req.TenantID) == "" {
+		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
+	}
+	notifications, err := s.service.WatchDependencyGraphResolve(ctx, req.TenantID)
 	if err != nil {
 		return nil, status.Error(codes.Unimplemented, "dependency graph job notifications are unavailable")
 	}

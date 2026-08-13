@@ -91,7 +91,8 @@ type EnqueueDependencyGraphResolveResponse struct {
 }
 
 type ClaimDependencyGraphResolveRequest struct {
-	Now string `json:"now,omitempty"`
+	TenantID string `json:"tenant_id"`
+	Now      string `json:"now,omitempty"`
 }
 
 type ClaimDependencyGraphResolveResponse struct {
@@ -125,7 +126,9 @@ type LookupDependencyGraphContextResponse struct {
 	Context *domain.DependencyContext `json:"context,omitempty"`
 }
 
-type WatchDependencyGraphResolveRequest struct{}
+type WatchDependencyGraphResolveRequest struct {
+	TenantID string `json:"tenant_id"`
+}
 
 type DependencyGraphResolveQueuedEvent struct{}
 
@@ -201,11 +204,11 @@ func TenantIDFromRequest(req any) string {
 	case *EnqueueDependencyGraphResolveRequest:
 		return typed.TenantID
 	case *ClaimDependencyGraphResolveRequest:
-		return "*"
+		return typed.TenantID
 	case *LookupDependencyGraphContextRequest:
 		return typed.TenantID
 	case *WatchDependencyGraphResolveRequest:
-		return "*"
+		return typed.TenantID
 	case *CompleteDependencyGraphResolveRequest:
 		return typed.Job.TenantID
 	case *FailDependencyGraphResolveRequest:
@@ -443,9 +446,9 @@ func EnqueueDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInte
 	return response.Enqueued, nil
 }
 
-func ClaimDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func ClaimDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
 	response := &ClaimDependencyGraphResolveResponse{}
-	req := &ClaimDependencyGraphResolveRequest{Now: formatTime(now)}
+	req := &ClaimDependencyGraphResolveRequest{TenantID: tenantID, Now: formatTime(now)}
 	if err := conn.Invoke(ctx, ClaimDependencyGraphResolveMethod, req, response, grpc.ForceCodec(jsonCodec{})); err != nil {
 		return nil, MapClientError(err)
 	}
@@ -510,12 +513,12 @@ type DependencyGraphResolveJobStream struct {
 }
 
 // WatchDependencyGraphResolve opens a server stream of queued-job wake-up events.
-func WatchDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface) (*DependencyGraphResolveJobStream, error) {
+func WatchDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, tenantID string) (*DependencyGraphResolveJobStream, error) {
 	stream, err := conn.NewStream(ctx, watchDependencyGraphResolveStreamDesc, WatchDependencyGraphResolveMethod, grpc.ForceCodec(jsonCodec{}))
 	if err != nil {
 		return nil, MapClientError(err)
 	}
-	if err := stream.SendMsg(&WatchDependencyGraphResolveRequest{}); err != nil {
+	if err := stream.SendMsg(&WatchDependencyGraphResolveRequest{TenantID: tenantID}); err != nil {
 		return nil, MapClientError(err)
 	}
 	if err := stream.CloseSend(); err != nil {

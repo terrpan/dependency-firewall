@@ -33,6 +33,14 @@ func TestTenantIDFromRequest(t *testing.T) {
 			req:    &RecordAuditEventRequest{Event: AuditEvent{TenantID: "tenant-5"}},
 			tenant: "tenant-5",
 		},
+		"claim dependency graph job": {
+			req:    &ClaimDependencyGraphResolveRequest{TenantID: "tenant-6"},
+			tenant: "tenant-6",
+		},
+		"watch dependency graph jobs": {
+			req:    &WatchDependencyGraphResolveRequest{TenantID: "tenant-7"},
+			tenant: "tenant-7",
+		},
 		"unknown": {
 			req:    struct{}{},
 			tenant: "",

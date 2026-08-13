@@ -77,8 +77,8 @@ func (c *GRPCClient) EnqueueDependencyGraphResolve(ctx context.Context, req doma
 }
 
 // ClaimNextResolveJob claims the next dependency graph resolver job through the control plane.
-func (c *GRPCClient) ClaimNextResolveJob(ctx context.Context, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
-	return ingestwire.ClaimDependencyGraphResolve(ctx, c.conn, now)
+func (c *GRPCClient) ClaimNextResolveJob(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+	return ingestwire.ClaimDependencyGraphResolve(ctx, c.conn, tenantID, now)
 }
 
 // CompleteResolve persists a completed dependency graph through the control plane.
@@ -100,12 +100,12 @@ const watchResolveJobsReconnectDelay = 5 * time.Second
 
 // WatchResolveJobs streams wake-up signals for queued dependency graph jobs,
 // reconnecting until ctx is canceled. The returned channel is closed when ctx ends.
-func (c *GRPCClient) WatchResolveJobs(ctx context.Context) <-chan struct{} {
+func (c *GRPCClient) WatchResolveJobs(ctx context.Context, tenantID string) <-chan struct{} {
 	notifications := make(chan struct{}, 1)
 	go func() {
 		defer close(notifications)
 		for ctx.Err() == nil {
-			stream, err := ingestwire.WatchDependencyGraphResolve(ctx, c.conn)
+			stream, err := ingestwire.WatchDependencyGraphResolve(ctx, c.conn, tenantID)
 			if err == nil {
 				for stream.Recv() == nil {
 					select {

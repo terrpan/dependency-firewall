@@ -112,17 +112,20 @@ func (s *ProxyIngestService) EnqueueDependencyGraphResolve(ctx context.Context, 
 	}
 	enqueued, err := s.graphs.EnqueueResolve(ctx, req)
 	if err == nil && enqueued {
-		s.graphNotifier.Notify()
+		s.graphNotifier.Notify(req.TenantID)
 	}
 	return enqueued, err
 }
 
 // WatchDependencyGraphResolve streams wake-up signals emitted when graph jobs are enqueued.
-func (s *ProxyIngestService) WatchDependencyGraphResolve(ctx context.Context) (<-chan struct{}, error) {
+func (s *ProxyIngestService) WatchDependencyGraphResolve(ctx context.Context, tenantID string) (<-chan struct{}, error) {
 	if s == nil || s.graphNotifier == nil {
 		return nil, fmt.Errorf("watching dependency graph resolve: notifier unavailable")
 	}
-	return s.graphNotifier.WatchResolveJobs(ctx), nil
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("watching dependency graph resolve: tenant_id is required")
+	}
+	return s.graphNotifier.WatchResolveJobs(ctx, tenantID), nil
 }
 
 // LookupDependencyGraphContext loads the graph context summary for a tenant artifact.
@@ -137,14 +140,17 @@ func (s *ProxyIngestService) LookupDependencyGraphContext(ctx context.Context, k
 }
 
 // ClaimDependencyGraphResolve claims the next retryable resolver job.
-func (s *ProxyIngestService) ClaimDependencyGraphResolve(ctx context.Context, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (s *ProxyIngestService) ClaimDependencyGraphResolve(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
 	if s == nil || s.graphResolver == nil {
 		return nil, fmt.Errorf("claiming dependency graph resolve: resolver unavailable")
+	}
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, fmt.Errorf("claiming dependency graph resolve: tenant_id is required")
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	return s.graphResolver.ClaimNextResolveJob(ctx, now)
+	return s.graphResolver.ClaimNextResolveJob(ctx, tenantID, now)
 }
 
 // CompleteDependencyGraphResolve persists the graph produced by a resolver worker.

@@ -67,48 +67,16 @@ func TenantAuthorizationInterceptor(clients []config.BundleTLSAuthorizedClient, 
 		if info != nil {
 			fullMethod = info.FullMethod
 		}
-		if extractTenantID == nil {
-			return cfg.deny(ctx, TenantAuthorizationDeniedEvent{
-				FullMethod:        fullMethod,
-				Reason:            "tenant_id_extractor_missing",
-				PermissionMessage: "tenant id extractor is not configured",
-			}, codes.Internal)
-		}
-		tenantID := strings.TrimSpace(extractTenantID(req))
-		if tenantID == "" {
-			return cfg.deny(ctx, TenantAuthorizationDeniedEvent{
-				FullMethod:        fullMethod,
-				Reason:            "tenant_id_missing",
-				PermissionMessage: "tenant_id is required",
-			}, codes.InvalidArgument)
-		}
-		identities := peerCertificateIdentities(ctx)
-		if len(identities) == 0 {
-			return cfg.deny(ctx, TenantAuthorizationDeniedEvent{
-				TenantID:          tenantID,
-				FullMethod:        fullMethod,
-				Reason:            "client_certificate_identity_missing",
-				PermissionMessage: "client certificate identity is required",
-			}, codes.Unauthenticated)
-		}
-		if !authorizer.authorized(identities, tenantID) {
-			return cfg.deny(ctx, TenantAuthorizationDeniedEvent{
-				TenantID:          tenantID,
-				ClientIdentities:  identities,
-				FullMethod:        fullMethod,
-				Reason:            "client_certificate_not_authorized_for_tenant",
-				PermissionMessage: "client certificate is not authorized for tenant " + strconv.Quote(tenantID),
-			}, codes.PermissionDenied)
+		if err := cfg.authorize(ctx, req, fullMethod, authorizer, extractTenantID); err != nil {
+			return nil, err
 		}
 		return handler(ctx, req)
 	}
 }
 
 // TenantAuthorizationStreamInterceptor authorizes mTLS client identities for
-// streaming control-plane RPCs. Streaming requests carry no tenant-scoped
-// payload, so clients must hold wildcard tenant access, mirroring the
-// requirement for worker-level unary RPCs such as ClaimDependencyGraphResolve.
-func TenantAuthorizationStreamInterceptor(clients []config.BundleTLSAuthorizedClient, options ...TenantAuthorizationOption) grpc.StreamServerInterceptor {
+// tenant-scoped streaming control-plane RPCs after decoding the first request.
+func TenantAuthorizationStreamInterceptor(clients []config.BundleTLSAuthorizedClient, extractTenantID TenantIDExtractor, options ...TenantAuthorizationOption) grpc.StreamServerInterceptor {
 	authorizer := newTenantAuthorizer(clients)
 	cfg := tenantAuthorizationConfig{}
 	for _, option := range options {
@@ -121,29 +89,81 @@ func TenantAuthorizationStreamInterceptor(clients []config.BundleTLSAuthorizedCl
 		if info != nil {
 			fullMethod = info.FullMethod
 		}
-		ctx := stream.Context()
-		identities := peerCertificateIdentities(ctx)
-		if len(identities) == 0 {
-			_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
-				TenantID:          "*",
-				FullMethod:        fullMethod,
-				Reason:            "client_certificate_identity_missing",
-				PermissionMessage: "client certificate identity is required",
-			}, codes.Unauthenticated)
-			return err
+		authorizingStream := &tenantAuthorizingServerStream{
+			ServerStream: stream,
+			authorize: func(req any) error {
+				return cfg.authorize(stream.Context(), req, fullMethod, authorizer, extractTenantID)
+			},
 		}
-		if !authorizer.authorized(identities, "*") {
-			_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
-				TenantID:          "*",
-				ClientIdentities:  identities,
-				FullMethod:        fullMethod,
-				Reason:            "client_certificate_not_authorized_for_tenant",
-				PermissionMessage: "client certificate is not authorized for streaming control-plane access",
-			}, codes.PermissionDenied)
-			return err
-		}
-		return handler(srv, stream)
+		return handler(srv, authorizingStream)
 	}
+}
+
+func (cfg tenantAuthorizationConfig) authorize(
+	ctx context.Context,
+	req any,
+	fullMethod string,
+	authorizer tenantAuthorizer,
+	extractTenantID TenantIDExtractor,
+) error {
+	if extractTenantID == nil {
+		_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+			FullMethod:        fullMethod,
+			Reason:            "tenant_id_extractor_missing",
+			PermissionMessage: "tenant id extractor is not configured",
+		}, codes.Internal)
+		return err
+	}
+	tenantID := strings.TrimSpace(extractTenantID(req))
+	if tenantID == "" {
+		_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+			FullMethod:        fullMethod,
+			Reason:            "tenant_id_missing",
+			PermissionMessage: "tenant_id is required",
+		}, codes.InvalidArgument)
+		return err
+	}
+	identities := peerCertificateIdentities(ctx)
+	if len(identities) == 0 {
+		_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+			TenantID:          tenantID,
+			FullMethod:        fullMethod,
+			Reason:            "client_certificate_identity_missing",
+			PermissionMessage: "client certificate identity is required",
+		}, codes.Unauthenticated)
+		return err
+	}
+	if authorizer.authorized(identities, tenantID) {
+		return nil
+	}
+	_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+		TenantID:          tenantID,
+		ClientIdentities:  identities,
+		FullMethod:        fullMethod,
+		Reason:            "client_certificate_not_authorized_for_tenant",
+		PermissionMessage: "client certificate is not authorized for tenant " + strconv.Quote(tenantID),
+	}, codes.PermissionDenied)
+	return err
+}
+
+type tenantAuthorizingServerStream struct {
+	grpc.ServerStream
+	authorize  func(any) error
+	authorized bool
+}
+
+func (s *tenantAuthorizingServerStream) RecvMsg(message any) error {
+	if err := s.ServerStream.RecvMsg(message); err != nil {
+		return err
+	}
+	if s.authorized {
+		return nil
+	}
+	if err := s.authorize(message); err != nil {
+		return err
+	}
+	s.authorized = true
+	return nil
 }
 
 func (cfg tenantAuthorizationConfig) deny(ctx context.Context, event TenantAuthorizationDeniedEvent, code codes.Code) (any, error) {

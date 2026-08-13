@@ -167,6 +167,16 @@ func TestConfigValidate(t *testing.T) {
 		assert.Contains(t, err.Error(), "bundle.tls.mode")
 	})
 
+	t.Run("enabled dependency graph worker requires tenant scope", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.DependencyGraph.Enabled = true
+		cfg.DependencyGraph.TenantID = " "
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "dependency_graph.tenant_id")
+	})
+
 	t.Run("control-plane mode requires database settings", func(t *testing.T) {
 		cfg := validConfig()
 		cfg.Runtime.Mode = RuntimeModeControlPlane
@@ -278,6 +288,7 @@ server:
 	assert.False(t, cfg.Telemetry.Insecure)
 	assert.Equal(t, 18080, cfg.Server.Port)
 	assert.True(t, cfg.Bundle.TLS.AllowInsecureControlPlane)
+	assert.Equal(t, "*", cfg.DependencyGraph.TenantID)
 }
 
 func validProxyTLSConfig() BundleTLSConfig {
