@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Suspense, lazy, useMemo, useState } from 'react'
+import { PageHeader } from '../ui/index.ts'
 import {
   isApiError,
   asTypedPolicy,
@@ -148,8 +149,9 @@ export function PoliciesPage() {
   })
 
   const fetchedDescriptors = useMemo(() => {
-    const entries = (policyTypesQuery.data ?? []).flatMap((descriptor) =>
-      isKnownPolicyType(descriptor.type) ? ([[descriptor.type, descriptor]] as const) : [],
+    const entries = (policyTypesQuery.data ?? []).flatMap(
+      (descriptor): Array<readonly [PolicyType, PolicyTypeDescriptor]> =>
+        isKnownPolicyType(descriptor.type) ? [[descriptor.type, descriptor]] : [],
     )
 
     return new Map<PolicyType, PolicyTypeDescriptor>(entries)
@@ -195,13 +197,14 @@ export function PoliciesPage() {
     () => (selectedUpstream ? compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? [] : []),
     [compatiblePolicyTypesByUpstream, selectedUpstream],
   )
-  const compatibleUpstreams = useMemo(
-    () =>
-      draft.type
-        ? upstreams.filter((upstream) => upstreamSupportsPolicyType(upstream, draft.type, selectedDescriptor))
-        : upstreams,
-    [draft.type, selectedDescriptor, upstreams],
-  )
+  const compatibleUpstreams = useMemo(() => {
+    const selectedPolicyType = draft.type
+    return selectedPolicyType
+      ? upstreams.filter((upstream) =>
+          upstreamSupportsPolicyType(upstream, selectedPolicyType, selectedDescriptor),
+        )
+      : upstreams
+  }, [draft.type, selectedDescriptor, upstreams])
   const searchedPolicies = useMemo(
     () => policies.filter((policy) => matchesPolicySearch(policy, upstreamsByID, policySearch)),
     [policies, policySearch, upstreamsByID],
@@ -224,13 +227,9 @@ export function PoliciesPage() {
     [searchedPolicies],
   )
   const selectedPolicyId = useMemo(() => {
-    if (filteredPolicies.length === 0) {
-      return null
-    }
-
     return userSelectedPolicyId && filteredPolicies.some((policy) => policy.id === userSelectedPolicyId)
       ? userSelectedPolicyId
-      : filteredPolicies[0].id
+      : null
   }, [filteredPolicies, userSelectedPolicyId])
   const selectedPolicy = useMemo(
     () => filteredPolicies.find((policy) => policy.id === selectedPolicyId) ?? null,
@@ -479,12 +478,16 @@ export function PoliciesPage() {
     deletePolicyMutation.error,
     'Unable to delete the selected policy right now.',
   )
-  const enabledPoliciesCount = useMemo(
-    () => policies.filter((policy) => policy.enabled).length,
+  const enforcingPoliciesCount = useMemo(
+    () => policies.filter((policy) => policy.enabled && !isPolicyDryRun(policy)).length,
     [policies],
   )
   const dryRunPoliciesCount = useMemo(
-    () => policies.filter((policy) => isPolicyDryRun(policy)).length,
+    () => policies.filter((policy) => policy.enabled && isPolicyDryRun(policy)).length,
+    [policies],
+  )
+  const disabledPoliciesCount = useMemo(
+    () => policies.filter((policy) => !policy.enabled).length,
     [policies],
   )
   const isEditingPolicy = editingPolicyId !== null
@@ -856,23 +859,22 @@ export function PoliciesPage() {
 
   return (
     <section className={policyClass("page")}>
-      <header className={policyClass("page-header")}>
-        <div>
-          <p className={policyClass("eyebrow")}>Policy control plane</p>
-          <h2>Policies</h2>
-          <p className={policyClass("page-summary")}>Rules evaluated for this tenant.</p>
-        </div>
-        <div className={policyClass("policies-header-status")}>
+      <PageHeader
+        eyebrow="Policy control plane"
+        title="Policies"
+        summary="See what each rule does, where it applies, and whether it is enforcing."
+        actions={<>
           <span className={policyClass("status-pill status-pill-neutral")}>{policies.length} policies</span>
           <span
-            className={policyClass('status-pill', enabledPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral')}
+            className={policyClass('status-pill', enforcingPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral')}
           >
-            {enabledPoliciesCount} enabled
+            {enforcingPoliciesCount} enforcing
           </span>
-          {dryRunPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-neutral")}>{dryRunPoliciesCount} dry run</span> : null}
+          {dryRunPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-warning")}>{dryRunPoliciesCount} dry run</span> : null}
+          {disabledPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-neutral")}>{disabledPoliciesCount} disabled</span> : null}
           {policyTypesQuery.isError ? <span className={policyClass("status-pill status-pill-neutral")}>Fallback metadata</span> : null}
-        </div>
-      </header>
+        </>}
+      />
 
       <div className={policyClass("policies-layout")}>
         <PolicyListPanel

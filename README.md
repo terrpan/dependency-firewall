@@ -320,3 +320,4 @@ web/                 control-plane UI
 
 - Add a policy type: `docs/adding-policy-type.md`
 - Add an upstream or ecosystem: `docs/adding-upstream.md`
+- UI principles, architecture, and review checklist: `docs/ui-redesign.md`

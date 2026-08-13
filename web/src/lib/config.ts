@@ -99,7 +99,6 @@ export const firewallRootUrl = trimTrailingSlash(
   ),
 )
 export const docsUrl = readEnv('VITE_DOCS_URL', joinUrlPath(controlPlaneRootUrl, '/api/docs'))
-export const openApiUrl = readEnv('VITE_OPENAPI_URL', joinUrlPath(controlPlaneRootUrl, '/api/openapi.json'))
 export const telemetryEnabled = readBooleanEnv('VITE_OTEL_ENABLED', false)
 export const telemetryExporterUrl = readEnv(
   'VITE_OTEL_EXPORTER_URL',

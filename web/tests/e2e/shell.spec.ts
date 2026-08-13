@@ -1,15 +1,30 @@
-import { expect, installApi, installAuth, test } from './fixtures'
+import { expect, installApi, installAuth, policyOverviewFixtures, tenantOverviewFixtures, test } from './fixtures'
 
-test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page) })
+test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page, { policies: policyOverviewFixtures }) })
 
 test('renders the light operations shell and attaches bearer auth', async ({ page }, testInfo) => {
   let authorization = ''
   page.on('request', request => { if (request.url().includes('/api/v1/')) authorization = request.headers().authorization ?? authorization })
   await page.goto('/')
   await expect(page.getByRole('complementary', { name: 'Primary' })).toBeVisible()
-  await expect(page.locator('.tenant-active strong')).toHaveText('Acme Engineering')
+  await expect(page.getByLabel('Workspace')).toHaveValue('tenant-acme')
+  await expect(page.getByTestId('active-tenant-name')).toHaveText('Acme Engineering')
   await expect.poll(() => authorization).toBe('Bearer playwright-access-token')
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('light-dashboard.png'), fullPage: true })
+})
+
+test('switches workspace from the compact navigation control', async ({ page }) => {
+  await installApi(page, { policies: policyOverviewFixtures, tenants: tenantOverviewFixtures })
+  await page.goto('/')
+
+  const workspace = page.getByLabel('Workspace')
+  await expect(workspace).toHaveValue('tenant-acme')
+  await workspace.selectOption('tenant-platform')
+
+  await expect(workspace).toHaveValue('tenant-platform')
+  await expect(page.getByTestId('active-tenant-name')).toHaveText('Platform Engineering')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('dependency-firewall.tenant-id'))).toBe('tenant-platform')
 })
 
 test('mobile drawer is keyboard-accessible', async ({ page }, testInfo) => {
@@ -21,10 +36,26 @@ test('mobile drawer is keyboard-accessible', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('mobile-navigation.png'), fullPage: true })
 })
 
+test('keeps the navigation rail at compact desktop widths', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop-chromium', 'desktop project only')
+
+  for (const width of [1024, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto('/')
+
+    const navigationRail = page.getByRole('complementary', { name: 'Primary' })
+    await expect(navigationRail).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden()
+    await expect.poll(async () => Math.round((await navigationRail.boundingBox())?.x ?? -1)).toBe(0)
+    await expect.poll(async () => Math.round((await navigationRail.boundingBox())?.width ?? -1)).toBe(260)
+  }
+})
+
 test('persists and renders dark theme', async ({ page }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem('dependency-firewall-theme', 'dark'))
   await page.goto('/')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('dark-shell.png'), fullPage: true })
 })
 

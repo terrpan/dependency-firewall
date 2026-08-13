@@ -21,6 +21,18 @@
 - Shared ports in core must use protocol-neutral names when they are used by more than one ecosystem.
 - Protocol-specific terms such as manifest, blob, tarball, and tag belong in delivery or ecosystem-specific infrastructure packages.
 
+## Web UI standards
+
+- Follow the principles and review checklist in [`ui-redesign.md`](./ui-redesign.md).
+- Import reusable primitives and patterns through `web/src/ui/index.ts`.
+- Keep primitives and patterns independent of APIs, React Query, routing, tenant state, auth providers, and feature modules.
+- Keep domain behavior in `web/src/features` and route composition in pages. Preserve route-level lazy loading and keep D3 isolated to dependency graphs.
+- Use CSS Modules for application, component, feature, and route styling. Global CSS is limited to tokens, reset, fonts, and document defaults.
+- Reuse semantic tokens. Do not introduce route-specific colors or spacing into global styles.
+- Delete superseded selectors, components, tokens, and tests in the same migration that makes them obsolete.
+- Treat light and dark themes, keyboard operation, visible focus, reduced motion, and responsive behavior as acceptance requirements.
+- UI changes pass `npm run lint`, `npm run build`, relevant mocked Playwright tests, and `git diff --check`.
+
 ## API Response DTOs
 
 - **Always use response DTOs in the delivery layer**, never return domain models directly.
@@ -47,3 +59,4 @@
 - Repository tests must verify tenant scoping.
 - Use testcontainers or similar for integration tests against PostgreSQL and Valkey.
 - Use testify package for tests
+- Browser tests should assert behavior and accessibility through roles, labels, keyboard input, and stable application state. Screenshots support review but do not replace behavioral assertions.

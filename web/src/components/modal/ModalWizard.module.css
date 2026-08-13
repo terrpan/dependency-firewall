@@ -48,6 +48,11 @@
   display: flex;
 }
 
+.stepItemCurrent,
+.stepItemInactive {
+  min-width: 0;
+}
+
 .stepButton,
 .stepCard {
   width: 100%;
@@ -164,6 +169,26 @@
   min-width: 0;
 }
 
+.actions {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.actionsLeading,
+.actionsPrimary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.actionsPrimary {
+  justify-content: flex-end;
+}
+
 .aside {
   display: grid;
   gap: var(--space-card);
@@ -195,5 +220,19 @@
 @media (max-width: 560px) {
   .stepList {
     grid-template-columns: 1fr;
+  }
+
+  .stepItemInactive {
+    display: none;
+  }
+
+  .actions {
+    display: grid;
+  }
+
+  .actionsLeading,
+  .actionsPrimary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 }

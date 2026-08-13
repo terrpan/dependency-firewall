@@ -1,26 +1,21 @@
 import { useMemo, useState } from 'react'
 import { SearchFilterBar } from '../components/filters/SearchFilterBar.tsx'
-import {
-  EvaluationList,
-  QueryStateNotice,
-  SummaryMetrics,
-} from '../features/evaluations/components.tsx'
+import { EvaluationList, QueryStateNotice, SummaryMetrics } from '../features/evaluations/components.tsx'
 import { evaluationsPageSize, useEvaluationsPage } from '../features/evaluations/api.ts'
 import {
   evaluationFilterOptions,
   matchesEvaluationFilter,
+  matchesEvaluationFilters,
+  toggleEvaluationFilter,
   type EvaluationFilter,
 } from '../features/evaluations/filters.ts'
-import {
-  formatTimestamp,
-  getQueryErrorMessage,
-  summarizeEvaluations,
-} from '../features/evaluations/model.ts'
-import { useTenant } from '../features/tenant/useTenant.ts'
+import { formatTimestamp, getQueryErrorMessage, summarizeEvaluations } from '../features/evaluations/model.ts'
 import { evaluationClass } from '../features/evaluations/styles.ts'
+import { useTenant } from '../features/tenant/useTenant.ts'
+import { PageHeader } from '../ui/index.ts'
 
 export function EvaluationsPage() {
-  const { tenantId } = useTenant()
+  const { activeTenant, tenantId } = useTenant()
   const tenantKey = tenantId ?? 'tenant-pending'
   const [pagesByTenant, setPagesByTenant] = useState<Record<string, number>>({})
   const [artifactSearchByTenant, setArtifactSearchByTenant] = useState<Record<string, string>>({})
@@ -35,12 +30,9 @@ export function EvaluationsPage() {
   function updatePage(nextPage: number | ((currentPage: number) => number)) {
     setPagesByTenant((currentPages) => {
       const currentPage = currentPages[tenantKey] ?? 0
-      const resolvedNextPage =
-        typeof nextPage === 'function' ? nextPage(currentPage) : nextPage
-
       return {
         ...currentPages,
-        [tenantKey]: resolvedNextPage,
+        [tenantKey]: typeof nextPage === 'function' ? nextPage(currentPage) : nextPage,
       }
     })
   }
@@ -48,16 +40,11 @@ export function EvaluationsPage() {
   const offset = page * evaluationsPageSize
   const evaluationsQuery = useEvaluationsPage(evaluationsPageSize, offset, artifactSearch)
   const evaluations = useMemo(() => evaluationsQuery.data ?? [], [evaluationsQuery.data])
-  const visibleEvaluations = useMemo(() => {
-    if (activeFilters.length === 0) {
-      return evaluations
-    }
-
-    return evaluations.filter((evaluation) =>
-      activeFilters.some((filter) => matchesEvaluationFilter(evaluation, filter)),
-    )
-  }, [activeFilters, evaluations])
-  const evaluationSummary = summarizeEvaluations(visibleEvaluations)
+  const visibleEvaluations = useMemo(
+    () => evaluations.filter((evaluation) => matchesEvaluationFilters(evaluation, activeFilters)),
+    [activeFilters, evaluations],
+  )
+  const evaluationSummary = summarizeEvaluations(evaluations)
   const rangeStart = offset + 1
   const rangeEnd = offset + evaluations.length
   const canGoBack = page > 0
@@ -65,15 +52,15 @@ export function EvaluationsPage() {
   const hasArtifactSearch = artifactSearch.trim().length > 0
   const hasActiveFilters = activeFilters.length > 0
   const emptyTitle = hasArtifactSearch || hasActiveFilters
-    ? 'No matching evaluations'
+    ? 'No matching decisions'
     : page === 0
-      ? 'No evaluations recorded'
-      : 'No more evaluations on this page'
+      ? 'No decisions recorded yet'
+      : 'No more decisions'
   const emptyMessage = hasArtifactSearch || hasActiveFilters
-    ? 'Try a different artifact search or filter combination.'
+    ? 'Adjust the search or clear a filter to see more decision history.'
     : page === 0
-      ? 'This tenant does not have any stored evaluation history yet.'
-      : 'Try the previous page or refresh to look for newer results.'
+      ? 'Decisions appear here after this tenant routes package or image requests through Dependency Firewall.'
+      : 'Return to the previous page or refresh to look for newer decisions.'
   const filterCounts = useMemo(
     () => ({
       allow: evaluations.filter((evaluation) => matchesEvaluationFilter(evaluation, 'allow')).length,
@@ -84,135 +71,96 @@ export function EvaluationsPage() {
     [evaluations],
   )
   const evaluationFilters = useMemo(
-    () =>
-      evaluationFilterOptions.map((option) => ({
-        ...option,
-        count: filterCounts[option.id],
-      })),
+    () => evaluationFilterOptions.map((option) => ({ ...option, count: filterCounts[option.id] })),
     [filterCounts],
   )
 
   const summaryMetrics = [
     {
-      label: 'Results shown',
+      label: 'Loaded decisions',
       value: String(evaluationSummary.total),
-      hint:
-        hasArtifactSearch || hasActiveFilters
-          ? `Filtered from ${evaluations.length} loaded results on page ${page + 1}`
-          : `Current page size ${evaluationsPageSize}`,
+      hint: `Page ${page + 1}`,
     },
-    {
-      label: 'Allowed',
-      value: String(evaluationSummary.allowCount),
-      hint: 'Current page only',
-      tone: 'success',
-    },
-    {
-      label: 'Denied',
-      value: String(evaluationSummary.denyCount),
-      hint: 'Current page only',
-      tone: 'danger',
-    },
-    {
-      label: 'With warnings',
-      value: String(evaluationSummary.warningCount),
-      hint: 'Current page only',
-    },
+    { label: 'Allowed', value: String(evaluationSummary.allowCount), hint: 'Loaded page', tone: 'success' },
+    { label: 'Denied', value: String(evaluationSummary.denyCount), hint: 'Loaded page', tone: 'danger' },
+    { label: 'Dry-run warnings', value: String(evaluationSummary.warningCount), hint: 'Loaded page', tone: 'warning' },
   ] as const
 
   return (
-    <section className={evaluationClass("page")}>
-      <header className={evaluationClass("page-header")}>
-        <div>
-          <p className={evaluationClass("eyebrow")}>Decision history</p>
-          <h2>Evaluations</h2>
-          <p className={evaluationClass("page-summary")}>Stored allow and deny decisions for the selected tenant.</p>
-        </div>
-
-        <div className={evaluationClass("page-actions")}>
+    <section className={evaluationClass('page')}>
+      <PageHeader
+        eyebrow="Decision history"
+        title="Evaluations"
+        summary={<>See what Dependency Firewall decided for {activeTenant?.name ?? 'the selected tenant'}, which policy made the decision, and why.</>}
+        actions={<>
           {evaluationsQuery.isFetching && !evaluationsQuery.isPending ? (
-            <span className={evaluationClass("status-pill")}>Refreshing</span>
+            <span className={evaluationClass('status-pill status-pill-neutral')}>Refreshing</span>
           ) : null}
-          <button
-            className={evaluationClass("secondary-button")}
-            onClick={() => void evaluationsQuery.refetch()}
-            type="button"
-          >
-            Refresh
-          </button>
-        </div>
-      </header>
+          {!evaluationsQuery.isError ? (
+            <button
+              className={evaluationClass('secondary-button')}
+              disabled={evaluationsQuery.isFetching}
+              onClick={() => void evaluationsQuery.refetch()}
+              type="button"
+            >
+              Refresh
+            </button>
+          ) : null}
+        </>}
+      />
 
-      <div className={evaluationClass("evaluations-layout")}>
-        <div className={evaluationClass("evaluations-side-stack")}>
-          <section className={evaluationClass("card")}>
-            <div className={evaluationClass("section-header")}>
-              <div>
-                <h3>Page summary</h3>
-                <p className={evaluationClass("muted")}>
-                  {evaluations.length > 0
-                    ? `Showing results ${rangeStart}-${rangeEnd}${hasArtifactSearch || hasActiveFilters ? ' for the current search and filters.' : '.'}`
-                    : `Showing page ${page + 1}.`}
-                </p>
-              </div>
-              <span className={evaluationClass("status-pill status-pill-neutral")}>Page {page + 1}</span>
+      {evaluationsQuery.isSuccess && evaluations.length > 0 ? (
+        <section className={evaluationClass('evaluations-overview')} aria-labelledby="evaluation-overview-title">
+          <div className={evaluationClass('section-header')}>
+            <div>
+              <h3 id="evaluation-overview-title">Decision overview</h3>
+              <p className={evaluationClass('muted')}>
+                Results {rangeStart}-{rangeEnd} · latest {formatTimestamp(evaluationSummary.latestEvaluatedAt)} ·{' '}
+                {evaluationSummary.uniquePolicies} {evaluationSummary.uniquePolicies === 1 ? 'policy' : 'policies'} represented ·{' '}
+                {evaluationSummary.cachedCount} cached
+              </p>
             </div>
+            <span className={evaluationClass('status-pill status-pill-neutral')}>Page {page + 1}</span>
+          </div>
+          <SummaryMetrics items={summaryMetrics} />
+        </section>
+      ) : null}
 
-            <div className={evaluationClass("button-row")}>
+      <section className={evaluationClass('card evaluations-log-card')}>
+        <div className={evaluationClass('section-header')}>
+          <div>
+            <h3>Decision history</h3>
+            {evaluations.length > 0 ? (
+              <p className={evaluationClass('muted')}>
+                {visibleEvaluations.length === evaluations.length
+                  ? `${evaluations.length} decisions loaded on this page.`
+                  : `${visibleEvaluations.length} of ${evaluations.length} loaded decisions match.`}
+              </p>
+            ) : null}
+          </div>
+          {evaluations.length > 0 ? (
+            <div className={evaluationClass('button-row evaluations-pagination')} aria-label="Evaluation pages">
               <button
-                className={evaluationClass("secondary-button")}
-                disabled={!canGoBack || evaluationsQuery.isPending}
+                className={evaluationClass('secondary-button')}
+                disabled={!canGoBack || evaluationsQuery.isFetching}
                 onClick={() => updatePage((currentPage) => Math.max(currentPage - 1, 0))}
                 type="button"
               >
                 Previous
               </button>
               <button
-                className={evaluationClass("secondary-button")}
-                disabled={!canGoForward || evaluationsQuery.isPending}
+                className={evaluationClass('secondary-button')}
+                disabled={!canGoForward || evaluationsQuery.isFetching}
                 onClick={() => updatePage((currentPage) => currentPage + 1)}
                 type="button"
               >
                 Next
               </button>
             </div>
-
-            {evaluationsQuery.isPending ? (
-              <QueryStateNotice
-                title="Loading evaluation summary"
-                message="Waiting for decision history."
-              />
-            ) : evaluationsQuery.isError ? (
-              <QueryStateNotice
-                title="Unable to load evaluation summary"
-                message={getQueryErrorMessage(
-                  evaluationsQuery.error,
-                  'Evaluation summary data is unavailable right now.',
-                )}
-                onAction={() => void evaluationsQuery.refetch()}
-              />
-            ) : evaluations.length === 0 ? (
-              <QueryStateNotice title={emptyTitle} message={emptyMessage} />
-            ) : (
-              <>
-                <SummaryMetrics items={summaryMetrics} />
-                <p className={evaluationClass("muted")}>
-                  Latest result on this page: {formatTimestamp(evaluationSummary.latestEvaluatedAt)}
-                  . Policies represented: {evaluationSummary.uniquePolicies}. Cached results:{' '}
-                  {evaluationSummary.cachedCount}.
-                </p>
-              </>
-            )}
-          </section>
+          ) : null}
         </div>
 
-        <section className={evaluationClass("card evaluations-log-card")}>
-          <div className={evaluationClass("section-header")}>
-            <div>
-              <h3>Audit log</h3>
-            </div>
-          </div>
-
+        {evaluations.length > 0 || hasArtifactSearch || hasActiveFilters ? (
           <SearchFilterBar
             activeFilters={activeFilters}
             clearFiltersLabel="Clear filters"
@@ -221,54 +169,35 @@ export function EvaluationsPage() {
             onClearFilters={() => setActiveFiltersByTenant((current) => ({ ...current, [tenantKey]: [] }))}
             onSearchChange={(nextSearch) => {
               updatePage(0)
-              setArtifactSearchByTenant((currentSearches) => ({
-                ...currentSearches,
-                [tenantKey]: nextSearch,
-              }))
+              setArtifactSearchByTenant((current) => ({ ...current, [tenantKey]: nextSearch }))
             }}
             onToggleFilter={(filter) =>
-              setActiveFiltersByTenant((current) => {
-                const currentFilters = current[tenantKey] ?? []
-
-                return {
-                  ...current,
-                  [tenantKey]: currentFilters.includes(filter)
-                    ? currentFilters.filter((currentFilter) => currentFilter !== filter)
-                    : [...currentFilters, filter],
-                }
-              })
+              setActiveFiltersByTenant((current) => ({
+                ...current,
+                [tenantKey]: toggleEvaluationFilter(current[tenantKey] ?? [], filter),
+              }))
             }
             searchFieldClassName="evaluation-search"
-            searchHelpText="Searches stored evaluations for this tenant by artifact name, scope, version, or digest."
+            searchHelpText="Search package or image name, version, scope, or digest."
             searchInputId="evaluation-artifact-search"
             searchLabel="Artifact search"
             searchPlaceholder="lodash, @scope/pkg, 4.17.20, sha256:..."
             searchValue={artifactSearch}
           />
+        ) : null}
 
-          {evaluationsQuery.isPending ? (
-            <QueryStateNotice
-              title="Loading evaluations"
-              message="Waiting for the audit log to load."
-            />
-          ) : evaluationsQuery.isError ? (
-            <QueryStateNotice
-              title="Unable to load evaluations"
-              message={getQueryErrorMessage(
-                evaluationsQuery.error,
-                'Evaluation history is unavailable right now.',
-              )}
-              onAction={() => void evaluationsQuery.refetch()}
-            />
-          ) : (
-            <EvaluationList
-              emptyMessage={emptyMessage}
-              emptyTitle={emptyTitle}
-              evaluations={visibleEvaluations}
-            />
-          )}
-        </section>
-      </div>
+        {evaluationsQuery.isPending ? (
+          <QueryStateNotice title="Loading decision history" message="Waiting for stored evaluations." />
+        ) : evaluationsQuery.isError ? (
+          <QueryStateNotice
+            title="Unable to load decision history"
+            message={getQueryErrorMessage(evaluationsQuery.error, 'Decision history is unavailable right now.')}
+            onAction={() => void evaluationsQuery.refetch()}
+          />
+        ) : (
+          <EvaluationList emptyMessage={emptyMessage} emptyTitle={emptyTitle} evaluations={visibleEvaluations} />
+        )}
+      </section>
     </section>
   )
 }

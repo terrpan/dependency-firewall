@@ -1,5 +1,6 @@
 // PolicyDraftModal renders the guided create/edit policy workflow.
-import { ModalWizard } from '../../components/modal/index.ts'
+import { ModalWizard, ModalWizardActions } from '../../components/modal/index.ts'
+import { Button } from '../../ui/index.ts'
 import { policyClass } from './styles.ts'
 import type { DependencyScope, DependencyType, PolicyType, PolicyTypeDescriptor, Upstream } from '../../lib/api/index.ts'
 import {
@@ -184,20 +185,13 @@ export function PolicyDraftModal({
       description={isEditingPolicy ? 'Edit the selected policy.' : 'Create a tenant-scoped policy.'}
       dismissible={!savePolicyIsPending}
       footer={
-        <div className={policyClass("wizard-actions wizard-actions-modal")}>
-          <button className={policyClass("secondary-button")} disabled={currentStep === 0} onClick={onBack} type="button">
-            Back
-          </button>
-          <div className={policyClass("wizard-actions-right")}>
-            <button className={policyClass("secondary-button")} onClick={onResetDraft} type="button">
-              {isEditingPolicy ? 'Reset changes' : 'Discard draft'}
-            </button>
+        <ModalWizardActions leading={<><Button disabled={savePolicyIsPending} onClick={onClose}>Cancel</Button><Button disabled={savePolicyIsPending} onClick={onResetDraft}>{isEditingPolicy ? 'Reset changes' : 'Start over'}</Button></>}>
+            {currentStep > 0 ? <Button disabled={savePolicyIsPending} onClick={onBack}>Back</Button> : null}
             {currentStep === policyWizardSteps.length - 1 ? (
-              <button
-                className={policyClass("primary-button")}
+              <Button
+                variant="primary"
                 disabled={reviewErrors.length > 0 || savePolicyIsPending}
                 onClick={onSavePolicy}
-                type="button"
               >
                 {savePolicyIsPending
                   ? isEditingPolicy
@@ -206,14 +200,13 @@ export function PolicyDraftModal({
                   : isEditingPolicy
                     ? 'Save changes'
                     : 'Create policy'}
-              </button>
+              </Button>
             ) : (
-              <button className={policyClass("primary-button")} disabled={!canAdvanceWizard} onClick={onNext} type="button">
+              <Button variant="primary" disabled={!canAdvanceWizard} onClick={onNext}>
                 Next
-              </button>
+              </Button>
             )}
-          </div>
-        </div>
+        </ModalWizardActions>
       }
       headerMeta={
         <>

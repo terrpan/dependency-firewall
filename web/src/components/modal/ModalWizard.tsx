@@ -20,6 +20,15 @@ export type ModalWizardProps = Omit<ModalDialogProps, 'children'> & {
   onStepChange?: (step: number) => void
 }
 
+export function ModalWizardActions({ leading, children }: { leading?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={styles.actions}>
+      <div className={styles.actionsLeading}>{leading}</div>
+      <div className={styles.actionsPrimary}>{children}</div>
+    </div>
+  )
+}
+
 export function ModalWizard({
   steps,
   currentStep,
@@ -94,7 +103,10 @@ export function ModalWizard({
                 )
 
                 return (
-                  <li className={styles.stepItem} key={step.id}>
+                  <li
+                    className={`${styles.stepItem} ${index === activeStep ? styles.stepItemCurrent : styles.stepItemInactive}`}
+                    key={step.id}
+                  >
                     {allowStepSelection && onStepChange ? (
                       <button
                         aria-current={index === activeStep ? 'step' : undefined}

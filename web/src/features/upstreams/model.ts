@@ -28,3 +28,21 @@ export function formatUpstreamCapabilities(upstream: Upstream | null): string[] 
 export function formatUpstreamPolicyTypes(upstream: Upstream | null): string[] {
   return upstream ? listSupportedPolicyTypes(upstream).map(formatPolicyTypeName) : []
 }
+
+export function formatUpstreamHost(upstream: Upstream): string {
+  try {
+    return new URL(upstream.base_url).host
+  } catch {
+    return upstream.base_url
+  }
+}
+
+export function formatUpstreamAuth(upstream: Upstream): string {
+  if (!upstream.auth?.configured) {
+    return 'No credentials'
+  }
+
+  return upstream.auth.username
+    ? `Credentials configured for ${upstream.auth.username}`
+    : 'Credentials configured'
+}

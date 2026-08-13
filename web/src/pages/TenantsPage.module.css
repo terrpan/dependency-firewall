@@ -1,1 +1,233 @@
-.layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);gap:1rem}.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem;align-items:center}.item h3{margin:0;font-size:1rem}.item p{margin:.25rem 0 0;color:var(--color-text-muted);font-family:var(--font-mono);font-size:.78rem;overflow-wrap:anywhere}.form{display:grid;gap:1rem}.form h3,.form p{margin:0}.form p{color:var(--color-text-muted)}.actions{display:flex;justify-content:flex-end}.date{color:var(--color-text-muted);font-size:.8rem;font-variant-numeric:tabular-nums}@media(max-width:800px){.layout{grid-template-columns:1fr}.item{align-items:start}}
+.layout {
+  display: grid;
+  gap: var(--space-layout);
+  align-items: start;
+}
+
+.inventory,
+.form,
+.wizardSection,
+.identity,
+.formHeader > div {
+  display: grid;
+}
+
+.inventory {
+  min-width: 0;
+  gap: var(--space-card);
+}
+
+.inventoryHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.inventoryHeader > div {
+  display: grid;
+  gap: 6px;
+}
+
+.inventoryHeader h3,
+.inventoryHeader p,
+.formHeader h3,
+.formHeader p {
+  margin: 0;
+}
+
+.inventoryHeader h3,
+.formHeader h3,
+.identity h4 {
+  color: var(--color-text);
+}
+
+.inventoryHeader p,
+.formHeader p {
+  color: var(--color-text-muted);
+  line-height: 1.55;
+}
+
+.list {
+  overflow: visible;
+}
+
+.item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  min-width: 0;
+  background: var(--color-surface);
+}
+
+.item[data-active='true'] {
+  box-shadow: inset 3px 0 0 var(--color-action);
+  background: var(--color-action-soft);
+}
+
+.itemMain {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+
+.tenantMark,
+.formIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+  color: var(--color-action);
+}
+
+.tenantMark {
+  width: 38px;
+  height: 38px;
+}
+
+.identity {
+  min-width: 0;
+  gap: 7px;
+}
+
+.identity h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tenantId {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.itemActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.routeLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-action);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.routeLink:hover,
+.routeLink:focus-visible {
+  border-color: var(--color-border);
+  background: var(--color-surface-subtle);
+  text-decoration: underline;
+}
+
+.form {
+  gap: var(--space-card);
+}
+
+.wizardSection {
+  gap: var(--space-card);
+}
+
+.formHeader {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.formHeader > div {
+  gap: 6px;
+}
+
+.formIcon {
+  width: 36px;
+  height: 36px;
+}
+
+.reviewCard {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-subtle);
+  overflow: hidden;
+}
+
+.reviewCard > div {
+  display: grid;
+  grid-template-columns: minmax(120px, .7fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.reviewCard > div:last-child {
+  border-bottom: 0;
+}
+
+.reviewCard dt {
+  color: var(--color-text-muted);
+}
+
+.reviewCard dd {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .inventoryHeader,
+  .item,
+  .itemActions {
+    align-items: stretch;
+  }
+
+  .inventoryHeader,
+  .item {
+    grid-template-columns: 1fr;
+  }
+
+  .inventoryHeader {
+    display: grid;
+  }
+
+  .itemActions {
+    justify-content: flex-start;
+  }
+
+  .itemActions > button,
+  .itemActions > a {
+    width: 100%;
+  }
+
+  .metadata {
+    display: grid;
+  }
+
+  .reviewCard > div {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}

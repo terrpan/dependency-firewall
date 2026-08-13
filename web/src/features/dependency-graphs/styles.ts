@@ -1,7 +1,7 @@
-import styles from './Upstreams.module.css'
+import styles from './DependencyGraphs.module.css'
 import { applicationClass } from '../../ui/foundation/applicationStyles.ts'
 
-export function upstreamClass(...classNames: Array<string | false | null | undefined>) {
+export function graphClass(...classNames: Array<string | false | null | undefined>) {
   return classNames
     .filter((className): className is string => Boolean(className))
     .flatMap((className) => className.split(/\s+/))

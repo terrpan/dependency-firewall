@@ -1,6 +1,7 @@
 // CreateUpstreamModal renders the tenant-scoped upstream creation wizard.
 import type { FormEventHandler, RefObject } from 'react'
-import { ModalWizard, type ModalWizardStep } from '../../components/modal/index.ts'
+import { ModalWizard, ModalWizardActions, type ModalWizardStep } from '../../components/modal/index.ts'
+import { Button } from '../../ui/index.ts'
 import { upstreamClass } from './styles.ts'
 import {
   formatUpstreamCapabilityLabel,
@@ -58,6 +59,7 @@ function getAuthTypeOptions(draft: UpstreamDraft) {
 type CreateUpstreamModalProps = {
   open: boolean
   tenantId: string | null
+  tenantName: string | null
   draft: UpstreamDraft
   draftErrors: UpstreamDraftErrors
   currentStep: number
@@ -69,7 +71,6 @@ type CreateUpstreamModalProps = {
   onClose: () => void
   onDraftChange: (field: keyof UpstreamDraft, value: string) => void
   onCapabilityToggle: (capability: UpstreamCapability, checked: boolean) => void
-  onReset: () => void
   onSubmit: FormEventHandler<HTMLFormElement>
 }
 
@@ -92,6 +93,7 @@ function formatDraftAuth(draft: UpstreamDraft): string {
 export function CreateUpstreamModal({
   open,
   tenantId,
+  tenantName,
   draft,
   draftErrors,
   currentStep,
@@ -103,7 +105,6 @@ export function CreateUpstreamModal({
   onClose,
   onDraftChange,
   onCapabilityToggle,
-  onReset,
   onSubmit,
 }: CreateUpstreamModalProps) {
   const wizardSteps = getCreateWizardSteps(draft)
@@ -117,59 +118,23 @@ export function CreateUpstreamModal({
       : 'Review details'
 
   const footer = (
-    <div className={upstreamClass("upstreams-wizard-footer")}>
-      <div className={upstreamClass("upstreams-form-actions")}>
-        <button
-          className={upstreamClass("upstreams-secondary-button")}
-          disabled={isPending}
-          onClick={onClose}
-          type="button"
-        >
-          Cancel
-        </button>
-        <button
-          className={upstreamClass("upstreams-secondary-button")}
-          disabled={isPending}
-          onClick={onReset}
-          type="button"
-        >
-          Reset
-        </button>
-      </div>
-
-      <div className={upstreamClass("upstreams-form-actions")}>
+    <ModalWizardActions leading={<Button disabled={isPending} onClick={onClose}>Cancel</Button>}>
         {currentStep > 0 ? (
-          <button
-            className={upstreamClass("upstreams-secondary-button")}
-            disabled={isPending}
-            onClick={onBack}
-            type="button"
-          >
+          <Button disabled={isPending} onClick={onBack}>
             Back
-          </button>
+          </Button>
         ) : null}
 
         {!isReviewStep ? (
-          <button
-            className={upstreamClass("primary-button")}
-            disabled={!tenantId || isPending}
-            form="create-upstream-form"
-            type="submit"
-          >
+          <Button variant="primary" disabled={!tenantId || isPending} form="create-upstream-form" type="submit">
             {nextLabel}
-          </button>
+          </Button>
         ) : (
-          <button
-            className={upstreamClass("primary-button")}
-            disabled={isPending || !tenantId}
-            form="create-upstream-form"
-            type="submit"
-          >
+          <Button variant="primary" disabled={isPending || !tenantId} form="create-upstream-form" type="submit">
             {isPending ? 'Creating...' : 'Create upstream'}
-          </button>
+          </Button>
         )}
-      </div>
-    </div>
+    </ModalWizardActions>
   )
 
   return (
@@ -177,16 +142,15 @@ export function CreateUpstreamModal({
       closeOnEscape={!isPending}
       closeOnOverlayClick={!isPending}
       currentStep={currentStep}
-      description="Add the registry endpoint and optional OCI credentials."
+      description="Connect a package source and choose the policy data it provides."
       dismissible={!isPending}
       footer={footer}
-      headerMeta={
-        <span className={upstreamClass("status-pill status-pill-neutral")}>{tenantId ? `Tenant ${tenantId}` : 'No tenant selected'}</span>
-      }
       initialFocusRef={initialFocusRef}
       onClose={onClose}
       open={open}
       size="wide"
+      showStepDescriptions={false}
+      stepGuideVariant="compact"
       steps={wizardSteps}
       title="Create upstream"
     >
@@ -205,7 +169,7 @@ export function CreateUpstreamModal({
             </div>
 
             <div className={upstreamClass('upstreams-field', Boolean(draftErrors.name) && 'upstreams-field-invalid')}>
-              <label htmlFor="upstream-name">Display name</label>
+              <label htmlFor="upstream-name">Upstream name</label>
               <input
                 aria-invalid={Boolean(draftErrors.name)}
                 id="upstream-name"
@@ -215,6 +179,7 @@ export function CreateUpstreamModal({
                 ref={initialFocusRef}
                 value={draft.name}
               />
+              <p className={upstreamClass("upstreams-field-hint")}>Use a short name your team will recognize in policy and audit views.</p>
               {draftErrors.name ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.name}</p> : null}
             </div>
 
@@ -248,6 +213,7 @@ export function CreateUpstreamModal({
                 placeholder={upstreamBaseUrlExamples[draft.ecosystem]}
                 value={draft.baseUrl}
               />
+              <p className={upstreamClass("upstreams-field-hint")}>Enter the HTTPS registry origin, without a package or image path.</p>
               {draftErrors.baseUrl ? (
                 <p className={upstreamClass("upstreams-field-error")}>{draftErrors.baseUrl}</p>
               ) : null}
@@ -255,6 +221,9 @@ export function CreateUpstreamModal({
 
             <fieldset className={upstreamClass("upstreams-capability-group")}>
               <legend>Capability profile</legend>
+              <p className={upstreamClass("upstreams-field-hint")}>
+                Keep only the capabilities this registry can provide. They determine which policy types are available.
+              </p>
               <div className={upstreamClass("upstreams-capability-list")}>
                 {getUpstreamCapabilityDefinitions(draft.ecosystem).map((capability) => {
                   const checked = draft.capabilities.includes(capability.id)
@@ -267,6 +236,7 @@ export function CreateUpstreamModal({
                       />
                       <span>
                         <strong>{capability.label}</strong>
+                        <small>{capability.description}</small>
                       </span>
                     </label>
                   )
@@ -362,7 +332,8 @@ export function CreateUpstreamModal({
                 <div>
                   <dt>Tenant</dt>
                   <dd>
-                    <code>{tenantId ?? 'No tenant selected'}</code>
+                    {tenantName ?? 'No tenant selected'}
+                    {tenantId ? <small><code>{tenantId}</code></small> : null}
                   </dd>
                 </div>
                 <div>

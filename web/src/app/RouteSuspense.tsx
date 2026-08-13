@@ -1,15 +1,11 @@
 import { Suspense, type ComponentType, type LazyExoticComponent } from 'react'
+import { applicationClass } from '../ui/foundation/applicationStyles.ts'
+import { PageHeader } from '../ui/index.ts'
 
 function RouteLoadingFallback() {
   return (
-    <section className="page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Loading</p>
-          <h2>Loading page</h2>
-          <p className="page-summary">Preparing the requested view.</p>
-        </div>
-      </header>
+    <section className={applicationClass("page")}>
+      <PageHeader eyebrow="Loading" title="Loading page" summary="Preparing the requested view." />
     </section>
   )
 }
