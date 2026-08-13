@@ -58,6 +58,7 @@ function buildAttentionItems(
   upstreams: readonly Upstream[],
   policies: readonly TypedPolicy[],
   tenantId: string | null,
+  hasEvaluationsError: boolean,
   hasUpstreamsError: boolean,
   hasPoliciesError: boolean,
 ): AttentionItem[] {
@@ -123,6 +124,17 @@ function buildAttentionItems(
         actionLabel: 'Review policies',
       })
     }
+  }
+
+  if (tenantId && hasEvaluationsError) {
+    items.push({
+      key: 'evaluations-error',
+      title: 'Decision history unavailable',
+      detail: 'Recent evaluation activity could not be loaded, so the dashboard cannot confirm current protection results.',
+      tone: 'warning',
+      to: '/evaluations',
+      actionLabel: 'Review decisions',
+    })
   }
 
   const deniedEvaluations = evaluations.filter((evaluation) => evaluation.outcome.toLowerCase() === 'deny')
@@ -203,6 +215,7 @@ export function DashboardPage() {
     upstreams,
     policies,
     tenantId,
+    recentEvaluationsQuery.isError,
     upstreamsQuery.isError,
     policiesQuery.isError,
   )

@@ -42,3 +42,17 @@ test('turns incomplete setup into a direct next step', async ({ page }) => {
   await expect(readiness).toContainText('Policy enforcement active')
   await expect(readiness).toContainText('Enable a reviewed policy outside dry-run mode')
 })
+
+test('treats unavailable evaluation history as an attention item', async ({ page }) => {
+  await installApi(page, { evaluationListFailures: 2, policies: policyOverviewFixtures })
+  await page.goto('/')
+
+  const attention = page.getByRole('heading', { name: 'Needs attention' }).locator('xpath=ancestor::section[1]')
+  await expect(attention).toContainText('1 to review')
+  await expect(attention).toContainText('Decision history unavailable')
+  await expect(attention).toContainText('the dashboard cannot confirm current protection results')
+  await expect(attention).not.toContainText('No action required')
+  await expect(attention.getByRole('link', { name: 'Review decisions' })).toHaveAttribute('href', '/evaluations')
+
+  await expect(page.getByText('Unable to load evaluation preview')).toBeVisible()
+})
