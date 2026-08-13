@@ -78,7 +78,7 @@ For a new protocol adapter (or major route extension), add/update handler logic 
 - render protocol-compatible allow/deny responses
 - keep audit hooks and correlation behavior consistent
 
-Delivery should not call repositories directly.
+Delivery should orchestrate new business workflows through core services. Read-oriented handlers may consume core repository ports where the current architecture explicitly does so, but delivery must never depend on concrete infrastructure repositories or issue direct SQL/Valkey operations.
 
 ### 5. Preserve core evaluation invariants
 
@@ -125,6 +125,7 @@ go test ./...
 
 At minimum:
 
+- `docs/supported-ecosystems.md` for the current adapter inventory and limits
 - `docs/policy-engine.md` for capability/evaluation semantics
 - `docs/architecture.md` if boundaries or flow changed
 - `docs/proxy-behavior.md` for protocol-specific request behavior
@@ -141,6 +142,7 @@ For most upstream extension PRs, expect edits in some subset of:
 - `internal/core/policy/upstream_support.go`
 - `internal/delivery/<protocol>/handler.go`
 - `internal/infra/upstream/*.go`
+- `docs/supported-ecosystems.md`
 - `docs/policy-engine.md`
 - `docs/architecture.md`
 - `docs/proxy-behavior.md`
