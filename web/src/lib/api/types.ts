@@ -4,24 +4,31 @@ type JsonContent<T> = T extends { 'application/json': infer Content } ? Content 
 
 export type Health = JsonContent<paths['/healthz']['get']['responses'][200]['content']>
 
-export type Tenant = paths['/api/v1/tenants']['get']['responses'][200]['content']['application/json'][number]
+export type Tenant = NonNullable<
+  paths['/api/v1/tenants']['get']['responses'][200]['content']['application/json']
+>[number]
 export type CreateTenantRequest =
   paths['/api/v1/tenants']['post']['requestBody']['content']['application/json']
 export type UpdateTenantRequest =
   paths['/api/v1/tenants/{id}']['put']['requestBody']['content']['application/json']
 
-export type Upstream =
-  paths['/api/v1/upstreams']['get']['responses'][200]['content']['application/json'][number]
+export type Upstream = NonNullable<
+  paths['/api/v1/upstreams']['get']['responses'][200]['content']['application/json']
+>[number]
 export type CreateUpstreamRequest =
   paths['/api/v1/upstreams']['post']['requestBody']['content']['application/json']
 export type UpdateUpstreamRequest =
   paths['/api/v1/upstreams/{id}']['put']['requestBody']['content']['application/json']
 
-export type Policy = paths['/api/v1/policies']['get']['responses'][200]['content']['application/json'][number]
-export type PolicyVersion =
-  paths['/api/v1/policies/{id}/versions']['get']['responses'][200]['content']['application/json'][number]
-export type PolicyTypeDescriptor =
-  paths['/api/v1/policy-types']['get']['responses'][200]['content']['application/json'][number]
+export type Policy = NonNullable<
+  paths['/api/v1/policies']['get']['responses'][200]['content']['application/json']
+>[number]
+export type PolicyVersion = NonNullable<
+  paths['/api/v1/policies/{id}/versions']['get']['responses'][200]['content']['application/json']
+>[number]
+export type PolicyTypeDescriptor = NonNullable<
+  paths['/api/v1/policy-types']['get']['responses'][200]['content']['application/json']
+>[number]
 export type CreatePolicyRequest =
   paths['/api/v1/policies']['post']['requestBody']['content']['application/json']
 export type UpdatePolicyRequest =
@@ -31,11 +38,13 @@ export type RollbackPolicyRequest =
 export type PolicyImportResult =
   paths['/api/v1/policies/import']['post']['responses'][200]['content']['application/json']
 
-export type Evaluation =
-  paths['/api/v1/evaluations']['get']['responses'][200]['content']['application/json'][number]
+export type Evaluation = NonNullable<
+  paths['/api/v1/evaluations']['get']['responses'][200]['content']['application/json']
+>[number]
 
-export type DependencyGraphRoot =
-  paths['/api/v1/dependency-graphs']['get']['responses'][200]['content']['application/json'][number]
+export type DependencyGraphRoot = NonNullable<
+  paths['/api/v1/dependency-graphs']['get']['responses'][200]['content']['application/json']
+>[number]
 export type DependencyGraph =
   paths['/api/v1/dependency-graphs/{id}']['get']['responses'][200]['content']['application/json']
 

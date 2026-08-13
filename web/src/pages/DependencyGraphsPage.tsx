@@ -206,7 +206,7 @@ function GraphMap({ nodes, edges, selection, onSelect }: { nodes: GraphNode[]; e
       .attr('class', graphClass('graph-node-version'))
       .attr('x', (item) => (nodeKind(item) === 'root' ? 39 : 35))
       .attr('y', 14)
-      .text((item) => item.artifact.version)
+      .text((item) => item.artifact.version ?? 'unversioned')
     node.append('text')
       .attr('class', graphClass('graph-node-kind'))
       .attr('x', (item) => (nodeKind(item) === 'root' ? 39 : 35))

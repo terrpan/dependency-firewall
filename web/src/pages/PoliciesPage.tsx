@@ -149,8 +149,9 @@ export function PoliciesPage() {
   })
 
   const fetchedDescriptors = useMemo(() => {
-    const entries = (policyTypesQuery.data ?? []).flatMap((descriptor) =>
-      isKnownPolicyType(descriptor.type) ? ([[descriptor.type, descriptor]] as const) : [],
+    const entries = (policyTypesQuery.data ?? []).flatMap(
+      (descriptor): Array<readonly [PolicyType, PolicyTypeDescriptor]> =>
+        isKnownPolicyType(descriptor.type) ? [[descriptor.type, descriptor]] : [],
     )
 
     return new Map<PolicyType, PolicyTypeDescriptor>(entries)
@@ -196,13 +197,14 @@ export function PoliciesPage() {
     () => (selectedUpstream ? compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? [] : []),
     [compatiblePolicyTypesByUpstream, selectedUpstream],
   )
-  const compatibleUpstreams = useMemo(
-    () =>
-      draft.type
-        ? upstreams.filter((upstream) => upstreamSupportsPolicyType(upstream, draft.type, selectedDescriptor))
-        : upstreams,
-    [draft.type, selectedDescriptor, upstreams],
-  )
+  const compatibleUpstreams = useMemo(() => {
+    const selectedPolicyType = draft.type
+    return selectedPolicyType
+      ? upstreams.filter((upstream) =>
+          upstreamSupportsPolicyType(upstream, selectedPolicyType, selectedDescriptor),
+        )
+      : upstreams
+  }, [draft.type, selectedDescriptor, upstreams])
   const searchedPolicies = useMemo(
     () => policies.filter((policy) => matchesPolicySearch(policy, upstreamsByID, policySearch)),
     [policies, policySearch, upstreamsByID],

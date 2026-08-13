@@ -182,7 +182,7 @@ function getDescriptorSupportedEcosystems(descriptor: PolicyTypeDescriptor): Ups
 
 function getDescriptorRequiredCapabilities(descriptor: PolicyTypeDescriptor): UpstreamCapability[] {
   const requiredCapabilities = descriptor.required_capabilities ?? []
-  return requiredCapabilities.filter((capability): capability is UpstreamCapability =>
+  return requiredCapabilities.filter((capability: string): capability is UpstreamCapability =>
     getUpstreamCapabilityDefinitions('npm')
       .concat(getUpstreamCapabilityDefinitions('oci'))
       .some((definition) => definition.id === capability),
