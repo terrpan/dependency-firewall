@@ -33,6 +33,7 @@ type HumanOperationPolicy struct {
 	Permission             domain.Permission
 	Bootstrap              bool
 	FreshMembership        bool
+	ScopedAuthorization    bool
 }
 
 type HumanOperationPolicyLookup func(operationID string) (HumanOperationPolicy, bool)
@@ -129,7 +130,7 @@ func HumanAuthentication(
 			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "resource not found")
 			return
 		}
-		if policy.Permission != "" {
+		if policy.Permission != "" && !policy.ScopedAuthorization {
 			err = authorizer.Authorize(requestContext, principal, policy.Permission, domain.AuthorizationScope{TenantID: principal.TenantID})
 			if err != nil {
 				status := http.StatusInternalServerError

@@ -70,3 +70,9 @@ func TestDirectory_BootstrapRequestFailsClosedWithoutExactMembership(t *testing.
 	})
 	require.ErrorIs(t, err, domain.ErrUnauthorized)
 }
+
+func TestDirectory_VerifyTenantMembershipRejectsOtherProvider(t *testing.T) {
+	directory := &Directory{}
+	err := directory.VerifyTenantMembership(context.Background(), "other", "org_123", "user_123")
+	require.ErrorIs(t, err, domain.ErrUnauthorized)
+}

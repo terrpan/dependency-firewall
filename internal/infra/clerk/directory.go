@@ -2,6 +2,7 @@ package clerk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -76,6 +77,19 @@ func (d *Directory) FreshTenantRole(ctx context.Context, identity domain.Verifie
 	ctx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
 	return d.freshTenantRole(ctx, identity)
+}
+
+func (d *Directory) VerifyTenantMembership(ctx context.Context, provider, externalAccountID, externalSubject string) error {
+	if provider != Provider {
+		return domain.ErrUnauthorized
+	}
+	_, err := d.FreshTenantRole(ctx, domain.VerifiedIdentity{
+		Provider: provider, ExternalAccountID: externalAccountID, Subject: externalSubject,
+	})
+	if err != nil && !errors.Is(err, domain.ErrUnauthorized) && !errors.Is(err, domain.ErrUnsupportedTenantRole) {
+		return fmt.Errorf("%w: %v", domain.ErrMembershipCheckUnavailable, err)
+	}
+	return err
 }
 
 func (d *Directory) freshTenantRole(ctx context.Context, identity domain.VerifiedIdentity) (domain.TenantRole, error) {

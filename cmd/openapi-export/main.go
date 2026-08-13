@@ -18,6 +18,7 @@ func main() {
 
 	deliveryapi.NewHealthHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewSessionHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
+	deliveryapi.NewHierarchyHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewTenantHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewPolicyHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewCacheHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)

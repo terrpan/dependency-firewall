@@ -353,6 +353,9 @@ func TestIdentityRepositories_CreateLinkAndResolve(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, principal.ID, resolvedPrincipal.ID)
 	assert.Equal(t, principal.Email, resolvedPrincipal.Email)
+	resolvedIdentity, err := principalRepo.GetIdentity(ctx, principal.ID, "clerk")
+	require.NoError(t, err)
+	assert.Equal(t, identity.ExternalSubject, resolvedIdentity.ExternalSubject)
 
 	linkRepo := postgres.NewTenantIdentityLinkRepository(pool)
 	link := &domain.TenantIdentityLink{

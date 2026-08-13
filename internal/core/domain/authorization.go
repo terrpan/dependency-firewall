@@ -43,6 +43,7 @@ type AuthenticatedPrincipal struct {
 	Principal         Principal
 	TenantID          string
 	TenantRole        TenantRole
+	Provider          string
 	ExternalAccountID string
 }
 

@@ -86,17 +86,19 @@ func registerControlPlaneRoutes(
 		parseAuditFailureMode(cfg.Audit.FailureMode),
 		parseAuditDetailLevel(cfg.Audit.DetailLevel),
 	)
+	authorizationService := service.NewAuthorizationService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers)
 
 	var sessionBootstrapService *service.SessionBootstrapService
+	var tenantMembershipVerifier service.TenantMembershipVerifier
 	if cfg.Auth.Mode == "clerk" {
 		authenticator, err := clerkinfra.NewAuthenticator(cfg.Auth.Clerk)
 		if err != nil {
 			return fmt.Errorf("registering control-plane routes: %w", err)
 		}
 		directory := clerkinfra.NewDirectory(cfg.Auth.Clerk.SecretKey, telemetry.WrapHTTPClient(newOutboundHTTPClient(10*time.Second)))
+		tenantMembershipVerifier = directory
 		sessionBootstrapService = service.NewSessionBootstrapService(directory, deps.sessionBootstrap)
 		identityService := service.NewIdentityService(deps.tenantIdentityLinks, deps.principalRepo)
-		authorizationService := service.NewAuthorizationService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers)
 		controlPlaneAPI.UseMiddleware(middleware.HumanAuthentication(
 			controlPlaneAPI, authenticator, identityService, authorizationService, directory,
 			func(operationID string) (middleware.HumanOperationPolicy, bool) {
@@ -106,13 +108,16 @@ func registerControlPlaneRoutes(
 					Permission:             policy.Permission,
 					Bootstrap:              policy.Bootstrap,
 					FreshMembership:        policy.FreshMembership,
+					ScopedAuthorization:    policy.ScopedAuthorization,
 				}, ok
 			},
 		))
 	}
+	hierarchyService := service.NewHierarchyService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers, deps.principalRepo, authorizationService, tenantMembershipVerifier)
 
 	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewSessionHandler(sessionService, logger, sessionBootstrapService).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewHierarchyHandler(hierarchyService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewCacheHandler(cacheService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)

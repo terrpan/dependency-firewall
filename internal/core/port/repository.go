@@ -28,6 +28,7 @@ type TenantIdentityLinkRepository interface {
 type PrincipalRepository interface {
 	GetByID(ctx context.Context, id string) (*domain.Principal, error)
 	GetByIdentity(ctx context.Context, provider, externalSubject string) (*domain.Principal, error)
+	GetIdentity(ctx context.Context, principalID, provider string) (*domain.PrincipalIdentity, error)
 	Create(ctx context.Context, principal *domain.Principal) error
 	Update(ctx context.Context, principal *domain.Principal) error
 	LinkIdentity(ctx context.Context, identity *domain.PrincipalIdentity) error

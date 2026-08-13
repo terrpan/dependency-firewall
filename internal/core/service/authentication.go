@@ -52,7 +52,7 @@ func (s *IdentityService) Resolve(ctx context.Context, identity domain.VerifiedI
 	}
 	return domain.AuthenticatedPrincipal{
 		Principal: *principal, TenantID: link.TenantID, TenantRole: identity.TenantRole,
-		ExternalAccountID: identity.ExternalAccountID,
+		Provider: identity.Provider, ExternalAccountID: identity.ExternalAccountID,
 	}, nil
 }
 

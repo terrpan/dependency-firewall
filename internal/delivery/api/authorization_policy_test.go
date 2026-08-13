@@ -14,6 +14,7 @@ func TestControlPlaneOperationPolicies_CoverEveryOperation(t *testing.T) {
 	logger := slog.Default()
 	NewHealthHandler(nil, logger).RegisterHumaRoutes(api)
 	NewSessionHandler(nil, logger).RegisterHumaRoutes(api)
+	NewHierarchyHandler(nil, logger).RegisterHumaRoutes(api)
 	NewTenantHandler(nil, logger).RegisterHumaRoutes(api)
 	NewPolicyHandler(nil, logger).RegisterHumaRoutes(api)
 	NewUpstreamHandler(nil, logger).RegisterHumaRoutes(api)

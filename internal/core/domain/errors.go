@@ -50,4 +50,5 @@ var (
 	ErrUnsupportedTenantRole          = errors.New("unsupported tenant role")
 	ErrSessionBootstrapRequired       = errors.New("session bootstrap required")
 	ErrSessionBootstrapConflict       = errors.New("session bootstrap conflict")
+	ErrMembershipCheckUnavailable     = errors.New("tenant membership verification unavailable")
 )

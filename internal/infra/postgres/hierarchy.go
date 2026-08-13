@@ -71,6 +71,21 @@ func (r *PrincipalRepository) GetByIdentity(ctx context.Context, provider, exter
 	))
 }
 
+func (r *PrincipalRepository) GetIdentity(ctx context.Context, principalID, provider string) (*domain.PrincipalIdentity, error) {
+	var identity domain.PrincipalIdentity
+	err := r.pool.QueryRow(ctx,
+		`SELECT principal_id, provider, external_subject, created_at
+		 FROM principal_identities WHERE principal_id = $1 AND provider = $2`, principalID, provider,
+	).Scan(&identity.PrincipalID, &identity.Provider, &identity.ExternalSubject, &identity.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrPrincipalNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying principal identity: %w", err)
+	}
+	return &identity, nil
+}
+
 func scanPrincipal(row pgx.Row) (*domain.Principal, error) {
 	var principal domain.Principal
 	err := row.Scan(
