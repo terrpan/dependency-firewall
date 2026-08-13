@@ -1,245 +1,173 @@
-# Proxy Behavior
+# Proxy behavior
 
-## Delivery boundary
+This document is the canonical protocol and failure-behavior reference for the data plane. Runtime composition belongs in [`architecture.md`](./architecture.md); cache storage belongs in [`persistence.md`](./persistence.md); the current adapter inventory belongs in [`supported-ecosystems.md`](./supported-ecosystems.md).
 
-- Huma is control-plane only.
-- npm and OCI proxy routes remain plain `net/http` delivery handlers.
-- The control plane and proxy can run as separate services.
-- The proxy pulls tenant bundles from the control plane over gRPC and evaluates requests locally.
-- Tenant identity, status, upstreams, and compiled policy data come from the cached tenant bundle, not PostgreSQL.
-- Proxy decision and audit persistence flows through the control-plane ingestion boundary, not direct PostgreSQL repositories.
-- Split-mode proxy dependency graph resolve requests and graph context lookups also flow through the control-plane ingestion boundary (`EnqueueDependencyGraphResolve`, `LookupDependencyGraphContext`); proxy mode does not open PostgreSQL for graph state. Context lookups are cached in Valkey on the proxy side.
-- All-in-one mode keeps the same bundle and ingestion boundaries but satisfies them in-process for local development.
-- Split-mode deployments must run bundle and ingest gRPC with mTLS.
-- The control plane authorizes each proxy client certificate identity for explicit tenant IDs before serving bundles or ingesting decisions/audit events.
-- Registry credentials are not sent over insecure control-plane gRPC.
-- New npm and OCI client setup should use explicit upstream-specific routes or hostnames.
-- Legacy tenant-only routes and hostnames remain available and resolve to the most recently updated upstream for that tenant and ecosystem.
+## Current security boundary
 
-For complete upstream/ecosystem extension guidance, see `docs/adding-upstream.md`.
+Proxy HTTP endpoints do not authenticate ecosystem clients. Tenant and upstream identity comes from ecosystem-specific routing or test-only headers and is not tied to an authenticated principal. Place the proxy behind a trusted network or authenticated gateway until client authentication is implemented.
 
-## Protocol adapter extension checklist
+Internal proxy-to-control-plane gRPC is a different boundary: split mode requires mTLS and certificate-to-tenant authorization.
 
-Use this checklist when adding a new proxy protocol adapter or significantly extending npm/OCI behavior.
+## Common evaluation flow
 
-1. Add/update delivery parsing under `internal/delivery/<protocol>/`.
-2. Resolve `tenant_id` and `upstream_id` from route/host shape.
-3. Normalize request into `domain.AccessRequest`.
-4. Call `AccessService.Evaluate` before upstream fetch.
-5. Keep deny and allow responses protocol-compatible.
-6. Keep audit flow aligned with current handlers and shared helper boundaries in `internal/delivery/proxyflow/`.
-7. Keep upstream fetch and cache operations tenant/upstream-scoped.
-8. Add protocol-focused tests for resolution + deny/allow behavior.
+For requests that identify an enforceable artifact version or digest, the proxy:
 
-### Required invariants
+1. resolves `tenant_id` and upstream;
+2. normalizes artifact identity and resolves a mutable tag when needed;
+3. loads enabled policies from the cached tenant bundle;
+4. obtains ecosystem-specific dependency context when an applicable target requires it;
+5. looks up the decision cache;
+6. requests only enrichment required by applicable policy types;
+7. evaluates every applicable rule;
+8. caches and durably records the decision and emits audit events.
 
-- Do not bypass `AccessService` with direct policy or repository calls.
-- Keep deny-wins behavior and policy evaluation ordering unchanged.
-- Keep enrichment conditional on policy metadata requirements.
-- Keep version-sensitive enrichment and decision caching limited to requests that identify a concrete version, digest, or resolver-backed immutable reference.
-- Keep npm dependency graph lookup limited to concrete npm versions and only when target-aware policies are enabled.
-- Keep split-mode tenant authorization and mTLS expectations unchanged.
-- Keep cache isolation by both `tenant_id` and `upstream_id`.
+A matching deny always wins. Allow policies neither short-circuit evaluation nor override a deny. Evaluation failures fail closed.
 
-### Expected test paths
+## Tenant and upstream routing
 
-- `internal/delivery/<protocol>/*_test.go`
-- `internal/core/service/proxy_test.go`
-- `internal/core/policy/*_test.go` when compatibility or policy metadata is affected
+### npm
 
-## Split-mode auth and authorization
+The canonical path is:
 
-```mermaid
-sequenceDiagram
-    participant proxy as Proxy runtime
-    participant grpc as control-plane gRPC
-    participant authz as Tenant authz interceptor
-    participant bundle as bundle service
-    participant ingest as ingest service
-
-    proxy->>grpc: connect with client certificate
-    grpc->>proxy: present control-plane server certificate
-    proxy->>grpc: GetTenantBundle(tenant_id)
-    grpc->>authz: extract client cert identity + tenant_id
-    authz->>authz: check bundle.tls.authorized_clients
-
-    alt identity is authorized for tenant
-        authz->>bundle: allow request
-        bundle-->>proxy: tenant bundle with policies, upstreams, auth when configured
-    else identity is not authorized
-        authz-->>proxy: PermissionDenied
-    end
-
-    proxy->>grpc: RecordDecision / RecordAuditEvent
-    grpc->>authz: extract client cert identity + payload tenant_id
-    alt identity is authorized for tenant
-        authz->>ingest: allow durable write
-        ingest-->>proxy: persisted result
-    else identity is not authorized
-        authz-->>proxy: PermissionDenied
-    end
+```text
+/npm/t/{tenant_id}/u/{upstream_id}/...
 ```
 
-## Future: public proxy client auth
+### OCI
 
-Current split-mode mTLS authenticates and authorizes the proxy when it talks to the control plane. It does not authenticate package-manager clients that call a public proxy. A public deployment should add data-plane client authentication before policy evaluation, OCI cache lookup, or upstream fetch.
+Docker-compatible traffic resolves tenant and upstream from a host such as:
 
-Required before exposing the proxy as a public or multi-tenant SaaS data plane:
-
-- authenticate and authorize package-manager clients before applying stored upstream registry credentials, so the proxy cannot be used as an unauthenticated credential relay for private registries
-- require HTTPS for any upstream that has server-side auth configured; allow plaintext authenticated upstreams only behind an explicit local-development override
-- validate OCI digest strings before using them for cache lookup or writes, or encode/hash the full digest before building filesystem paths, so client-supplied digests and upstream digest headers cannot escape the tenant/upstream cache directory
-
-Recommended future direction:
-
-- support OAuth/OIDC login for human users through a small `firewall` CLI
-- allow providers such as Clerk, Auth0, Azure AD, Okta, Keycloak, or GitHub as identity providers
-- have the CLI exchange the provider token with the control plane for a short-lived firewall data-plane token
-- store only token hashes or signing metadata server-side; do not store package-manager plaintext tokens
-- bind issued data-plane tokens to `tenant_id`, `upstream_id`, allowed operations such as `pull`, and expiration
-- validate the firewall token at the proxy before any cache or upstream access
-- support non-interactive CI through OIDC workload identity, machine tokens, or scoped API keys that are normalized into the same firewall token model
-
-Clerk can be one implementation of the identity-provider side. The firewall should still own tenant/upstream authorization and issue its own scoped data-plane token so the proxy does not depend on provider-specific user/session token shapes.
-
-```mermaid
-sequenceDiagram
-    participant user as User / CI
-    participant cli as firewall CLI
-    participant idp as OAuth/OIDC provider
-    participant cp as Control plane
-    participant npm as npm / Docker
-    participant proxy as Public proxy
-
-    user->>cli: firewall auth login
-    cli->>idp: OAuth/OIDC flow
-    idp-->>cli: provider token
-    cli->>cp: exchange provider token + tenant/upstream request
-    cp->>cp: authorize subject for tenant_id + upstream_id
-    cp-->>cli: short-lived firewall token
-    cli->>npm: configure package-manager credentials
-    npm->>proxy: registry request with firewall token
-    proxy->>proxy: validate token and tenant/upstream scope
-    proxy->>proxy: evaluate policies and use cache/upstream if allowed
+```text
+u-{upstream_id}.{tenant_id}.{firewall-host}
 ```
 
-For OCI, the long-term shape should prefer registry-native bearer-token challenge flows. For npm, the CLI can write an `_authToken` entry scoped to the tenant/upstream registry URL.
+`X-Tenant-ID` remains useful for direct tests and non-Docker clients. It is not an authentication mechanism.
 
-## npm
+## npm protocol behavior
 
-### Supported behaviors
-- package metadata requests
-- tarball requests
-- native audit capture: `POST /-/npm/v1/security/advisories/bulk` (install snapshot intake)
+The proxy supports GET requests for package metadata, versioned metadata, and tarballs, plus npm's bulk-audit POST endpoint.
 
-### Expected flow
-1. Parse npm request.
-2. Resolve tenant and upstream from `/npm/t/{tenant_id}/u/{upstream_id}/...` when present, with `X-Tenant-ID` retained for direct tests.
-3. Resolve package name and version where possible.
-4. Refresh the tenant bundle when the cached copy is stale.
-5. Normalize to a shared access request.
-6. Evaluate only policies that match the resolved upstream scope plus any legacy tenant-wide rules.
-7. Persist the decision and configured durable audit events through the control-plane ingestion path.
-8. If denied, return a short registry-compatible error.
-9. If allowed, fetch from upstream and stream back to the client.
+### Bare packuments
 
-### npm packuments and version-sensitive policy
-- `GET /npm/{package}` is a bare npm packument request. The URL does not identify one concrete package version even when the package-manager command was `npm install package@version`.
-- Bare packument requests must not use decision-cache lookup/write or external enrichment. This prevents stale package-wide decisions such as `npm:dompurify` from blocking the later concrete tarball request.
-- Bare packument requests that pass policy evaluation are audited as `request_forwarded`, not `request_allowed`, and their allow decisions are not persisted because the concrete version has not been enforced yet.
-- Versioned metadata requests such as `GET /npm/{package}/{version}`, dist-tag metadata requests that resolve to a concrete version, and tarball requests such as `GET /npm/{package}/-/{package}-{version}.tgz` may use normal decision caching and enrichment.
-- When target-aware npm policies are enabled, concrete npm version requests also look up dependency graph context before the decision cache. The decision cache key includes the dependency context hash.
-- On dependency graph miss or resolver failure, evaluation continues with `dependency_context=unknown` and enqueues an async graph resolve request once through the control-plane ingest boundary.
-- Tarball dependency graph misses do not enqueue new root graph jobs. A tarball URL does not say whether the package is the install root or a transitive dependency, so using tarballs as graph roots causes resolver fanout during normal installs.
-- Dependency graph roots come from the npm client itself: after building the install tree, npm POSTs its complete resolved package set to `/-/npm/v1/security/advisories/bulk` (sent even when the install later fails, unless `--no-audit`). The proxy decodes this payload (npm gzips the request body), answers with an empty advisory set so the client proceeds, and asynchronously infers roots by name-level set difference over upstream manifest dependency declarations. Only inferred roots are enqueued as graph jobs.
-- A package-manager command target is not the same thing as a direct dependency root. Running `npm install morgan@1.10.0` inside an existing project makes npm build an install plan for the whole project manifest and lockfile, not only the package name typed on the command line. Every package listed in the project's `package.json` dependencies is a direct root for that install graph. For example, if `package.json` already lists `lodash`, then `lodash` is still direct during `npm install morgan@1.10.0`; it is not transitive merely because `morgan` was the command target.
-- A transitive dependency is a package reached through another package's manifest dependency declarations and not listed as a project root. Direct-scope policies therefore apply to all project manifest roots observed in the install graph, while transitive-only or direct-only policy behavior depends on the resolved graph context, not on the single CLI argument.
-- The synthesized empty advisory response means `npm audit` data from the public registry is not forwarded through the proxy yet; vulnerability enforcement happens through firewall policies instead.
-- Dependency graph workers resolve graphs by running npm in a temporary workspace with scripts, audit, and funding disabled, then submit normalized nodes, edges, and graph hashes to the control plane over mTLS for validation and persistence.
-- The resolver uses the configured upstream registry URL directly and must not point at the firewall npm proxy, which would create recursive graph-resolution traffic.
-- New ecosystems with package-document/listing endpoints should follow the same rule: do not run version-sensitive enrichment or cache decisions until the request identifies the enforceable artifact version or immutable reference.
+A bare package metadata request does not identify a concrete version. The proxy forwards it without policy enrichment, decision-cache lookup/write, or durable decision persistence.
 
-## OCI
+Before returning a JSON packument, the proxy rewrites each distribution tarball URL to the tenant/upstream-specific firewall path. Because the body changes, it removes `ETag` and recalculates `Content-Length`. This keeps subsequent tarball downloads inside the same firewall routing context.
 
-### Supported behaviors
-- v2 manifest requests
-- blob requests
+### Versioned metadata and dist-tags
 
-### Expected flow
-1. Resolve tenant and upstream from `u-{upstream_id}.{tenant_id}.{firewall-host}` when present, with `X-Tenant-ID` retained as a direct-test fallback.
-2. Parse repository and reference.
-3. Refresh the tenant bundle when the cached copy is stale.
-4. Resolve tag to digest when possible against the resolved upstream, using the upstream's server-side registry auth if configured.
-5. Normalize to a shared access request.
-6. Evaluate only policies that match the resolved upstream scope plus any legacy tenant-wide rules.
-7. Persist the decision and configured durable audit events through the control-plane ingestion path.
-8. If denied, return an OCI-compatible denied response.
-9. If allowed, consult the tenant and upstream-aware OCI cache by immutable digest before going upstream.
-10. On cache miss, fetch from upstream, stream back to the client, and opportunistically populate the tenant and upstream-aware cache.
+Versioned metadata follows the common evaluation flow. If a request identifies an npm dist-tag, the proxy resolves it to a concrete version before cache lookup and enrichment. A deny prevents the upstream response from being returned.
 
-```mermaid
-sequenceDiagram
-    participant docker as Docker / OCI client
-    participant proxy as OCI proxy handler
-    participant access as AccessService
-    participant bundle as Cached tenant bundle
-    participant cache as Tenant/upstream-aware OCI cache
-    participant oci as OCI upstream client
-    participant registry as Upstream registry
-    participant token as Registry token service
+Concrete, non-tarball metadata requests can enqueue dependency-graph resolution when required dependency context is missing. The requested package/version becomes the root.
 
-    docker->>proxy: GET /v2/{repo}/manifests/{tag}
-    proxy->>proxy: resolve tenant_id and upstream_id
-    proxy->>access: Evaluate tenant + artifact + upstream
-    access->>bundle: load policies and upstream config
-    bundle-->>access: upstream auth metadata + secret when configured
-    access-->>proxy: allow or deny decision
+### Tarballs
 
-    alt denied
-        proxy-->>docker: OCI denied response
-    else allowed and digest cached
-        proxy->>cache: lookup tenant + upstream + digest
-        cache-->>proxy: cached manifest/blob
-        proxy-->>docker: stream cached response
-    else allowed and upstream fetch needed
-        proxy->>oci: fetch manifest/blob with server-side upstream auth
-        alt Basic/PAT challenge flow
-            oci->>registry: request manifest/blob
-            registry-->>oci: 401 WWW-Authenticate Bearer
-            oci->>token: token request with configured Basic credentials
-            token-->>oci: bearer token
-            oci->>registry: retry with bearer token
-            oci->>oci: cache bearer token until expiry for same repository/auth principal
-        else static bearer token
-            oci->>registry: request with configured bearer token
-        else unauthenticated
-            oci->>registry: anonymous request or anonymous bearer challenge
-        end
-        registry-->>oci: manifest/blob
-        oci-->>proxy: upstream response
-        proxy->>cache: populate tenant + upstream cache when eligible
-        proxy-->>docker: stream upstream response
-    end
-```
+Tarball paths carry a concrete version and follow policy evaluation, but a dependency-context miss does not enqueue graph work from the tarball path. Graph jobs originate from concrete metadata misses or install-snapshot inference.
 
-### Authenticated upstreams
-- OCI upstream auth is configured on the upstream, not supplied by package-manager clients.
-- Supported v1 auth modes are unauthenticated, Basic/PAT, and static bearer token.
-- Client `Authorization` headers are not forwarded to upstream registries.
-- OCI Bearer challenge handling follows the distribution-spec flow: the first request may receive `401 WWW-Authenticate`, the proxy requests the scoped bearer token, retries the registry request, and reuses the token until expiry for the same repository/auth principal.
-- OCI artifact cache entries are scoped by `tenant_id`, `upstream_id`, artifact kind, and immutable digest. Digest matches must not be reused across tenants or upstreams.
-- In split mode, mTLS verifies proxy and control-plane identity, and the control plane checks the proxy certificate identity against `bundle.tls.authorized_clients` for the requested tenant before credentials are delivered.
-- Bundle-delivered upstream auth secrets are encrypted per proxy to the requesting mTLS certificate public key. The proxy keeps version-2 envelopes in the runtime bundle cache and decrypts them with its local private key only while constructing outbound registry auth.
-- Split-mode proxy runtime rejects plaintext bundle auth secrets; all-in-one mode keeps legacy-compatible plaintext handling for local in-process flows.
-- See [mTLS Configuration](./mtls.md) for concrete split-mode certificate and tenant authorization examples.
+### Native bulk audit
 
-## UX rules
-- Keep errors short and human-readable.
-- Preserve normal npm and docker workflows.
-- Do not require a custom CLI wrapper.
-- Keep policy evaluation local to the proxy request path; do not add per-request control-plane policy RPCs.
-- Show package-manager instructions with the explicit upstream route or hostname users must configure.
-- For OCI, document both supported deployment styles explicitly:
-  - direct pulls through an upstream-specific registry hostname for hosted environments
-  - optional Docker mirror configuration for transparent local development
-- OCI artifact caching must stay tenant and upstream-aware in lookup, writes, eviction, and future remote backend behavior.
+The native npm bulk-audit endpoint:
+
+- accepts gzip-encoded bodies;
+- limits the decoded request body to 8 MiB;
+- returns an empty advisory response instead of forwarding public npm advisory results;
+- processes the install snapshot asynchronously with a two-minute timeout;
+- infers likely roots from the snapshot and idempotently enqueues them for graph resolution.
+
+Snapshot inference is an additional enqueue source; it is not the only source.
+
+## npm dependency context
+
+Target-aware policies can match direct, transitive, or unknown dependency scope and prod, dev, peer, or optional dependency type.
+
+Lookup order is:
+
+1. Valkey dependency-context cache;
+2. control-plane/PostgreSQL context summary;
+3. graph enqueue when the request is an eligible concrete metadata request;
+4. unknown context while resolution is pending or unavailable.
+
+Context is cached for 30 minutes. Its normalized hash contributes to decision-cache identity so a decision for one graph position is not reused for another graph context.
+
+## OCI protocol surface
+
+The client-facing OCI proxy is GET-only and pull-only:
+
+- `GET /v2/`
+- `GET /v2/{name}/manifests/{reference}`
+- `GET /v2/{name}/blobs/{digest}`
+
+Push, catalog, tag-list, and client registry-authentication endpoints are not implemented.
+
+### Manifests
+
+Manifest requests run the common policy flow. Mutable tags can be resolved to immutable digests. When allowed, the manifest is streamed from the upstream or optional artifact cache.
+
+Artifact cache writes are staged and promoted only after the upstream stream completes successfully. Partial bodies are discarded. Cache identity includes tenant, upstream, artifact kind, and digest.
+
+### Blobs
+
+Blob requests do not rerun policy evaluation. Before streaming a blob, the proxy queries for an allow decision from the previous hour with the same:
+
+- `tenant_id`
+- ecosystem
+- namespace
+- repository name
+
+The current recent-allow lookup does **not** include `upstream_id`, version, or digest. Therefore a recent manifest allow for one OCI upstream can authorize a blob request for another upstream with the same tenant/repository identity. Treat this as a current multi-upstream constraint, not an intended isolation guarantee.
+
+### Registry authentication
+
+The proxy can authenticate server-side to an OCI upstream with Basic/PAT or static bearer credentials and can follow registry challenge/token flows. Credentials are encrypted at rest and, in split mode, encrypted again to the requesting proxy certificate in tenant bundles.
+
+Client-facing registry authentication is absent. Do not confuse upstream authentication with authentication of Docker/OCI clients to the firewall.
+
+## Cache scope and constraints
+
+| Cache | Scope in current key | Current constraint |
+| --- | --- | --- |
+| Decision (Valkey) | tenant, generation, dependency-context hash, artifact identity | no `upstream_id` |
+| Metadata (Valkey) | tenant, generation, artifact identity | no `upstream_id` |
+| Dependency context (Valkey) | tenant, upstream, artifact identity | upstream-scoped |
+| Tenant bundle (in process) | tenant | contains upstream-specific records; on-demand refresh |
+| OCI artifact (disk) | tenant, upstream, kind, digest | upstream-scoped |
+
+Decision and metadata isolation is tenant-aware but not fully upstream-aware. Tenants with multiple equivalent-ecosystem upstreams must account for possible cross-upstream reuse. Graph-context and OCI artifact caches do include upstream identity.
+
+Policy changes bump the tenant decision-cache generation. The control-plane cache endpoints can separately bump decision and metadata generations.
+
+## Failure behavior
+
+### Policy and enrichment
+
+- policy parsing/evaluation errors fail closed;
+- only metadata required by applicable policies is fetched;
+- enrichment failure behavior is policy-specific—see [`policy-engine.md`](./policy-engine.md);
+- audit behavior follows `audit.failure_mode`.
+
+### Bundle refresh
+
+The split proxy refreshes bundles on demand after `bundle.refresh_interval`. A refresh failure uses an existing last-known-good bundle. If no bundle has ever been cached for the tenant, the request fails.
+
+Last-known-good protects bundle reads only. Uncached decisions still synchronously use ingest for durable decision/audit workflows and may fail during a control-plane outage. Cached decisions may continue when all other required dependencies are available.
+
+### Valkey
+
+Decision, metadata, and dependency-context lookups depend on external Valkey. The bundle cache is not stored in Valkey; it is local process memory.
+
+### OCI artifact cache
+
+Caching is optional. The disk backend is implemented. Selecting `s3` or `gcs` fails startup because those backends are reserved but not implemented.
+
+## Audit and decision persistence
+
+Enforceable requests record decisions and audit events according to configured failure behavior. Bare npm packuments intentionally skip decision persistence because they do not identify a version. OCI blob authorization reads recent manifest decisions rather than creating a second policy decision.
+
+## Possible future work
+
+These are directions, not current guarantees:
+
+- client authentication, scoped tokens, OIDC/CLI login, and registry challenge flows;
+- upstream-scoped decision/metadata keys and recent-allow queries;
+- stronger OCI digest/path validation and enforced HTTPS for authenticated upstreams;
+- S3/GCS artifact cache implementations;
+- asynchronous or batched durable audit writes.

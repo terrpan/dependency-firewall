@@ -1,140 +1,100 @@
-# Persistence
+# Persistence and caches
+
+PostgreSQL owns durable control-plane state. External Valkey owns shared decision, metadata, and dependency-context caches. The split proxy also keeps tenant bundles in local process memory, and the optional OCI artifact cache stores immutable bodies on disk.
+
+Only `control-plane` and `all-in-one` modes open PostgreSQL and run migrations. A split proxy accesses durable decisions, audit events, and graph context through control-plane gRPC. The dependency-graph worker receives no PostgreSQL or Valkey credentials.
 
 ## PostgreSQL
 
-PostgreSQL is the system of record.
+### Active runtime tables
 
-- only control-plane and all-in-one runtimes open PostgreSQL connections directly
-- dependency-graph-worker mode does not open PostgreSQL; it claims jobs and submits graph results through control-plane gRPC
-- proxy mode loads tenant runtime from bundles and sends durable decision or audit writes back through the control-plane ingestion service
-- bundle construction is a control-plane workflow backed by PostgreSQL tenant, upstream, and policy state
+| Area | Tables | Runtime use |
+| --- | --- | --- |
+| Tenancy | `tenants` | tenant CRUD and bundle identity |
+| Upstreams | `upstreams` | upstream configuration, capabilities, encrypted OCI credentials |
+| Policies | `policies`, `policy_versions`, `tenant_policy_revisions` | active rules, version history/rollback, revision hashes |
+| Artifacts and evaluation | `artifacts`, `evaluations`, `evaluation_reasons`, `decisions` | normalized identities, evaluation history/reasons, durable decisions |
+| Audit | `audit_events` | configured durable audit sink and list API |
+| Dependency graphs | `dependency_graph_roots`, `dependency_graph_nodes`, `dependency_graph_edges`, `dependency_context_summaries` | job lifecycle, resolved graph, target-aware lookup summaries |
 
-### Core tables
-- tenants
-- users
-- tenant_memberships
-- upstreams
-- policies
-- policy_versions
-- tenant_policy_revisions
-- artifacts
-- proxy_requests
-- evaluations
-- evaluation_reasons
-- decisions
-- audit_events
+Graph roots are unique by tenant, upstream, package name, and version. Enqueue is therefore idempotent. A completed row is reused rather than refreshed; there is no invalidation/refresh operation. Failed rows become claimable again after their fixed retry time.
 
-### Rules
-- every tenant-owned table includes tenant_id
-- operational tables are indexed by tenant_id and timestamp
-- upstreams are unique by `tenant_id + ecosystem + base_url`
-- upstreams persist a `capabilities` profile so policy compatibility checks are stable across API, UI, and evaluation workflows
-- OCI upstreams may persist server-side auth metadata plus encrypted Basic/PAT or bearer-token secrets; API responses expose only auth status and safe metadata
-- upstream auth secrets are encrypted with the configured `secrets.upstream_auth_key`; runtimes fail closed when encrypted auth is needed but the key is unavailable
-- when a new capability is added to an ecosystem default set, legacy upstream rows that still match the previous default profile may be backfilled to the new default so existing tenants can use newly introduced compatible policy types
-- policies may reference one upstream through `upstream_id`
-- `policies.upstream_id` and `policy_versions.upstream_id` are nullable only for legacy tenant-wide rules
-- upstream references use foreign keys so upstream deletion is blocked while policies still point at it
-- use JSONB only for flexible fields
-- `policies.schema_version` and `policy_versions.schema_version` record the policy-item schema used for that row
-- `policy_versions` stores retained policy snapshots for rollback and keeps the latest 3 versions per policy
-- `tenant_policy_revisions` stores the canonical tenant policy-set hash and generation after every policy mutation
-- decisions store the `policy_hash` that was active when the decision was evaluated
-- decisions and evaluations may store a compact `dependency_context` JSONB summary when target-aware npm policies participated in evaluation
-- `audit_events` stores append-only structured audit records for proxy request, evaluation, decision, and upstream-fetch activity
-- audit event payloads use JSONB for flexible structured details, but top-level filtering still relies on tenant_id, event_type, and created_at indexes
-- audit queries must stay tenant-scoped and should support correlation lookups by request ID and artifact identity fields
-- durable audit persistence is expected to support incident response; sink-failure behavior is configurable and defaults to fail-closed
-- proxy-side durable writes arrive through the control-plane ingestion service before they reach `decisions` and `audit_events`
-- npm dependency graph roots, nodes, edges, context summaries, and resolver job state are owned by control-plane/all-in-one persistence; split proxy mode only enqueues jobs and looks up context summaries through ingest gRPC, and dependency-graph-worker mode only claims and completes jobs through ingest gRPC
+### Reserved or unwired schema
 
-### npm dependency graph tables
+The migrations also create:
 
-- `dependency_graph_roots` stores one graph lifecycle row per `tenant_id + upstream_id + root package + root version`
-- `dependency_graph_nodes` stores normalized npm package/version artifacts in a completed graph with minimum depth and observed dependency types
-- `dependency_graph_edges` stores parent/child relationships with dependency type `prod`, `dev`, `peer`, or `optional`
-- `dependency_context_summaries` stores precomputed per-root context evidence for fast lookup and conflict detection
-- graph jobs are idempotent because the root table is unique by tenant, upstream, package, and version
-- the control plane claims retryable jobs with row locking on behalf of resolver workers; resolver failures keep evaluation fail-open by leaving request-time context as `unknown`
+- `users`
+- `tenant_memberships`
+- `proxy_requests`
 
-### Upstream auth secret lifecycle
+No current repository or runtime workflow reads or writes these tables. Their existence must not be interpreted as implemented user authentication, membership authorization, or proxy-request recording.
 
-```mermaid
-sequenceDiagram
-    participant ui as UI / automation
-    participant api as control-plane API
-    participant service as UpstreamService
-    participant repo as PostgreSQL upstream repository
-    participant crypto as AES-GCM secret codec
-    participant db as PostgreSQL upstreams
-    participant bundle as BundleService
-    participant wrap as per-proxy envelope crypto
-    participant proxy as Authorized proxy
-    participant registry as OCI registry
+## Decision persistence and OCI recent allow
 
-    ui->>api: create/update OCI upstream auth
-    api->>service: validate auth type and ecosystem
-    service->>repo: persist upstream auth
-    repo->>crypto: encrypt password/PAT/token with secrets.upstream_auth_key
-    crypto-->>repo: authenticated ciphertext envelope
-    repo->>db: store auth_type, safe metadata, encrypted secret
-    api-->>ui: response with auth status only
+An enforceable evaluation records an artifact and durable decision with reasons/context. Bare npm packuments deliberately do not create decisions.
 
-    proxy->>bundle: GetTenantBundle over authorized mTLS
-    bundle->>repo: load tenant upstream metadata without auth secret decrypt
-    bundle->>repo: rewrap each configured auth secret
-    repo->>crypto: decrypt one stored secret
-    repo->>wrap: encrypt to proxy mTLS public key
-    wrap-->>bundle: version-2 encrypted envelope
-    bundle-->>proxy: bundle for authorized tenant with encrypted auth envelopes
-    proxy->>proxy: cache encrypted auth envelopes
-    proxy->>proxy: decrypt envelope with proxy private key for outbound auth
-    proxy->>registry: upstream request using server-side auth
-```
+OCI blob access uses `HasRecentAllow`, which searches for an allow decision during the preceding hour by tenant, ecosystem, namespace, and repository name. The query currently omits `upstream_id`, version, and digest. This can authorize a same-name blob across two OCI upstreams within one tenant and is a documented current constraint.
 
-Secret rules:
-- plaintext credentials only exist in request memory, repository decrypt/encrypt memory, callback-scoped bundle rewrap memory, outbound proxy request construction, and outbound registry requests
-- PostgreSQL stores encrypted secret envelopes, not plaintext credentials
-- split-mode proxy bundle caches store per-proxy encrypted auth envelopes, not plaintext credentials
-- control-plane API responses and UI details never include password, PAT, or bearer token values
-- split-mode bundles include version-2 envelopes encrypted to the requesting proxy certificate public key; usable plaintext auth appears only during proxy-side outbound auth construction
+## Cache inventory
 
-### audit_events
+| Cache | Owner/storage | Key dimensions | TTL / retention | Invalidation |
+| --- | --- | --- | --- | --- |
+| Decision | external Valkey | tenant, tenant generation, dependency-context hash, artifact | 5 minutes for mutable identity; 1 hour for immutable identity | policy mutations/import/rollback and cache API bump tenant generation |
+| Metadata | external Valkey | tenant, tenant generation, artifact | 1 hour for mutable identity; 24 hours for digest identity | metadata-cache API bumps tenant generation |
+| Dependency context | external Valkey | tenant, upstream, artifact | 30 minutes | expiry; repopulated from PostgreSQL summary |
+| Tenant bundle | proxy process memory | tenant | refresh attempted on demand after configured interval; last-known-good retained | process restart or successful refresh replaces entry |
+| OCI artifact | disk backend | tenant, upstream, artifact kind, immutable digest | configured size/age/count limits; zero means no limit | eviction on completed writes according to configured limits |
 
-- intended for forensic and incident-response workflows, not just UI history
-- one row per structured audit event
-- expected payload fields include:
-  - `correlation_id`
-  - `source`
-  - `message`
-  - `outcome`
-  - `upstream_id`
-  - `policy_id`
-  - `artifact`
-  - `details`
-- phase 1 uses both:
-  - `event_type` column for exact filtering
-  - JSONB payload fields for richer search and future expansion
-- indexes should cover:
-  - `tenant_id + created_at`
-  - `tenant_id + event_type + created_at`
-  - `tenant_id + correlation_id + created_at`
-  - JSONB payload search
+Valkey is shared external storage, not “proxy-local.” Bundle cache state is the process-local cache.
 
-## Valkey
+### Current upstream-scope limitation
 
-Valkey is used for:
-- decision cache
-- metadata cache
-- npm dependency context cache
-- proxy-local caching in split mode
-- runtime access through `github.com/valkey-io/valkey-go` while keeping the operator-facing config under `valkey.addr`, `valkey.password`, and `valkey.db`
-- OpenTelemetry client spans reporting `db.system=valkey`
+Decision and metadata keys do not include `upstream_id`. They are tenant-scoped, but a tenant with multiple upstreams in the same ecosystem can reuse cache entries across those upstreams when artifact identity otherwise matches.
 
-### Cache rules
-- keys must include tenant and normalized artifact identity
-- decision cache keys include dependency context hash when dependency graph context is attached
-- long-lived decisions should prefer immutable identities such as digests
-- dependency context cache keys include `tenant_id`, `upstream_id`, and normalized npm artifact identity
-- TTL should vary by reason type and freshness of the artifact
-- OCI artifact cache keys must include `tenant_id`, `upstream_id`, artifact kind, and immutable digest; do not reuse cached OCI content across upstreams even when digests match
+Dependency-context and OCI artifact cache keys do include upstream identity. The graph context hash in a decision key distinguishes dependency positions but does not add upstream identity by itself.
+
+## Cache behavior
+
+### Decision generation
+
+Decision keys include a per-tenant generation. Tenant-wide invalidation increments `decision-generation:{tenant_id}` instead of scanning and deleting all decision entries. Old entries become unreachable and expire naturally.
+
+Policy create, update, delete, import, and rollback workflows invalidate the tenant decision generation. The policy-set SHA-256 remains an audit/revision identity; it is not used in the hot-path Valkey key.
+
+### Metadata generation
+
+Metadata invalidation similarly increments `metadata-generation:{tenant_id}`. Metadata TTL is selected from artifact mutability rather than a single global value.
+
+### Dependency context
+
+Graph summaries are durable in PostgreSQL. A proxy lookup caches the normalized summary in Valkey for 30 minutes. A normalized `context_hash` participates in decision-cache identity.
+
+### Last-known-good bundle
+
+The proxy fetches a bundle only when a tenant is requested and the cached entry is stale. If refresh fails and an older entry exists, that entry remains usable. If the tenant has no cached entry, the request fails.
+
+This mechanism does not queue durable writes. An uncached evaluation can still fail when decision or audit ingest is unavailable.
+
+### OCI artifact cache
+
+The disk cache creates a staged write and promotes it only when the upstream body finishes successfully. Limits are enforced within tenant/upstream scope after completion. Cross-tenant and cross-upstream reuse is prohibited.
+
+Only `disk` is implemented. `s3` and `gcs` fields reserve a possible future surface; selecting either backend returns a startup error.
+
+## Secret storage
+
+OCI Basic/PAT and static bearer credentials are encrypted in PostgreSQL using the configured base64-encoded 32-byte `secrets.upstream_auth_key`. API responses never return the secret.
+
+For split bundle delivery, the control plane re-encrypts the stored secret to the requesting proxy's mTLS certificate public key. The proxy keeps the encrypted envelope in its bundle cache and decrypts it only while creating outbound registry authentication.
+
+## Transactions and migrations
+
+Migrations are embedded from `migrations/` and applied by PostgreSQL-owning modes at startup. Multi-row workflows that require atomicity should use repository transactions. Do not place SQL in delivery handlers.
+
+## Operational implications
+
+- Back up PostgreSQL for durable configuration, history, decisions, audit events, and dependency graphs.
+- Treat Valkey as rebuildable cache state, while recognizing that its outage affects request-path availability.
+- Treat local bundle and OCI caches as per-process/per-node state.
+- Keep `secrets.upstream_auth_key` stable and protected; losing it makes stored upstream credentials unreadable.
+- Do not infer implemented auth features from reserved tables.

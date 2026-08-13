@@ -1,323 +1,224 @@
 # Dependency Firewall
 
-Dependency Firewall is a multi-tenant policy-aware proxy for **npm** and **OCI** registries.
+Dependency Firewall is a multi-tenant, policy-aware proxy for software packages and artifacts. One Go binary provides four runtime modes; a separately deployed React/Vite SPA provides the operator console. See [supported ecosystems](./docs/supported-ecosystems.md) for the currently implemented client protocols and capabilities.
 
-It now ships as **one binary**:
+> [!WARNING]
+> Public management and proxy HTTP routes do not currently validate bearer tokens or enforce RBAC. Tenant selection from headers, paths, or hostnames is routing context, not authenticated user authorization. Use trusted network boundaries until HTTP authentication is implemented. Split-mode internal gRPC is protected separately with mTLS and certificate-to-tenant authorization.
 
-| Binary | Modes |
-| --- | --- |
-| `./cmd/firewall` | `all-in-one`, `control-plane`, `proxy`, `dependency-graph-worker` |
+## Runtime modes
 
-The mode can be selected with:
+Select a mode with `runtime.mode`, `FIREWALL_RUNTIME_MODE`, or `-mode`.
 
-- config: `runtime.mode`
-- env: `FIREWALL_RUNTIME_MODE`
-- CLI flag: `-mode`
+| Mode | HTTP | gRPC | PostgreSQL | Valkey | Node/npm |
+| --- | --- | --- | --- | --- | --- |
+| `control-plane` | Management API, OpenAPI, API docs | Bundle and ingest server | Required; runs migrations | Required | Only when `dependency_graph.run_in_process=true` |
+| `proxy` | Supported ecosystem routes and `/healthz` | Bundle and ingest client | No | Required | No |
+| `all-in-one` | Management and proxy routes on one mux | Local adapters; no listener | Required; runs migrations | Required | Only when `dependency_graph.run_in_process=true` |
+| `dependency-graph-worker` | None | Ingest client | No | No | Required |
 
-The control plane exposes gRPC **bundle** and **proxy ingest** services. The proxy pulls tenant bundles from the control plane, evaluates requests locally, and sends durable decision/audit writes back through the control plane. The npm dependency graph resolver runs as a separate `dependency-graph-worker` service in split deployments; it claims jobs and submits graph results over mTLS, and it is the only service that needs Node/npm. The proxy keeps serving the **last-known-good bundle** when the control plane is temporarily unavailable. In **all-in-one** mode, those boundaries stay in-process and do **not** open separate gRPC listeners.
-
-The proxy's `bundle` config is the tenant bundle fetch/cache path. The worker's `bundle` config is only the mTLS connection settings it uses to reach the control plane; it does not load tenant bundles.
+`dependency_graph.run_in_process` defaults to `false`. Consequently, the default all-in-one process can enqueue dependency-graph jobs but cannot resolve them unless a separate worker runs or in-process resolution is explicitly enabled.
 
 ## Architecture
 
 ```text
-operators / UI / automation
-        |
-        v
-+-----------------------+   gRPC bundles + ingest   +------------------+
-| control plane mode    | <------------------------> | proxy mode       |
-| - /api/v1/*           |                            | - /npm/*         |
-| - web UI              |                            | - /v2/*          |
-| - bundle service      |                            | - local eval     |
-| - ingest service      |                            | - local cache    |
-+-----------+-----------+                            +---------+--------+
-            |                                                  |
-            v                                                  v
-      PostgreSQL + Valkey                                  Valkey
-            ^
-            |
- dependency-graph-worker
- - npm resolver
- - mTLS ingest client
+browser                 operators / automation       ecosystem clients
+   |                              |                           |
+   v                              v                           v
++-----------+             +---------------+   mTLS    +-------------+
+| React/Vite| ----------> | control plane | <-------> | proxy       |
+| SPA       | HTTP API    | API + gRPC    |           | local eval  |
++-----------+             +-------+-------+           +------+------+
+                                  |                          |
+                         PostgreSQL + Valkey               Valkey
+                                  ^
+                                  | mTLS ingest
+                         +--------+---------+
+                         | dependency graph |
+                         | worker + npm     |
+                         +------------------+
 ```
+
+The Go runtime does not serve `web/dist`, and the default Compose topology does not deploy the SPA. Serve the built UI independently and configure it to call the control-plane API.
+
+In split mode the proxy fetches tenant bundles, evaluates requests locally, and sends durable decisions and audit events back through the ingest service. Bundle refresh is on demand. A cached last-known-good bundle protects bundle reads after a refresh failure, but it does not make the proxy independent of the control plane: uncached evaluations can still fail if synchronous decision or audit ingestion is unavailable.
+
+See:
+
+- [Architecture](./docs/architecture.md)
+- [Supported ecosystems](./docs/supported-ecosystems.md)
+- [Proxy behavior](./docs/proxy-behavior.md)
+- [Policy engine](./docs/policy-engine.md)
+- [Persistence and caches](./docs/persistence.md)
+- [mTLS](./docs/mtls.md)
+- [Dependency graphs](./docs/async-npm-dependency-graph.md)
+- [UI architecture](./docs/ui-redesign.md)
 
 ## Prerequisites
 
 - Go 1.26+
 - Docker and Docker Compose
-- [ko](https://ko.build) for image builds used by the Makefile
+- [ko](https://ko.build) for Makefile image builds
+- Node/npm only for the dependency-graph worker and UI development
 
-## Quick start with Docker Compose
+## Quick start
 
-The default Compose topology runs the regular firewall image for control-plane/proxy and the worker image for npm graph resolution:
-
-- control plane on `http://localhost:8080`
-- proxy on `http://localhost:8081`
-- control-plane gRPC (bundle + ingest) on `localhost:9090`
-- dependency graph worker as a separate service with Node/npm
-
-`make up` generates local test mTLS certificates under `examples/mtls/certs` before starting the split topology.
+The default Compose topology runs separate control-plane, proxy, and dependency-graph-worker services. `make up` creates local test certificates under `examples/mtls/certs` and starts the mTLS topology.
 
 ```bash
 make up
 ```
 
+Services:
+
+- control-plane HTTP: `http://localhost:8080`
+- proxy HTTP: `http://localhost:8081`
+- bundle and ingest gRPC: `localhost:9090`
+
 Useful commands:
 
 ```bash
 make help
-make down
-make logs
-make logs-control-plane
-make logs-proxy
-make logs-dependency-graph-worker
 make status
+make logs
+make down
 ```
 
-## Local development
+Use [`examples/mtls`](./examples/mtls/README.md) for runnable split-mode configuration. Standalone proxy and worker modes cannot start with the insecure defaults because both require mTLS. A control plane may use `bundle.tls.allow_insecure_control_plane=true` only as an explicit local-development exception.
 
-### All in one
+## Local all-in-one development
 
 ```bash
-docker compose up postgres valkey -d
+docker compose up -d postgres valkey
 go run ./cmd/firewall
 ```
 
-This runs:
-
-- control plane API on `http://localhost:8080`
-- proxy routes on the same process:
-  - `http://localhost:8080/npm/...`
-  - `http://localhost:8080/v2/...`
-- no separate bundle gRPC listener
-
-### Split modes with one binary
-
-```bash
-docker compose up postgres valkey -d
-
-go run ./cmd/firewall -mode=control-plane
-
-FIREWALL_SERVER_PORT=8081 \
-FIREWALL_BUNDLE_CONTROL_PLANE_ADDR=127.0.0.1:9090 \
-go run ./cmd/firewall -mode=proxy
-```
-
-You can also set the mode in `config.yaml`:
+This starts the management API and proxy routes on `http://localhost:8080` without a gRPC listener. To resolve queued dependency graphs in that process, set:
 
 ```yaml
-runtime:
-  mode: control-plane
+dependency_graph:
+  run_in_process: true
 ```
 
-## Build
+## Operator UI
+
+The UI is a separate React/Vite application.
 
 ```bash
-make build
-```
-
-## Configuration
-
-All config keys can be overridden with `FIREWALL_*` environment variables.
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `runtime.mode` | `all-in-one` | Process mode: `all-in-one`, `control-plane`, `proxy`, or `dependency-graph-worker` |
-| `server.port` | `8080` | HTTP listen port for the current process |
-| `health.proxy_url` | `""` | Optional proxy `/healthz` URL for control-plane split-mode health checks |
-| `bundle.listen_addr` | `:9090` | gRPC bundle listen address for control-plane mode |
-| `bundle.control_plane_addr` | `127.0.0.1:9090` | gRPC address the proxy uses for bundle and ingest RPCs |
-| `bundle.refresh_interval` | `30s` | On-demand bundle refresh interval in proxy mode |
-| `bundle.tls.mode` | `insecure` | Control-plane gRPC transport mode: `insecure` for all-in-one/local dev or `mtls` for split control-plane/proxy deployments |
-| `bundle.tls.ca_file` | `""` | CA bundle used to verify the peer when `bundle.tls.mode=mtls` |
-| `bundle.tls.cert_file` | `""` | Process certificate used for mTLS bundle and ingest gRPC |
-| `bundle.tls.key_file` | `""` | Private key for `bundle.tls.cert_file` |
-| `bundle.tls.server_name_override` | `""` | Optional proxy-side server name override for control-plane certificate verification |
-| `bundle.tls.allow_insecure_control_plane` | `false` | Explicit control-plane-only local/dev override that permits `bundle.tls.mode=insecure`; emits a startup warning |
-| `bundle.tls.authorized_clients` | `[]` | Control-plane-only list mapping client certificate identities to tenant IDs allowed for bundle and ingest RPCs |
-| `secrets.upstream_auth_key` | `""` | Base64 encoded 32-byte AES key used to encrypt upstream registry credentials at rest |
-| `database.dsn` | `postgres://localhost:5432/firewall?sslmode=disable` | PostgreSQL connection string for `all-in-one` and `control-plane` modes |
-| `valkey.addr` | `localhost:6379` | Valkey address |
-| `oci_cache.enabled` | `false` | Enable tenant and upstream-aware OCI artifact caching |
-| `telemetry.enabled` | `false` | Enable OpenTelemetry tracing |
-| `telemetry.endpoint` | `http://localhost:4317` | OTLP collector endpoint used by the Go runtimes |
-| `telemetry.protocol` | `grpc` | OTLP transport protocol: `grpc` or `http/protobuf` |
-| `telemetry.sample_ratio` | `1.0` | Parent-based trace sampling ratio for new root spans |
-| `telemetry.stdout` | `false` | Emit spans to stdout for troubleshooting; can be used with OTLP or on its own |
-| `audit.failure_mode` | `fail_closed` | Audit sink failure behavior |
-
-The Valkey configuration surface is unchanged by the client migration: keep using `valkey.addr`, `valkey.password`, and `valkey.db` to point the runtime at your Valkey endpoint. Under the hood, the Go runtime now uses `github.com/valkey-io/valkey-go`.
-
-Authenticated OCI upstreams store Basic/PAT or static bearer-token credentials server-side. Secrets are encrypted in PostgreSQL with `secrets.upstream_auth_key` and are never returned from the API. Split `control-plane` and `proxy` modes require `bundle.tls.mode=mtls`; the control plane also requires `bundle.tls.authorized_clients` so each proxy certificate identity is authorized for explicit tenant IDs before bundles or ingest operations can access tenant data.
-
-In split mode, upstream auth secrets are additionally encrypted per proxy in the bundle gRPC response. The control plane encrypts each bundle secret to the requesting proxy's mTLS certificate public key, and the proxy keeps that version-2 envelope in its runtime bundle cache. OCI upstream requests decrypt the envelope with the local proxy private key only while constructing outbound registry auth. Legacy plaintext bundle secrets are still accepted by the proxy for local/backward-compatible flows, but mTLS bundle delivery emits encrypted envelopes.
-
-OCI artifact cache entries are scoped by `tenant_id`, `upstream_id`, artifact kind, and immutable digest. A digest match from one upstream is not reused for another upstream.
-
-See [mTLS Configuration](./docs/mtls.md) for split-mode certificate, identity, and tenant authorization examples.
-
-If tracing is enabled, Valkey client spans now report `db.system=valkey`.
-
-See [`config.yaml.example`](./config.yaml.example) for a full sample.
-
-In split mode, set `health.proxy_url` if you want the control-plane `/healthz` response to include the proxy's live `/healthz` status instead of the static `separate` marker. The default Compose setup wires this automatically.
-
-## Local tracing with Aspire
-
-The project now emits OpenTelemetry traces across:
-
-- control-plane HTTP
-- proxy HTTP
-- split-mode gRPC bundle and ingest hops
-- PostgreSQL, Valkey, OSV, and upstream registry clients
-- core evaluation, enrichment, and audit workflows
-- the React UI route navigation and shared API client
-
-### Start Aspire in Docker Compose
-
-The Compose file includes an optional OpenTelemetry Collector in front of the Aspire dashboard behind the `observability` profile:
-
-```bash
-make mtls-certs
-FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d postgres valkey control-plane proxy dependency-graph-worker otel-collector aspire-dashboard
-```
-
-Open `http://localhost:18888` to inspect traces.
-
-If local Postgres or Valkey already uses the default host ports, override only the host bindings:
-
-```bash
-FIREWALL_POSTGRES_PORT=15432 \
-FIREWALL_VALKEY_PORT=16379 \
-FIREWALL_CONTROL_PLANE_PORT=18080 \
-FIREWALL_PROXY_PORT=18081 \
-FIREWALL_BUNDLE_PORT=19090 \
-FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d postgres valkey control-plane proxy dependency-graph-worker otel-collector aspire-dashboard
-```
-
-In this local topology:
-
-- Go services export to the collector on `http://otel-collector:4317` inside Compose
-- the browser exports OTLP/HTTP protobuf to `http://localhost:4318/v1/traces`
-- the collector forwards traces to Aspire
-
-If you want spans printed to process stdout while troubleshooting, enable:
-
-```bash
-FIREWALL_TELEMETRY_ENABLED=true \
-FIREWALL_TELEMETRY_STDOUT=true \
-go run ./cmd/firewall
-```
-
-You can leave `FIREWALL_TELEMETRY_ENDPOINT` set to mirror spans to both OTLP and stdout, or clear it to use stdout-only tracing.
-
-### All-in-one Go runtime + Vite UI
-
-```bash
-docker compose --profile observability up -d postgres valkey otel-collector aspire-dashboard
-
-FIREWALL_TELEMETRY_ENABLED=true \
-FIREWALL_TELEMETRY_ENDPOINT=http://localhost:4317 \
-go run ./cmd/firewall
-
 cd web
-VITE_OTEL_ENABLED=true \
+npm ci
 npm run dev
 ```
 
-When the browser tracing flag is enabled, the UI emits route-navigation spans and injects `traceparent` into shared control-plane API requests so browser and backend traces connect in Aspire. In Vite dev, the browser exporter uses OTLP/HTTP protobuf at `/otlp/v1/traces`, which the dev server proxies to the collector. When the UI runs as its own built service, it can export directly to `http://localhost:4318/v1/traces` through the collector without depending on the control-plane host.
-
-### Split-mode proxy tracing
-
-If you want the standalone proxy service included in the trace view, run the split topology and exercise proxy traffic directly:
+For a production asset build:
 
 ```bash
-make mtls-certs
-FIREWALL_TELEMETRY_ENABLED=true \
-docker compose --profile observability up -d postgres valkey control-plane proxy dependency-graph-worker otel-collector aspire-dashboard
-
-curl http://localhost:8081/npm/t/<tenant-id>/u/<upstream-id>/lodash
-curl -H "Host: u-<upstream-id>.<tenant-id>.localhost" \
-  http://localhost:8081/v2/library/nginx/manifests/1.25.3
+cd web
+npm ci
+npm run build
 ```
 
-Those requests emit spans from the **proxy HTTP entrypoint**, the **bundle/ingest gRPC hops**, and the downstream **registry/cache/enrichment** work so the proxy shows up as a first-class service in Aspire.
+Serve `web/dist` from a static host and route API requests to the control plane. See [`web/README.md`](./web/README.md) for environment and test details. Current pages cover Dashboard, Tenants, Upstreams, Policies, Evaluations, and Dependency Graphs. Audit events are available through the API but do not yet have a UI route.
 
-## Create a tenant and upstreams
+## Configuration
 
-All control-plane examples below use `http://localhost:8080`.
+All keys can be overridden with `FIREWALL_*` environment variables. For example, `bundle.control_plane_addr` maps to `FIREWALL_BUNDLE_CONTROL_PLANE_ADDR`.
+
+[`config.yaml.example`](./config.yaml.example) is the complete annotated configuration surface. Important mode ownership rules are:
+
+- PostgreSQL: `all-in-one` and `control-plane` only.
+- Valkey: `all-in-one`, `control-plane`, and `proxy`; not the worker.
+- `bundle.listen_addr` and `bundle.tls.authorized_clients`: control plane only.
+- `bundle.control_plane_addr`: proxy and worker; retained for local composition.
+- `dependency_graph.run_in_process`: all-in-one/control-plane compatibility only.
+- Node/npm: worker, or a process explicitly running the graph worker in-process.
+- OCI artifact cache: proxy path; disk is the only implemented backend. `s3` and `gcs` are reserved configuration and fail startup if selected.
+
+Authenticated OCI upstream credentials are encrypted in PostgreSQL with `secrets.upstream_auth_key` and never returned by the API. In split mode the control plane additionally encrypts each secret to the requesting proxy certificate before bundle delivery.
+
+## API discovery
+
+The control plane publishes:
+
+- OpenAPI: `/api/openapi`
+- interactive API docs: `/api/docs`
+- management API: `/api/v1/*`
+
+These endpoints are currently unauthenticated. Registered operations in the generated OpenAPI document are authoritative.
+
+Create a tenant and upstream:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/v1/tenants \
-  -H "Content-Type: application/json" \
-  -d '{"name":"my-team"}' | jq .
+curl -sS -X POST http://localhost:8080/api/v1/tenants \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"my-team"}'
 
-curl -s -X POST http://localhost:8080/api/v1/upstreams \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: <tenant-id>" \
+curl -sS -X POST http://localhost:8080/api/v1/upstreams \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-ID: <tenant-id>' \
   -d '{
     "name":"npmjs-public",
     "ecosystem":"npm",
     "base_url":"https://registry.npmjs.org",
     "capabilities":["publish_time","licenses","vulnerability_lookup","scorecard_lookup"]
-  }' | jq .
-
-curl -s -X POST http://localhost:8080/api/v1/upstreams \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-ID: <tenant-id>" \
-  -d '{
-    "name":"docker-hub",
-    "ecosystem":"oci",
-    "base_url":"https://registry-1.docker.io",
-    "capabilities":["manifest_digest_lookup"]
-  }' | jq .
+  }'
 ```
 
-Enable `scorecard_lookup` on npm upstreams when you want to use the OpenSSF Scorecard policy type.
+## Proxy examples
 
-## npm example
-
-When running split modes, proxy examples use `http://localhost:8081`.
+npm:
 
 ```bash
-curl http://localhost:8081/npm/t/<tenant-id>/u/<upstream-id>/lodash
-
 npm config set registry http://localhost:8081/npm/t/<tenant-id>/u/<upstream-id>/
-
 npm install lodash@4.17.21
 ```
 
-## OCI example
+OCI manifest request:
 
 ```bash
-curl -H "Host: u-<upstream-id>.<tenant-id>.localhost" \
+curl -H 'Host: u-<upstream-id>.<tenant-id>.localhost' \
   http://localhost:8081/v2/library/nginx/manifests/1.25.3
-
-docker pull u-<upstream-id>.<tenant-id>.localhost:8081/library/nginx:1.25.3
 ```
+
+The current OCI client surface is GET-only and pull-only. Client registry authentication is not implemented; upstream Basic/PAT and static bearer credentials are supported server-side.
+
+## Telemetry
+
+All Go modes can emit OpenTelemetry traces for HTTP, gRPC, PostgreSQL, Valkey, enrichers, and upstream clients. The browser can emit navigation spans and propagate `traceparent` through the shared API client. Use the Compose `observability` profile to run the collector and Aspire dashboard:
+
+```bash
+FIREWALL_TELEMETRY_ENABLED=true \
+docker compose --profile observability up -d \
+  postgres valkey control-plane proxy dependency-graph-worker \
+  otel-collector aspire-dashboard
+```
+
+Open `http://localhost:18888`. SQL statement/span-name handling is controlled by `telemetry.sql_tracing` in the sample configuration.
 
 ## Tests
 
 ```bash
-make test
-make test-integration
+go test ./...
+
+cd web
+npm run lint
+npm run build
+npm run test:e2e
 ```
 
 ## Repository layout
 
 ```text
-cmd/firewall/        single entrypoint with runtime mode selection
-internal/bootstrap/  runtime composition for each mode
-internal/core/       domain, ports, services, policy engine
-internal/delivery/   HTTP and gRPC delivery adapters
-internal/infra/      PostgreSQL, Valkey, upstream, enrichment, bundle adapters
-web/                 control-plane UI
+cmd/firewall/        one entrypoint with runtime mode selection
+internal/bootstrap/  runtime composition
+internal/core/       domain, ports, services, and policy engine
+internal/delivery/   HTTP and gRPC adapters
+internal/infra/      PostgreSQL, Valkey, upstream, cache, and telemetry adapters
+migrations/          PostgreSQL schema migrations
+web/                 separately served React/Vite control-plane client
 ```
 
 ## Extension guides
 
-- Add a policy type: `docs/adding-policy-type.md`
-- Add an upstream or ecosystem: `docs/adding-upstream.md`
-- UI principles, architecture, and review checklist: `docs/ui-redesign.md`
+- [Add a policy type](./docs/adding-policy-type.md)
+- [Add an upstream or ecosystem](./docs/adding-upstream.md)
+- [Coding standards](./docs/coding-standards.md)
