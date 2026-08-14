@@ -61,7 +61,7 @@ func upsertDecisionArtifact(ctx context.Context, tx pgx.Tx, decision *domain.Dec
 	err := tx.QueryRow(ctx,
 		`INSERT INTO artifacts (tenant_id, ecosystem, namespace, name, version, digest)
 		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (tenant_id, ecosystem, namespace, name, version, digest) DO UPDATE SET tenant_id = EXCLUDED.tenant_id
+		 ON CONFLICT ON CONSTRAINT artifacts_scope_identity_key DO UPDATE SET tenant_id = EXCLUDED.tenant_id
 		 RETURNING id`,
 		decision.TenantID, decision.Artifact.Ecosystem, decision.Artifact.Namespace,
 		decision.Artifact.Name, decision.Artifact.Version, decision.Artifact.Digest,
@@ -148,9 +148,9 @@ func insertDecisionEvaluation(
 			reasonPolicyID = &reason.PolicyID
 		}
 		_, err = tx.Exec(ctx,
-			`INSERT INTO evaluation_reasons (evaluation_id, policy_id, policy_name, category, action, message)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			evaluationID, reasonPolicyID, reason.PolicyName,
+			`INSERT INTO evaluation_reasons (tenant_id, evaluation_id, policy_id, policy_name, category, action, message)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			decision.TenantID, evaluationID, reasonPolicyID, reason.PolicyName,
 			string(reason.Category), string(reason.Action), reason.Message,
 		)
 		if err != nil {

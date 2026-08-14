@@ -127,8 +127,9 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 
 	_, err = tx.Exec(
 		ctx,
-		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO policy_versions (tenant_id, policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		policy.TenantID,
 		policy.ID,
 		policy.Version,
 		nullableString(policy.UpstreamID),
@@ -204,8 +205,9 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 
 	_, err = tx.Exec(
 		ctx,
-		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO policy_versions (tenant_id, policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		policy.TenantID,
 		policy.ID,
 		newVersion,
 		nullableString(policy.UpstreamID),

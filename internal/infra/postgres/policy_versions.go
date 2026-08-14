@@ -87,7 +87,7 @@ func (r *PolicyRepository) RollbackToVersion(
 	); err != nil {
 		return nil, err
 	}
-	if err := recordRollbackPolicyVersion(ctx, tx, policyID, policyDef, configJSON, targetJSON); err != nil {
+	if err := recordRollbackPolicyVersion(ctx, tx, tenantID, policyID, policyDef, configJSON, targetJSON); err != nil {
 		return nil, err
 	}
 	if err := prunePolicyVersions(ctx, tx, policyID); err != nil {
@@ -195,14 +195,15 @@ func updatePolicyForRollback(
 func recordRollbackPolicyVersion(
 	ctx context.Context,
 	tx pgx.Tx,
-	policyID string,
+	tenantID, policyID string,
 	policyDef domain.Policy,
 	configJSON, targetJSON []byte,
 ) error {
 	_, err := tx.Exec(
 		ctx,
-		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO policy_versions (tenant_id, policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		tenantID,
 		policyID,
 		policyDef.Version,
 		nullableString(policyDef.UpstreamID),

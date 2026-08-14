@@ -231,6 +231,277 @@ func TestMigrations_IdentityAndHierarchyPreservesIDsAndBackfillsDefaults(t *test
 	assert.Zero(t, identityCount, "legacy users must remain unlinked to external identities")
 }
 
+func TestMigrations_ResourceScopesPreserveIDsAndBackfillOperationalScope(t *testing.T) {
+	ctx := context.Background()
+	fixture := setupMigrationFixture(t)
+	fixture.migrateTo(t, 19)
+	pool := fixture.openPool(t)
+
+	const (
+		tenantID     = "31000000-0000-4000-8000-000000000001"
+		upstreamID   = "31000000-0000-4000-8000-000000000002"
+		policyID     = "31000000-0000-4000-8000-000000000003"
+		versionID    = "31000000-0000-4000-8000-000000000004"
+		artifactID   = "31000000-0000-4000-8000-000000000005"
+		requestID    = "31000000-0000-4000-8000-000000000006"
+		evaluationID = "31000000-0000-4000-8000-000000000007"
+		reasonID     = "31000000-0000-4000-8000-000000000008"
+		decisionID   = "31000000-0000-4000-8000-000000000009"
+		auditID      = "31000000-0000-4000-8000-000000000010"
+		rootID       = "31000000-0000-4000-8000-000000000011"
+		parentNodeID = "31000000-0000-4000-8000-000000000012"
+		childNodeID  = "31000000-0000-4000-8000-000000000013"
+		edgeID       = "31000000-0000-4000-8000-000000000014"
+	)
+
+	_, err := pool.Exec(ctx, `INSERT INTO tenants (id, name) VALUES ($1, 'resource-scope-account')`, tenantID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO upstreams (id, tenant_id, name, ecosystem, base_url, capabilities)
+		 VALUES ($1, $2, 'npmjs', 'npm', 'https://registry.example.test', ARRAY['publish_time']::text[])`,
+		upstreamID, tenantID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policies (id, tenant_id, upstream_id, name, type, action, schema_version, config, priority, enabled)
+		 VALUES ($1, $2, $3, 'legacy-policy', 'namespace_blocklist', 'deny', 1, '{}', 10, true)`,
+		policyID, tenantID, upstreamID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policy_versions (id, policy_id, version, upstream_id, name, type, action, schema_version, config, priority, enabled)
+		 VALUES ($1, $2, 1, $3, 'legacy-policy', 'namespace_blocklist', 'deny', 1, '{}', 10, true)`,
+		versionID, policyID, upstreamID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO artifacts (id, tenant_id, ecosystem, namespace, name, version, digest)
+		 VALUES ($1, $2, 'npm', '', 'left-pad', '1.3.0', '')`, artifactID, tenantID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO proxy_requests (id, tenant_id, artifact_id, method, path)
+		 VALUES ($1, $2, $3, 'GET', '/left-pad')`, requestID, tenantID, artifactID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO evaluations (id, tenant_id, artifact_id, outcome, policy_id, reason)
+		 VALUES ($1, $2, $3, 'deny', $4, 'blocked')`, evaluationID, tenantID, artifactID, policyID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO evaluation_reasons (id, evaluation_id, policy_id, policy_name, category, action, message)
+		 VALUES ($1, $2, $3, 'legacy-policy', 'policy', 'deny', 'blocked')`, reasonID, evaluationID, policyID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO decisions (id, tenant_id, artifact_id, outcome, policy_id, reason)
+		 VALUES ($1, $2, $3, 'deny', $4, 'blocked')`, decisionID, tenantID, artifactID, policyID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO audit_events (id, tenant_id, event_type, entity_type, entity_id, payload)
+		 VALUES ($1, $2, 'policy.evaluated', 'policy', $3, '{}')`, auditID, tenantID, policyID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO dependency_graph_roots (id, tenant_id, upstream_id, package_name, version, status)
+		 VALUES ($1, $2, $3, 'root-package', '1.0.0', 'complete')`, rootID, tenantID, upstreamID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO dependency_graph_nodes (id, root_id, ecosystem, namespace, name, version, min_depth)
+		 VALUES ($1, $3, 'npm', '', 'root-package', '1.0.0', 0),
+		        ($2, $3, 'npm', '', 'left-pad', '1.3.0', 1)`, parentNodeID, childNodeID, rootID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO dependency_graph_edges (id, root_id, parent_node_id, child_node_id, dependency_type)
+		 VALUES ($1, $2, $3, $4, 'prod')`, edgeID, rootID, parentNodeID, childNodeID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO dependency_context_summaries
+		    (root_id, tenant_id, upstream_id, ecosystem, namespace, name, version, digest, context)
+		 VALUES ($1, $2, $3, 'npm', '', 'left-pad', '1.3.0', '', '{"scope":"transitive","context_hash":"fixture"}')`,
+		rootID, tenantID, upstreamID)
+	require.NoError(t, err)
+
+	resourceIDsBefore := snapshotIDs(t, ctx, pool, `
+		SELECT id::text FROM policies
+		UNION ALL SELECT id::text FROM policy_versions
+		UNION ALL SELECT id::text FROM upstreams
+		UNION ALL SELECT id::text FROM artifacts
+		UNION ALL SELECT id::text FROM proxy_requests
+		UNION ALL SELECT id::text FROM evaluations
+		UNION ALL SELECT id::text FROM evaluation_reasons
+		UNION ALL SELECT id::text FROM decisions
+		UNION ALL SELECT id::text FROM audit_events
+		UNION ALL SELECT id::text FROM dependency_graph_roots
+		UNION ALL SELECT id::text FROM dependency_graph_nodes
+		UNION ALL SELECT id::text FROM dependency_graph_edges`)
+
+	fixture.migrateTo(t, 20)
+	const (
+		emptyTenantID  = "32000000-0000-4000-8000-000000000001"
+		legacyTenantID = "32000000-0000-4000-8000-000000000002"
+	)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO tenants (id, name) VALUES ($1, 'empty-onboarding-account'), ($2, 'post-hierarchy-legacy-account')`,
+		emptyTenantID, legacyTenantID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policies (tenant_id, name, type, action, schema_version, config, priority, enabled)
+		 VALUES ($1, 'post-hierarchy-policy', 'namespace_blocklist', 'deny', 1, '{}', 1, true)`, legacyTenantID)
+	require.NoError(t, err)
+
+	fixture.migrateTo(t, 22)
+
+	requireIDsUnchanged(t, resourceIDsBefore, snapshotIDs(t, ctx, pool, `
+		SELECT id::text FROM policies WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM policy_versions WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM upstreams WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM artifacts WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM proxy_requests WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM evaluations WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM evaluation_reasons WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM decisions WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM audit_events WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM dependency_graph_roots WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM dependency_graph_nodes WHERE tenant_id = $1
+		UNION ALL SELECT id::text FROM dependency_graph_edges WHERE tenant_id = $1`, tenantID))
+
+	var defaultOrganizationID string
+	err = pool.QueryRow(ctx,
+		`SELECT id FROM organizations WHERE tenant_id = $1 AND is_default`, tenantID,
+	).Scan(&defaultOrganizationID)
+	require.NoError(t, err)
+
+	var policyScope, waiverMode string
+	var policyOrganizationID *string
+	err = pool.QueryRow(ctx,
+		`SELECT scope_kind, waiver_mode, organization_id FROM policies WHERE id = $1`, policyID,
+	).Scan(&policyScope, &waiverMode, &policyOrganizationID)
+	require.NoError(t, err)
+	assert.Equal(t, "account", policyScope)
+	assert.Equal(t, "none", waiverMode)
+	assert.Nil(t, policyOrganizationID)
+
+	var versionTenantID, versionScope, versionWaiverMode string
+	err = pool.QueryRow(ctx,
+		`SELECT tenant_id, scope_kind, waiver_mode FROM policy_versions WHERE id = $1`, versionID,
+	).Scan(&versionTenantID, &versionScope, &versionWaiverMode)
+	require.NoError(t, err)
+	assert.Equal(t, tenantID, versionTenantID)
+	assert.Equal(t, "account", versionScope)
+	assert.Equal(t, "none", versionWaiverMode)
+
+	var upstreamScope string
+	err = pool.QueryRow(ctx, `SELECT scope_kind FROM upstreams WHERE id = $1`, upstreamID).Scan(&upstreamScope)
+	require.NoError(t, err)
+	assert.Equal(t, "tenant_shared", upstreamScope)
+
+	for table, id := range map[string]string{
+		"artifacts":              artifactID,
+		"proxy_requests":         requestID,
+		"evaluations":            evaluationID,
+		"evaluation_reasons":     reasonID,
+		"decisions":              decisionID,
+		"audit_events":           auditID,
+		"dependency_graph_roots": rootID,
+		"dependency_graph_nodes": childNodeID,
+		"dependency_graph_edges": edgeID,
+	} {
+		var organizationID string
+		err = pool.QueryRow(ctx, `SELECT organization_id FROM `+table+` WHERE id = $1`, id).Scan(&organizationID)
+		require.NoError(t, err, table)
+		assert.Equal(t, defaultOrganizationID, organizationID, table)
+	}
+
+	var summaryOrganizationID string
+	err = pool.QueryRow(ctx,
+		`SELECT organization_id FROM dependency_context_summaries WHERE root_id = $1`, rootID,
+	).Scan(&summaryOrganizationID)
+	require.NoError(t, err)
+	assert.Equal(t, defaultOrganizationID, summaryOrganizationID)
+
+	var emptyDefaultCount, legacyDefaultCount int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM organizations WHERE tenant_id = $1 AND is_default`, emptyTenantID,
+	).Scan(&emptyDefaultCount))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM organizations WHERE tenant_id = $1 AND is_default`, legacyTenantID,
+	).Scan(&legacyDefaultCount))
+	assert.Zero(t, emptyDefaultCount, "empty accounts must remain in first-Organization onboarding")
+	assert.Equal(t, 1, legacyDefaultCount, "accounts with compatibility resources need a deterministic migration scope")
+}
+
+func TestMigrations_ResourceScopeConstraintsRejectForgedAncestry(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+
+	tenantA := createTestTenant(t, ctx, pool, "scope-constraints-a")
+	tenantB := createTestTenant(t, ctx, pool, "scope-constraints-b")
+	organizationRepo := postgres.NewOrganizationRepository(pool)
+	teamRepo := postgres.NewTeamRepository(pool)
+	organizationA := &domain.Organization{TenantID: tenantA.ID, Name: "Engineering", Status: domain.OrganizationStatusActive}
+	organizationB := &domain.Organization{TenantID: tenantB.ID, Name: "Finance", Status: domain.OrganizationStatusActive}
+	require.NoError(t, organizationRepo.Create(ctx, organizationA))
+	require.NoError(t, organizationRepo.Create(ctx, organizationB))
+	teamA := &domain.Team{TenantID: tenantA.ID, OrganizationID: organizationA.ID, Name: "Platform"}
+	require.NoError(t, teamRepo.Create(ctx, teamA))
+
+	var accountPolicyID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO policies (tenant_id, name, type, action, config)
+		 VALUES ($1, 'shared-name', 'namespace_blocklist', 'deny', '{}') RETURNING id`, tenantA.ID,
+	).Scan(&accountPolicyID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policies (tenant_id, organization_id, scope_kind, name, type, action, config)
+		 VALUES ($1, $2, 'organization', 'shared-name', 'namespace_blocklist', 'deny', '{}')`,
+		tenantA.ID, organizationA.ID)
+	require.NoError(t, err, "account and Organization policy names occupy separate scopes")
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policies (tenant_id, organization_id, scope_kind, name, type, action, config)
+		 VALUES ($1, $2, 'account', 'invalid-account-shape', 'namespace_blocklist', 'deny', '{}')`,
+		tenantA.ID, organizationA.ID)
+	require.Error(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policies (tenant_id, organization_id, scope_kind, name, type, action, config)
+		 VALUES ($1, $2, 'organization', 'forged-organization', 'namespace_blocklist', 'deny', '{}')`,
+		tenantA.ID, organizationB.ID)
+	require.Error(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO policy_versions (tenant_id, policy_id, version, name, type, action, config, priority, enabled)
+		 VALUES ($1, $2, 1, 'forged-version', 'namespace_blocklist', 'deny', '{}', 0, true)`,
+		tenantB.ID, accountPolicyID)
+	require.Error(t, err)
+
+	var tenantUpstreamID string
+	err = pool.QueryRow(ctx,
+		`INSERT INTO upstreams (tenant_id, name, ecosystem, base_url)
+		 VALUES ($1, 'registry', 'npm', 'https://registry.example.test') RETURNING id`, tenantA.ID,
+	).Scan(&tenantUpstreamID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO upstreams (tenant_id, organization_id, scope_kind, name, ecosystem, base_url)
+		 VALUES ($1, $2, 'organization_shared', 'registry', 'npm', 'https://registry.example.test')`,
+		tenantA.ID, organizationA.ID)
+	require.NoError(t, err, "Tenant and Organization upstreams occupy separate scopes")
+	_, err = pool.Exec(ctx,
+		`INSERT INTO upstreams (tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url)
+		 VALUES ($1, $2, $3, 'team_local', 'forged-team', 'npm', 'https://team.example.test')`,
+		tenantB.ID, organizationB.ID, teamA.ID)
+	require.Error(t, err)
+
+	var artifactID string
+	err = pool.QueryRow(ctx,
+		`INSERT INTO artifacts (tenant_id, organization_id, upstream_id, ecosystem, name, version)
+		 VALUES ($1, $2, $3, 'npm', 'left-pad', '1.3.0') RETURNING id`,
+		tenantA.ID, organizationA.ID, tenantUpstreamID,
+	).Scan(&artifactID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO decisions (tenant_id, organization_id, artifact_id, outcome)
+		 VALUES ($1, $2, $3, 'allow')`, tenantB.ID, organizationB.ID, artifactID)
+	require.Error(t, err)
+	_, err = pool.Exec(ctx,
+		`INSERT INTO dependency_graph_roots
+		    (tenant_id, organization_id, upstream_id, package_name, version, status)
+		 VALUES ($1, $2, $3, 'forged-root', '1.0.0', 'pending')`,
+		tenantA.ID, organizationA.ID, "00000000-0000-4000-8000-000000000000")
+	require.Error(t, err)
+}
+
 // ---------------------------------------------------------------------------
 // TenantRepository
 // ---------------------------------------------------------------------------
@@ -628,8 +899,9 @@ func TestPolicyMigration_TranslateEnforceToDryRun(t *testing.T) {
 
 	_, err = pool.Exec(
 		ctx,
-		`INSERT INTO policy_versions (policy_id, version, name, type, action, schema_version, config, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
+		`INSERT INTO policy_versions (tenant_id, policy_id, version, name, type, action, schema_version, config, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)`,
+		tenant.ID,
 		policyID,
 		1,
 		"legacy-policy",
@@ -1273,9 +1545,9 @@ func TestPolicyRepository_ForceDeleteClearsHistoricalReferences(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = pool.Exec(ctx,
-		`INSERT INTO evaluation_reasons (evaluation_id, policy_id, policy_name, category, action, message)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		evaluationID, policy.ID, policy.Name, "policy", "deny", "blocked by policy",
+		`INSERT INTO evaluation_reasons (tenant_id, evaluation_id, policy_id, policy_name, category, action, message)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		tenant.ID, evaluationID, policy.ID, policy.Name, "policy", "deny", "blocked by policy",
 	)
 	require.NoError(t, err)
 

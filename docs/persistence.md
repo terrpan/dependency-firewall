@@ -11,13 +11,13 @@ Only `control-plane` and `all-in-one` modes open PostgreSQL and run migrations. 
 | Area | Tables | Runtime use |
 | --- | --- | --- |
 | Tenancy | `tenants` | tenant CRUD and bundle identity |
-| Upstreams | `upstreams` | upstream configuration, capabilities, encrypted OCI credentials |
-| Policies | `policies`, `policy_versions`, `tenant_policy_revisions` | active rules, version history/rollback, revision hashes |
-| Artifacts and evaluation | `artifacts`, `evaluations`, `evaluation_reasons`, `decisions` | normalized identities, evaluation history/reasons, durable decisions |
-| Audit | `audit_events` | configured durable audit sink and list API |
-| Dependency graphs | `dependency_graph_roots`, `dependency_graph_nodes`, `dependency_graph_edges`, `dependency_context_summaries` | job lifecycle, resolved graph, target-aware lookup summaries |
+| Upstreams | `upstreams` | upstream configuration, visibility scope, capabilities, encrypted OCI credentials |
+| Policies | `policies`, `policy_versions`, `tenant_policy_revisions` | active account/Organization scope, version history/rollback, revision hashes |
+| Artifacts and evaluation | `artifacts`, `evaluations`, `evaluation_reasons`, `decisions` | normalized identities, explicit operational scope, evaluation history/reasons, durable decisions |
+| Audit | `audit_events` | configured durable audit sink, operational scope, and list API |
+| Dependency graphs | `dependency_graph_roots`, `dependency_graph_nodes`, `dependency_graph_edges`, `dependency_context_summaries` | scoped job lifecycle, resolved graph, target-aware lookup summaries |
 
-Graph roots are unique by tenant, upstream, package name, and version. Enqueue is therefore idempotent. A completed row is reused rather than refreshed; there is no invalidation/refresh operation. Failed rows become claimable again after their fixed retry time.
+Graph roots are unique by Tenant, Organization, optional Team, upstream, package name, and version. Enqueue is therefore idempotent within one operational scope. A completed row is reused rather than refreshed; there is no invalidation/refresh operation. Failed rows become claimable again after their fixed retry time.
 
 ### Reserved or unwired schema
 
@@ -93,19 +93,19 @@ Migrations are embedded from `migrations/` and applied by PostgreSQL-owning mode
 
 ## Hierarchy migration invariants
 
-The Tenant/Organization/Team rollout is additive. It must preserve existing Tenant and resource identifiers, then backfill one generated default Organization per Tenant. Existing policies become account-scoped and non-waivable; existing upstreams become Tenant-shared; historical observations are assigned to the generated Organization where deterministic.
+The Tenant/Organization/Team rollout is additive and preserves existing Tenant and resource identifiers. Migration `000020` creates a default Organization for every Tenant present at that migration. Migration `000021` also creates a compatibility Organization for any later Tenant that already owns legacy operational resources, while leaving empty newly bootstrapped accounts in first-Organization onboarding. Existing policies become account-scoped and non-waivable; existing upstreams become Tenant-shared; historical observations are assigned to the generated Organization where deterministic.
 
 Every customer-owned table continues to carry explicit `tenant_id`. New Organization and Team references are protected with composite foreign keys so a child cannot reference a parent in another Tenant or Organization. Scope-shape checks prevent account policies from carrying Organization/Team values and prevent Team-local upstreams from omitting their ancestors.
 
 The migration sequence is:
 
-1. identity links, Principals, Organizations, Teams, and memberships;
-2. additive resource-scope columns and deterministic backfills;
-3. composite foreign keys, checks, Tenant-leading indexes, and non-null enforcement;
+1. `000020`: identity links, Principals, Organizations, Teams, and memberships;
+2. `000021`: additive resource-scope columns and deterministic backfills;
+3. `000022`: composite foreign keys, checks, scope-aware uniqueness, Tenant-leading indexes, and deterministic child-scope non-null enforcement;
 4. data-plane credential metadata and verifier revisions;
 5. exact-artifact policy waivers and actor/outcome audit fields.
 
-Large-table changes use nullable additions, batched backfills, validation queries, and only then constraint validation. `users` and `tenant_memberships` remain deprecated rather than becoming a second external-account membership source.
+The implemented scope migrations add nullable columns first, perform set-based backfills, add foreign keys and checks as `NOT VALID`, and validate them only after the historical rows are scoped. Organization and Team remain nullable on compatibility writes until the scoped runtime layer supplies an authoritative operational context. `users` and `tenant_memberships` remain deprecated rather than becoming a second external-account membership source.
 
 Target cache keys include Tenant, Organization, optional Team, upstream, and relevant policy/waiver revisions. Bundle policy staleness and credential-verifier security staleness are independent; verifier material fails closed after its five-minute maximum.
 

@@ -161,7 +161,7 @@ func (r *DependencyGraphRepository) EnqueueResolve(
 	tag, err := r.pool.Exec(ctx,
 		`INSERT INTO dependency_graph_roots (tenant_id, upstream_id, package_name, version, status, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, now())
-		 ON CONFLICT (tenant_id, upstream_id, package_name, version) DO NOTHING`,
+		 ON CONFLICT ON CONSTRAINT dependency_graph_roots_scope_identity_key DO NOTHING`,
 		req.TenantID, req.Upstream.ID, rootPackage, req.Root.Version, domain.DependencyGraphPending,
 	)
 	if err != nil {
@@ -266,7 +266,7 @@ func (r *DependencyGraphRepository) CompleteResolve(
 	if err != nil {
 		return err
 	}
-	if err := insertDependencyGraphEdges(ctx, tx, rootID, nodeIDs, edges); err != nil {
+	if err := insertDependencyGraphEdges(ctx, tx, req, rootID, nodeIDs, edges); err != nil {
 		return err
 	}
 	if err := markDependencyGraphComplete(ctx, tx, rootID, graphHash); err != nil {
@@ -301,11 +301,12 @@ func insertDependencyGraphNodes(
 		node.RootID = rootID
 		depTypes := dependencyTypeStrings(node.DependencyTypes)
 		var nodeID string
-		err := tx.QueryRow(
-			ctx,
-			`INSERT INTO dependency_graph_nodes (root_id, ecosystem, namespace, name, version, digest, min_depth, dependency_types)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		err := tx.QueryRow(ctx,
+			`INSERT INTO dependency_graph_nodes (tenant_id, upstream_id, root_id, ecosystem, namespace, name, version, digest, min_depth, dependency_types)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			 RETURNING id`,
+			req.TenantID,
+			req.Upstream.ID,
 			rootID,
 			node.Artifact.Ecosystem,
 			node.Artifact.Namespace,
@@ -335,6 +336,7 @@ func insertDependencyGraphNodes(
 func insertDependencyGraphEdges(
 	ctx context.Context,
 	tx pgx.Tx,
+	req domain.DependencyGraphResolveRequest,
 	rootID string,
 	nodeIDs map[string]string,
 	edges []domain.DependencyGraphEdge,
@@ -350,10 +352,10 @@ func insertDependencyGraphEdges(
 			return fmt.Errorf("inserting dependency graph edge: child node %q not found", edge.ChildNodeID)
 		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO dependency_graph_edges (root_id, parent_node_id, child_node_id, dependency_type)
-			 VALUES ($1, $2, $3, $4)
+			`INSERT INTO dependency_graph_edges (tenant_id, upstream_id, root_id, parent_node_id, child_node_id, dependency_type)
+			 VALUES ($1, $2, $3, $4, $5, $6)
 			 ON CONFLICT (root_id, parent_node_id, child_node_id, dependency_type) DO NOTHING`,
-			rootID, parentID, childID, edge.DependencyType,
+			req.TenantID, req.Upstream.ID, rootID, parentID, childID, edge.DependencyType,
 		); err != nil {
 			return fmt.Errorf("inserting dependency graph edge: %w", err)
 		}
