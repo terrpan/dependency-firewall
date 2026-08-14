@@ -10,4 +10,5 @@ type TenantBundle struct {
 	GeneratedAt time.Time
 	Policies    []Policy
 	Upstreams   []Upstream
+	Credentials []DataPlaneCredentialVerifier
 }

@@ -26,6 +26,7 @@ type BundleTenant = bundlewire.BundleTenant
 type BundlePolicy = bundlewire.BundlePolicy
 type BundleUpstream = bundlewire.BundleUpstream
 type BundleUpstreamAuth = bundlewire.BundleUpstreamAuth
+type BundleCredential = bundlewire.BundleCredential
 
 type bundleService interface {
 	GetTenantBundle(context.Context, *GetTenantBundleRequest) (*GetTenantBundleResponse, error)
@@ -126,6 +127,9 @@ func GetTenantBundle(
 
 func (s *Server) toBundleResponse(ctx context.Context, bundle *domain.TenantBundle) (*GetTenantBundleResponse, error) {
 	response := newBundleResponse(bundle)
+	for i := range bundle.Credentials {
+		response.Bundle.Credentials = append(response.Bundle.Credentials, toBundleCredential(bundle.Credentials[i]))
+	}
 	for i := range bundle.Policies {
 		policy, err := toBundlePolicy(bundle.Policies[i])
 		if err != nil {
@@ -163,7 +167,20 @@ func newBundleResponse(bundle *domain.TenantBundle) *GetTenantBundleResponse {
 			GeneratedAt: bundle.GeneratedAt.UTC().Format(bundlewire.TimeLayout),
 			Policies:    make([]BundlePolicy, 0, len(bundle.Policies)),
 			Upstreams:   make([]BundleUpstream, 0, len(bundle.Upstreams)),
+			Credentials: make([]BundleCredential, 0, len(bundle.Credentials)),
 		},
+	}
+}
+
+func toBundleCredential(credential domain.DataPlaneCredentialVerifier) BundleCredential {
+	return BundleCredential{
+		ID:             credential.ID,
+		TenantID:       credential.TenantID,
+		OrganizationID: credential.OrganizationID,
+		TeamID:         credential.TeamID,
+		SecretDigest:   credential.SecretDigest,
+		ExpiresAt:      credential.ExpiresAt,
+		RevokedAt:      credential.RevokedAt,
 	}
 }
 

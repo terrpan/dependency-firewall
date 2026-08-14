@@ -82,6 +82,10 @@ type DataPlaneCredentialRepository interface {
 	Revoke(ctx context.Context, tenantID, id string, at time.Time) error
 }
 
+type BundleCredentialRepository interface {
+	ListVerifiersByTenant(ctx context.Context, tenantID string) ([]domain.DataPlaneCredentialVerifier, error)
+}
+
 // PolicyRepository manages policy persistence.
 type PolicyRepository interface {
 	GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error)

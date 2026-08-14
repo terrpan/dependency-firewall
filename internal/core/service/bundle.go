@@ -20,6 +20,7 @@ type BundleService struct {
 	policies            port.PolicyRepository
 	upstreams           port.UpstreamRepository
 	bundleUpstreams     port.BundleUpstreamRepository
+	bundleCredentials   port.BundleCredentialRepository
 	includeUpstreamAuth bool
 }
 
@@ -67,6 +68,11 @@ func WithBundleUpstreamRepository(repo port.BundleUpstreamRepository) BundleServ
 	}
 }
 
+// WithBundleCredentialRepository includes digest-only protocol verifiers.
+func WithBundleCredentialRepository(repo port.BundleCredentialRepository) BundleServiceOption {
+	return func(s *BundleService) { s.bundleCredentials = repo }
+}
+
 // GetTenantBundle returns the current proxy-ready bundle for a tenant.
 func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*domain.TenantBundle, error) {
 	tenant, err := s.tenants.GetByID(ctx, tenantID)
@@ -96,8 +102,15 @@ func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*
 			}
 		}
 	}
+	var credentials []domain.DataPlaneCredentialVerifier
+	if s.bundleCredentials != nil {
+		credentials, err = s.bundleCredentials.ListVerifiersByTenant(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("listing bundle credential verifiers: %w", err)
+		}
+	}
 
-	revision, err := bundleRevision(*tenant, policies, upstreams)
+	revision, err := bundleRevision(*tenant, policies, upstreams, credentials)
 	if err != nil {
 		return nil, fmt.Errorf("computing bundle revision: %w", err)
 	}
@@ -109,6 +122,7 @@ func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*
 		GeneratedAt: time.Now().UTC(),
 		Policies:    policies,
 		Upstreams:   upstreams,
+		Credentials: credentials,
 	}, nil
 }
 
@@ -279,9 +293,10 @@ func (p *CachedBundleProvider) recordFailure(tenantID string, err error) {
 }
 
 type bundleHashInput struct {
-	Tenant    bundleTenantHashInput     `json:"tenant"`
-	Policies  []bundlePolicyHashInput   `json:"policies"`
-	Upstreams []bundleUpstreamHashInput `json:"upstreams"`
+	Tenant      bundleTenantHashInput                `json:"tenant"`
+	Policies    []bundlePolicyHashInput              `json:"policies"`
+	Upstreams   []bundleUpstreamHashInput            `json:"upstreams"`
+	Credentials []domain.DataPlaneCredentialVerifier `json:"credentials"`
 }
 
 type bundleTenantHashInput struct {
@@ -328,7 +343,11 @@ type bundleUpstreamAuthHashInput struct {
 	UpdatedAt time.Time               `json:"updated_at"`
 }
 
-func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []domain.Upstream) (string, error) {
+func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []domain.Upstream, credentialSets ...[]domain.DataPlaneCredentialVerifier) (string, error) {
+	var credentials []domain.DataPlaneCredentialVerifier
+	if len(credentialSets) > 0 {
+		credentials = credentialSets[0]
+	}
 	payload := bundleHashInput{
 		Tenant: bundleTenantHashInput{
 			ID:        tenant.ID,
@@ -336,8 +355,9 @@ func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []
 			CreatedAt: tenant.CreatedAt,
 			UpdatedAt: tenant.UpdatedAt,
 		},
-		Policies:  make([]bundlePolicyHashInput, 0, len(policies)),
-		Upstreams: make([]bundleUpstreamHashInput, 0, len(upstreams)),
+		Policies:    make([]bundlePolicyHashInput, 0, len(policies)),
+		Upstreams:   make([]bundleUpstreamHashInput, 0, len(upstreams)),
+		Credentials: credentials,
 	}
 
 	for i := range policies {
@@ -413,6 +433,7 @@ func cloneBundle(bundle *domain.TenantBundle) *domain.TenantBundle {
 		GeneratedAt: bundle.GeneratedAt,
 		Policies:    make([]domain.Policy, len(bundle.Policies)),
 		Upstreams:   make([]domain.Upstream, len(bundle.Upstreams)),
+		Credentials: append([]domain.DataPlaneCredentialVerifier(nil), bundle.Credentials...),
 	}
 
 	copy(cloned.Policies, bundle.Policies)

@@ -223,12 +223,18 @@ func RunDependencyGraphWorker(ctx context.Context, cfg *config.Config, logger *s
 }
 
 func newLocalBundleService(deps *dependencies, includeUpstreamAuth bool) (*service.BundleService, error) {
+	options := []service.BundleServiceOption{
+		service.WithBundleUpstreamAuth(includeUpstreamAuth),
+		service.WithBundleUpstreamRepository(deps.bundleUpstreamRepo),
+	}
+	if deps.dataPlaneCredentials != nil {
+		options = append(options, service.WithBundleCredentialRepository(deps.dataPlaneCredentials))
+	}
 	return service.NewBundleService(
 		deps.tenantRepo,
 		deps.policyRepo,
 		deps.upstreamRepo,
-		service.WithBundleUpstreamAuth(includeUpstreamAuth),
-		service.WithBundleUpstreamRepository(deps.bundleUpstreamRepo),
+		options...,
 	)
 }
 

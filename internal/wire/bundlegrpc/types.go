@@ -27,12 +27,13 @@ type GetTenantBundleResponse struct {
 }
 
 type Bundle struct {
-	Tenant      BundleTenant     `json:"tenant"`
-	TenantID    string           `json:"tenant_id"`
-	Revision    string           `json:"revision"`
-	GeneratedAt string           `json:"generated_at"`
-	Policies    []BundlePolicy   `json:"policies"`
-	Upstreams   []BundleUpstream `json:"upstreams"`
+	Tenant      BundleTenant       `json:"tenant"`
+	TenantID    string             `json:"tenant_id"`
+	Revision    string             `json:"revision"`
+	GeneratedAt string             `json:"generated_at"`
+	Policies    []BundlePolicy     `json:"policies"`
+	Upstreams   []BundleUpstream   `json:"upstreams"`
+	Credentials []BundleCredential `json:"credentials,omitempty"`
 }
 
 type BundleTenant struct {
@@ -84,6 +85,16 @@ type BundleUpstreamAuth struct {
 	UpdatedAt string                  `json:"updated_at,omitempty"`
 }
 
+type BundleCredential struct {
+	ID             string     `json:"id"`
+	TenantID       string     `json:"tenant_id"`
+	OrganizationID string     `json:"organization_id"`
+	TeamID         string     `json:"team_id,omitempty"`
+	SecretDigest   string     `json:"secret_digest"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
+}
+
 // TenantIDFromRequest returns the tenant id carried by bundle gRPC requests.
 func TenantIDFromRequest(req any) string {
 	switch typed := req.(type) {
@@ -132,6 +143,7 @@ func (b Bundle) ToDomain() (*domain.TenantBundle, error) {
 		GeneratedAt: generatedAt,
 		Policies:    make([]domain.Policy, 0, len(b.Policies)),
 		Upstreams:   make([]domain.Upstream, 0, len(b.Upstreams)),
+		Credentials: make([]domain.DataPlaneCredentialVerifier, 0, len(b.Credentials)),
 	}
 	if result.TenantID == "" {
 		result.TenantID = result.Tenant.ID
@@ -154,6 +166,10 @@ func (b Bundle) ToDomain() (*domain.TenantBundle, error) {
 			return nil, err
 		}
 		result.Upstreams = append(result.Upstreams, *upstream)
+	}
+	for i := range b.Credentials {
+		c := b.Credentials[i]
+		result.Credentials = append(result.Credentials, domain.DataPlaneCredentialVerifier{ID: c.ID, TenantID: c.TenantID, OrganizationID: c.OrganizationID, TeamID: c.TeamID, SecretDigest: c.SecretDigest, ExpiresAt: c.ExpiresAt, RevokedAt: c.RevokedAt})
 	}
 
 	return result, nil

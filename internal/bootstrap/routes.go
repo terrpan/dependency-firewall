@@ -150,8 +150,9 @@ func registerProxyRoutes(
 	}
 
 	tenantResolver := middleware.NewTenantResolver(bundleinfra.NewTenantLookup(bundleProvider))
-	mux.Handle("/v2/", newOCIProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver))
-	mux.Handle("/npm/", newNPMProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver))
+	credentialAuth := middleware.NewDataPlaneCredentialMiddleware(bundleProvider)
+	mux.Handle("/v2/", newOCIProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver, credentialAuth))
+	mux.Handle("/npm/", newNPMProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver, credentialAuth))
 }
 
 func newProxyAccessService(
@@ -222,6 +223,7 @@ func newOCIProxyHandler(
 	bundleUpstreamRepo port.UpstreamRepository,
 	logger *slog.Logger,
 	tenantResolver *middleware.TenantResolver,
+	credentialAuth *middleware.DataPlaneCredentialMiddleware,
 ) http.Handler {
 	ociHandler := ocidelivery.NewRegistryHandler(
 		accessService,
@@ -234,6 +236,7 @@ func newOCIProxyHandler(
 	ociHandler.RegisterRoutes(ociMux)
 	var wrapped http.Handler = ociMux
 	wrapped = tenantResolver.Middleware(wrapped)
+	wrapped = credentialAuth.Middleware(wrapped)
 	wrapped = middleware.OCITenantFromHost()(wrapped)
 	wrapped = middleware.RequestLogging(logger)(wrapped)
 	wrapped = middleware.Recovery(logger)(wrapped)
@@ -246,6 +249,7 @@ func newNPMProxyHandler(
 	bundleUpstreamRepo port.UpstreamRepository,
 	logger *slog.Logger,
 	tenantResolver *middleware.TenantResolver,
+	credentialAuth *middleware.DataPlaneCredentialMiddleware,
 ) http.Handler {
 	npmHandler := npmdelivery.NewRegistryHandler(
 		accessService,
@@ -259,6 +263,7 @@ func newNPMProxyHandler(
 	npmHandler.RegisterRoutes(npmMux)
 	var wrapped http.Handler = npmMux
 	wrapped = tenantResolver.Middleware(wrapped)
+	wrapped = credentialAuth.Middleware(wrapped)
 	wrapped = middleware.NPMTenantFromPath()(wrapped)
 	wrapped = middleware.RequestLogging(logger)(wrapped)
 	wrapped = middleware.Recovery(logger)(wrapped)
