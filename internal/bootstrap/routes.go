@@ -87,6 +87,8 @@ func registerControlPlaneRoutes(
 		parseAuditDetailLevel(cfg.Audit.DetailLevel),
 	)
 	authorizationService := service.NewAuthorizationService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers)
+	scopedPolicyService := service.NewScopedPolicyService(policyService, deps.scopedPolicyRepo, authorizationService)
+	scopedUpstreamService := service.NewScopedUpstreamService(upstreamService, deps.scopedUpstreamRepo, authorizationService)
 
 	var sessionBootstrapService *service.SessionBootstrapService
 	var tenantMembershipVerifier service.TenantMembershipVerifier
@@ -121,6 +123,7 @@ func registerControlPlaneRoutes(
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewCacheHandler(cacheService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewScopedResourceHandler(scopedPolicyService, scopedUpstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewEvaluationHandler(evaluationService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewAuditHandler(auditListService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	if deps.dependencyGraphRepo != nil {

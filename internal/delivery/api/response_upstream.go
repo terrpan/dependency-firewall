@@ -12,6 +12,10 @@ import (
 // be scoped to this upstream without reimplementing the compatibility rules.
 type UpstreamResponse struct {
 	ID                   string               `json:"id"`
+	TenantID             string               `json:"tenant_id"`
+	OrganizationID       string               `json:"organization_id,omitempty"`
+	TeamID               string               `json:"team_id,omitempty"`
+	Scope                domain.UpstreamScope `json:"scope"`
 	Name                 string               `json:"name"`
 	Ecosystem            string               `json:"ecosystem"`
 	BaseURL              string               `json:"base_url"`
@@ -32,6 +36,7 @@ type UpstreamAuthResponse struct {
 }
 
 func toUpstreamResponse(u *domain.Upstream) *UpstreamResponse {
+	u.NormalizeScope()
 	supportedPolicyTypes := corepolicy.SupportedPolicyTypesForUpstream(*u)
 	policyTypes := make([]string, len(supportedPolicyTypes))
 	for i := range supportedPolicyTypes {
@@ -55,6 +60,10 @@ func toUpstreamResponse(u *domain.Upstream) *UpstreamResponse {
 
 	return &UpstreamResponse{
 		ID:                   u.ID,
+		TenantID:             u.TenantID,
+		OrganizationID:       u.OrganizationID,
+		TeamID:               u.TeamID,
+		Scope:                u.ScopeKind,
 		Name:                 u.Name,
 		Ecosystem:            string(u.Ecosystem),
 		BaseURL:              u.BaseURL,

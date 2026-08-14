@@ -40,6 +40,7 @@ type dependencies struct {
 	teamMembers          port.TeamMembershipRepository
 	sessionBootstrap     port.SessionBootstrapRepository
 	policyRepo           port.PolicyRepository
+	scopedPolicyRepo     port.ScopedPolicyRepository
 	policyRevisionRepo   port.PolicyRevisionRepository
 	decisionRepo         port.DecisionRepository
 	dependencyGraphRepo  port.DependencyGraphRepository
@@ -49,6 +50,7 @@ type dependencies struct {
 	dependencyGraphContexts port.DependencyGraphContextLookup
 	auditRepo               *postgres.AuditEventRepository
 	upstreamRepo            port.UpstreamRepository
+	scopedUpstreamRepo      port.ScopedUpstreamRepository
 	bundleUpstreamRepo      port.BundleUpstreamRepository
 	authSecretRewrapper     port.UpstreamAuthSecretRewrapper
 
@@ -143,7 +145,9 @@ func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
 	d.teamRepo = postgres.NewTeamRepository(d.pool)
 	d.teamMembers = postgres.NewTeamMembershipRepository(d.pool)
 	d.sessionBootstrap = postgres.NewSessionBootstrapRepository(d.pool)
-	d.policyRepo = postgres.NewPolicyRepository(d.pool)
+	policyRepo := postgres.NewPolicyRepository(d.pool)
+	d.policyRepo = policyRepo
+	d.scopedPolicyRepo = policyRepo
 	d.policyRevisionRepo = postgres.NewPolicyRevisionRepository(d.pool)
 	d.decisionRepo = postgres.NewDecisionRepository(d.pool)
 	d.dependencyGraphRepo = postgres.NewDependencyGraphRepository(d.pool)
@@ -152,6 +156,7 @@ func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
 	d.auditRepo = postgres.NewAuditEventRepository(d.pool)
 	upstreamRepo := postgres.NewUpstreamRepository(d.pool, secretCodec)
 	d.upstreamRepo = upstreamRepo
+	d.scopedUpstreamRepo = upstreamRepo
 	d.bundleUpstreamRepo = upstreamRepo
 	d.authSecretRewrapper = upstreamRepo
 	return nil

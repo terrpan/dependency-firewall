@@ -18,6 +18,7 @@ func TestControlPlaneOperationPolicies_CoverEveryOperation(t *testing.T) {
 	NewTenantHandler(nil, logger).RegisterHumaRoutes(api)
 	NewPolicyHandler(nil, logger).RegisterHumaRoutes(api)
 	NewUpstreamHandler(nil, logger).RegisterHumaRoutes(api)
+	NewScopedResourceHandler(nil, nil, logger).RegisterHumaRoutes(api)
 	NewEvaluationHandler(nil, logger).RegisterHumaRoutes(api)
 	NewAuditHandler(nil, logger).RegisterHumaRoutes(api)
 	NewCacheHandler(nil, logger).RegisterHumaRoutes(api)
@@ -45,5 +46,28 @@ func TestControlPlaneOperationPolicies_CoverEveryOperation(t *testing.T) {
 
 	for operationID := range controlPlaneOperationPolicies {
 		assert.Containsf(t, seen, operationID, "stale authorization policy for %s", operationID)
+	}
+}
+
+func TestScopedResourceOperationPolicies_SeparateAccountFreshnessFromLocalScope(t *testing.T) {
+	for _, operationID := range []string{
+		"create-account-policy", "update-account-policy", "delete-account-policy",
+		"create-account-upstream", "update-account-upstream", "delete-account-upstream",
+	} {
+		policy, ok := ControlPlaneOperationPolicy(operationID)
+		require.True(t, ok)
+		assert.True(t, policy.FreshMembership, operationID)
+		assert.True(t, policy.ScopedAuthorization, operationID)
+	}
+
+	for _, operationID := range []string{
+		"create-organization-policy", "update-organization-policy", "delete-organization-policy",
+		"create-organization-upstream", "update-organization-upstream", "delete-organization-upstream",
+		"create-team-upstream", "update-team-upstream", "delete-team-upstream",
+	} {
+		policy, ok := ControlPlaneOperationPolicy(operationID)
+		require.True(t, ok)
+		assert.False(t, policy.FreshMembership, operationID)
+		assert.True(t, policy.ScopedAuthorization, operationID)
 	}
 }

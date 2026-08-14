@@ -10,35 +10,42 @@ import (
 // tenant-wide policy, Target is present only when the policy is restricted by dependency graph context, and Config is
 // the typed configuration for the policy type at the declared schema version.
 type PolicyResponse struct {
-	ID            string               `json:"id"`
-	UpstreamID    string               `json:"upstream_id,omitempty"`
-	Name          string               `json:"name"`
-	Type          string               `json:"type"`
-	Action        string               `json:"action"`
-	SchemaVersion int                  `json:"schema_version"`
-	Target        *domain.PolicyTarget `json:"target,omitempty"`
-	Config        any                  `json:"config"`
-	Priority      int                  `json:"priority"`
-	Enabled       bool                 `json:"enabled"`
-	Version       int                  `json:"version"`
-	CreatedAt     time.Time            `json:"created_at"`
-	UpdatedAt     time.Time            `json:"updated_at"`
+	ID             string                  `json:"id"`
+	TenantID       string                  `json:"tenant_id"`
+	OrganizationID string                  `json:"organization_id,omitempty"`
+	Scope          domain.PolicyScope      `json:"scope"`
+	WaiverMode     domain.PolicyWaiverMode `json:"waiver_mode"`
+	UpstreamID     string                  `json:"upstream_id,omitempty"`
+	Name           string                  `json:"name"`
+	Type           string                  `json:"type"`
+	Action         string                  `json:"action"`
+	SchemaVersion  int                     `json:"schema_version"`
+	Target         *domain.PolicyTarget    `json:"target,omitempty"`
+	Config         any                     `json:"config"`
+	Priority       int                     `json:"priority"`
+	Enabled        bool                    `json:"enabled"`
+	Version        int                     `json:"version"`
+	CreatedAt      time.Time               `json:"created_at"`
+	UpdatedAt      time.Time               `json:"updated_at"`
 }
 
 // PolicyVersionResponse is the wire form of one retained policy snapshot. It carries the full state that a rollback
 // would restore, so the UI can diff historical versions; only the most recent snapshots per policy are kept.
 type PolicyVersionResponse struct {
-	Version       int                  `json:"version"`
-	UpstreamID    string               `json:"upstream_id,omitempty"`
-	Name          string               `json:"name"`
-	Type          string               `json:"type"`
-	Action        string               `json:"action"`
-	SchemaVersion int                  `json:"schema_version"`
-	Target        *domain.PolicyTarget `json:"target,omitempty"`
-	Config        any                  `json:"config"`
-	Priority      int                  `json:"priority"`
-	Enabled       bool                 `json:"enabled"`
-	CreatedAt     time.Time            `json:"created_at"`
+	Version        int                     `json:"version"`
+	OrganizationID string                  `json:"organization_id,omitempty"`
+	Scope          domain.PolicyScope      `json:"scope"`
+	WaiverMode     domain.PolicyWaiverMode `json:"waiver_mode"`
+	UpstreamID     string                  `json:"upstream_id,omitempty"`
+	Name           string                  `json:"name"`
+	Type           string                  `json:"type"`
+	Action         string                  `json:"action"`
+	SchemaVersion  int                     `json:"schema_version"`
+	Target         *domain.PolicyTarget    `json:"target,omitempty"`
+	Config         any                     `json:"config"`
+	Priority       int                     `json:"priority"`
+	Enabled        bool                    `json:"enabled"`
+	CreatedAt      time.Time               `json:"created_at"`
 }
 
 // PolicyTypeResponse is the wire form of one entry in the compiled policy-type catalog. It tells clients which schema
@@ -58,20 +65,25 @@ type PolicyTypeResponse struct {
 }
 
 func toPolicyResponse(p *domain.Policy) *PolicyResponse {
+	p.NormalizeScope()
 	return &PolicyResponse{
-		ID:            p.ID,
-		UpstreamID:    p.UpstreamID,
-		Name:          p.Name,
-		Type:          string(p.Type),
-		Action:        string(p.Action),
-		SchemaVersion: p.SchemaVersion,
-		Target:        p.Target,
-		Config:        p.Config,
-		Priority:      p.Priority,
-		Enabled:       p.Enabled,
-		Version:       p.Version,
-		CreatedAt:     p.CreatedAt,
-		UpdatedAt:     p.UpdatedAt,
+		ID:             p.ID,
+		TenantID:       p.TenantID,
+		OrganizationID: p.OrganizationID,
+		Scope:          p.ScopeKind,
+		WaiverMode:     p.WaiverMode,
+		UpstreamID:     p.UpstreamID,
+		Name:           p.Name,
+		Type:           string(p.Type),
+		Action:         string(p.Action),
+		SchemaVersion:  p.SchemaVersion,
+		Target:         p.Target,
+		Config:         p.Config,
+		Priority:       p.Priority,
+		Enabled:        p.Enabled,
+		Version:        p.Version,
+		CreatedAt:      p.CreatedAt,
+		UpdatedAt:      p.UpdatedAt,
 	}
 }
 
@@ -85,17 +97,20 @@ func toPoliciesResponse(policies []domain.Policy) []*PolicyResponse {
 
 func toPolicyVersionResponse(version *domain.PolicyVersion) *PolicyVersionResponse {
 	return &PolicyVersionResponse{
-		Version:       version.Version,
-		UpstreamID:    version.UpstreamID,
-		Name:          version.Name,
-		Type:          string(version.Type),
-		Action:        string(version.Action),
-		SchemaVersion: version.SchemaVersion,
-		Target:        version.Target,
-		Config:        version.Config,
-		Priority:      version.Priority,
-		Enabled:       version.Enabled,
-		CreatedAt:     version.CreatedAt,
+		Version:        version.Version,
+		OrganizationID: version.OrganizationID,
+		Scope:          version.ScopeKind,
+		WaiverMode:     version.WaiverMode,
+		UpstreamID:     version.UpstreamID,
+		Name:           version.Name,
+		Type:           string(version.Type),
+		Action:         string(version.Action),
+		SchemaVersion:  version.SchemaVersion,
+		Target:         version.Target,
+		Config:         version.Config,
+		Priority:       version.Priority,
+		Enabled:        version.Enabled,
+		CreatedAt:      version.CreatedAt,
 	}
 }
 

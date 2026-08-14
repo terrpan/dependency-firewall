@@ -151,6 +151,7 @@ func policyFromRequest(rawTenantID, id string, req policyRequest) (*domain.Polic
 	return &domain.Policy{
 		ID:            id,
 		TenantID:      tenantID,
+		WaiverMode:    req.WaiverMode,
 		UpstreamID:    trimOptionalString(req.UpstreamID),
 		Name:          req.Name,
 		Type:          req.Type,

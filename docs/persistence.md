@@ -21,6 +21,8 @@ Graph roots are unique by Tenant, Organization, optional Team, upstream, package
 
 Policy and upstream repositories expose explicit operational-scope readers. Effective policy reads combine account policies with the selected Organization and never add Team-authored policies. Visible upstream reads combine Tenant-shared, matching Organization-shared, and exact Team-local records. Bundle revisions and split-mode bundle DTOs include these scope fields. Legacy bundle-backed reads deliberately expose only account policies and Tenant-shared upstreams.
 
+The scoped control-plane services treat policy and upstream ownership as immutable. Updates include the original scope and ancestry in their repository predicate, while scoped API reads and deletes reject inherited resources that are visible but not owned by the selected route.
+
 ### Reserved or unwired schema
 
 The migrations also create:

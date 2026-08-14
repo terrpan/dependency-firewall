@@ -152,7 +152,9 @@ The one-release unauthenticated data-plane compatibility mode is restricted to t
 
 New APIs are account/Organization/Team nested and derive Tenant from verified context. Request bodies cannot set `tenant_id`. Responses include explicit scope, `organization_id`, and optional `team_id`.
 
-Legacy Tenant and flat resource endpoints remain behind compatibility mode for one release. They emit `Deprecation` and `Sunset` headers, and in authenticated mode any supplied Tenant must match the verified account. Self-service Tenant deletion remains disabled until retention, billing, and recovery semantics exist.
+Scoped policy CRUD is exposed at `/api/v1/account/policies` and `/api/v1/organizations/{organization_id}/policies`. Scoped upstream CRUD is exposed at the corresponding account and Organization paths plus `/api/v1/organizations/{organization_id}/teams/{team_id}/upstreams`. Account mutations require a fresh external membership check; Organization and Team mutations use current local authorization assignments. Update and delete operations first load the resource through its exact ownership scope, so an inherited or visible resource cannot be mutated through a narrower route.
+
+Legacy Tenant and flat resource endpoints remain behind compatibility mode for one release, and in authenticated mode any supplied Tenant must match the verified account. The compatibility-release contract requires `Deprecation` and `Sunset` headers before those routes are retired. Self-service Tenant deletion remains disabled until retention, billing, and recovery semantics exist.
 
 ## Audit requirements
 
