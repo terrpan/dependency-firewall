@@ -292,28 +292,34 @@ type bundleTenantHashInput struct {
 }
 
 type bundlePolicyHashInput struct {
-	ID            string               `json:"id"`
-	UpstreamID    string               `json:"upstream_id,omitempty"`
-	Name          string               `json:"name"`
-	Type          domain.PolicyType    `json:"type"`
-	Action        domain.PolicyAction  `json:"action"`
-	SchemaVersion int                  `json:"schema_version"`
-	Config        json.RawMessage      `json:"config"`
-	Target        *domain.PolicyTarget `json:"target,omitempty"`
-	Priority      int                  `json:"priority"`
-	Enabled       bool                 `json:"enabled"`
-	Version       int                  `json:"version"`
-	UpdatedAt     time.Time            `json:"updated_at"`
+	ID             string                  `json:"id"`
+	OrganizationID string                  `json:"organization_id,omitempty"`
+	ScopeKind      domain.PolicyScope      `json:"scope_kind"`
+	WaiverMode     domain.PolicyWaiverMode `json:"waiver_mode"`
+	UpstreamID     string                  `json:"upstream_id,omitempty"`
+	Name           string                  `json:"name"`
+	Type           domain.PolicyType       `json:"type"`
+	Action         domain.PolicyAction     `json:"action"`
+	SchemaVersion  int                     `json:"schema_version"`
+	Config         json.RawMessage         `json:"config"`
+	Target         *domain.PolicyTarget    `json:"target,omitempty"`
+	Priority       int                     `json:"priority"`
+	Enabled        bool                    `json:"enabled"`
+	Version        int                     `json:"version"`
+	UpdatedAt      time.Time               `json:"updated_at"`
 }
 
 type bundleUpstreamHashInput struct {
-	ID           string                      `json:"id"`
-	Name         string                      `json:"name"`
-	Ecosystem    domain.EcosystemType        `json:"ecosystem"`
-	BaseURL      string                      `json:"base_url"`
-	Capabilities []domain.UpstreamCapability `json:"capabilities"`
-	Auth         bundleUpstreamAuthHashInput `json:"auth"`
-	UpdatedAt    time.Time                   `json:"updated_at"`
+	ID             string                      `json:"id"`
+	OrganizationID string                      `json:"organization_id,omitempty"`
+	TeamID         string                      `json:"team_id,omitempty"`
+	ScopeKind      domain.UpstreamScope        `json:"scope_kind"`
+	Name           string                      `json:"name"`
+	Ecosystem      domain.EcosystemType        `json:"ecosystem"`
+	BaseURL        string                      `json:"base_url"`
+	Capabilities   []domain.UpstreamCapability `json:"capabilities"`
+	Auth           bundleUpstreamAuthHashInput `json:"auth"`
+	UpdatedAt      time.Time                   `json:"updated_at"`
 }
 
 type bundleUpstreamAuthHashInput struct {
@@ -335,44 +341,54 @@ func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []
 	}
 
 	for i := range policies {
-		config, err := json.Marshal(policies[i].Config)
+		policyDef := policies[i]
+		policyDef.NormalizeScope()
+		config, err := json.Marshal(policyDef.Config)
 		if err != nil {
 			return "", fmt.Errorf("marshalling policy config: %w", err)
 		}
 
 		payload.Policies = append(payload.Policies, bundlePolicyHashInput{
-			ID:            policies[i].ID,
-			UpstreamID:    policies[i].UpstreamID,
-			Name:          policies[i].Name,
-			Type:          policies[i].Type,
-			Action:        policies[i].Action,
-			SchemaVersion: policies[i].SchemaVersion,
-			Config:        config,
-			Target:        policies[i].Target,
-			Priority:      policies[i].Priority,
-			Enabled:       policies[i].Enabled,
-			Version:       policies[i].Version,
-			UpdatedAt:     policies[i].UpdatedAt,
+			ID:             policyDef.ID,
+			OrganizationID: policyDef.OrganizationID,
+			ScopeKind:      policyDef.ScopeKind,
+			WaiverMode:     policyDef.WaiverMode,
+			UpstreamID:     policyDef.UpstreamID,
+			Name:           policyDef.Name,
+			Type:           policyDef.Type,
+			Action:         policyDef.Action,
+			SchemaVersion:  policyDef.SchemaVersion,
+			Config:         config,
+			Target:         policyDef.Target,
+			Priority:       policyDef.Priority,
+			Enabled:        policyDef.Enabled,
+			Version:        policyDef.Version,
+			UpdatedAt:      policyDef.UpdatedAt,
 		})
 	}
 
 	for i := range upstreams {
+		upstream := upstreams[i]
+		upstream.NormalizeScope()
 		auth := bundleUpstreamAuthHashInput{Type: domain.UpstreamAuthNone}
-		if upstreams[i].Auth != nil {
+		if upstream.Auth != nil {
 			auth = bundleUpstreamAuthHashInput{
-				Type:      upstreams[i].Auth.Type,
-				Username:  upstreams[i].Auth.Username,
-				UpdatedAt: upstreams[i].Auth.UpdatedAt,
+				Type:      upstream.Auth.Type,
+				Username:  upstream.Auth.Username,
+				UpdatedAt: upstream.Auth.UpdatedAt,
 			}
 		}
 		payload.Upstreams = append(payload.Upstreams, bundleUpstreamHashInput{
-			ID:           upstreams[i].ID,
-			Name:         upstreams[i].Name,
-			Ecosystem:    upstreams[i].Ecosystem,
-			BaseURL:      upstreams[i].BaseURL,
-			Capabilities: append([]domain.UpstreamCapability(nil), upstreams[i].Capabilities...),
-			Auth:         auth,
-			UpdatedAt:    upstreams[i].UpdatedAt,
+			ID:             upstream.ID,
+			OrganizationID: upstream.OrganizationID,
+			TeamID:         upstream.TeamID,
+			ScopeKind:      upstream.ScopeKind,
+			Name:           upstream.Name,
+			Ecosystem:      upstream.Ecosystem,
+			BaseURL:        upstream.BaseURL,
+			Capabilities:   append([]domain.UpstreamCapability(nil), upstream.Capabilities...),
+			Auth:           auth,
+			UpdatedAt:      upstream.UpdatedAt,
 		})
 	}
 

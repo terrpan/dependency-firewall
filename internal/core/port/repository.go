@@ -84,6 +84,15 @@ type PolicyRepository interface {
 	Delete(ctx context.Context, tenantID, id string, force bool) error
 }
 
+// ScopedPolicyRepository reads policies through an operational scope. Account
+// policies are inherited by every Organization; Team does not add policies.
+type ScopedPolicyRepository interface {
+	GetEffectiveByID(ctx context.Context, scope domain.AuthorizationScope, id string) (*domain.Policy, error)
+	ListAccount(ctx context.Context, tenantID string) ([]domain.Policy, error)
+	ListByOrganization(ctx context.Context, tenantID, organizationID string) ([]domain.Policy, error)
+	ListEffective(ctx context.Context, scope domain.AuthorizationScope) ([]domain.Policy, error)
+}
+
 // PolicyRevisionRepository records tenant policy-set revisions for audit.
 type PolicyRevisionRepository interface {
 	Create(ctx context.Context, revision *domain.PolicySetRevision) error
@@ -157,6 +166,13 @@ type UpstreamRepository interface {
 	Create(ctx context.Context, upstream *domain.Upstream) error
 	Update(ctx context.Context, upstream *domain.Upstream) error
 	Delete(ctx context.Context, tenantID, id string) error
+}
+
+// ScopedUpstreamRepository resolves registries visible to an operational scope.
+type ScopedUpstreamRepository interface {
+	GetVisibleByID(ctx context.Context, scope domain.AuthorizationScope, id string) (*domain.Upstream, error)
+	ListVisible(ctx context.Context, scope domain.AuthorizationScope) ([]domain.Upstream, error)
+	ResolveVisibleByEcosystem(ctx context.Context, scope domain.AuthorizationScope, ecosystem domain.EcosystemType) (*domain.Upstream, error)
 }
 
 // BundleUpstreamRepository lists upstreams for bundle construction without

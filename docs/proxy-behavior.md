@@ -45,7 +45,7 @@ u-{upstream_id}.{tenant_id}.{firewall-host}
 
 `X-Tenant-ID` remains useful for direct tests and non-Docker clients. It is not an authentication mechanism.
 
-Existing npm paths and OCI hostnames remain stable. In the target authenticated mode their Tenant must match the credential Tenant. When more than one visible upstream can serve an ecosystem, an unqualified route fails as ambiguous instead of selecting the most recently updated upstream.
+Existing npm paths and OCI hostnames remain stable. In the target authenticated mode their Tenant must match the credential Tenant. Upstream resolution no longer selects the most recently updated registry: an unqualified route fails as ambiguous whenever more than one upstream is visible. Compatibility requests see only Tenant-shared upstreams; credential-bound Organization/Team visibility is applied once data-plane credentials select that scope.
 
 ## npm protocol behavior
 

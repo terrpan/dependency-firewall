@@ -1327,15 +1327,124 @@ func TestUpstreamRepository_GetByEcosystem(t *testing.T) {
 	npm.Name = "npm-refreshed"
 	require.NoError(t, repo.Update(ctx, npm))
 
-	gotNPM, err := repo.GetByEcosystem(ctx, tenant.ID, domain.EcosystemNPM)
-	require.NoError(t, err)
-	assert.Equal(t, npm.ID, gotNPM.ID)
-	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemNPM), gotNPM.Capabilities)
+	_, err := repo.GetByEcosystem(ctx, tenant.ID, domain.EcosystemNPM)
+	require.ErrorIs(t, err, domain.ErrUpstreamAmbiguous)
 
 	gotOCI, err := repo.GetByEcosystem(ctx, tenant.ID, domain.EcosystemOCI)
 	require.NoError(t, err)
 	assert.Equal(t, oci.ID, gotOCI.ID)
 	assert.Equal(t, domain.DefaultUpstreamCapabilities(domain.EcosystemOCI), gotOCI.Capabilities)
+}
+
+func TestScopedPolicyAndUpstreamRepositories_EnforceOperationalVisibility(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "scoped-resources")
+
+	organizationRepo := postgres.NewOrganizationRepository(pool)
+	organizationOne := &domain.Organization{TenantID: tenant.ID, Name: "Engineering", Status: domain.OrganizationStatusActive}
+	organizationTwo := &domain.Organization{TenantID: tenant.ID, Name: "Finance", Status: domain.OrganizationStatusActive}
+	require.NoError(t, organizationRepo.Create(ctx, organizationOne))
+	require.NoError(t, organizationRepo.Create(ctx, organizationTwo))
+	teamRepo := postgres.NewTeamRepository(pool)
+	teamOne := &domain.Team{TenantID: tenant.ID, OrganizationID: organizationOne.ID, Name: "Platform"}
+	teamTwo := &domain.Team{TenantID: tenant.ID, OrganizationID: organizationOne.ID, Name: "Product"}
+	require.NoError(t, teamRepo.Create(ctx, teamOne))
+	require.NoError(t, teamRepo.Create(ctx, teamTwo))
+
+	policyRepo := postgres.NewPolicyRepository(pool)
+	newPolicy := func(scope domain.PolicyScope, organizationID, name string) *domain.Policy {
+		return &domain.Policy{
+			TenantID:       tenant.ID,
+			OrganizationID: organizationID,
+			ScopeKind:      scope,
+			Name:           name,
+			Type:           domain.PolicyTypeCVSSThreshold,
+			Action:         domain.PolicyActionDeny,
+			Config:         &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7)},
+			Enabled:        true,
+		}
+	}
+	accountPolicy := newPolicy(domain.PolicyScopeAccount, "", "same-name")
+	organizationOnePolicy := newPolicy(domain.PolicyScopeOrganization, organizationOne.ID, "same-name")
+	organizationTwoPolicy := newPolicy(domain.PolicyScopeOrganization, organizationTwo.ID, "same-name")
+	require.NoError(t, policyRepo.Create(ctx, accountPolicy))
+	require.NoError(t, policyRepo.Create(ctx, organizationOnePolicy))
+	require.NoError(t, policyRepo.Create(ctx, organizationTwoPolicy))
+
+	effective, err := policyRepo.ListEffective(ctx, domain.AuthorizationScope{
+		TenantID:       tenant.ID,
+		OrganizationID: organizationOne.ID,
+		TeamID:         teamOne.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, effective, 2)
+	assert.ElementsMatch(t, []string{accountPolicy.ID, organizationOnePolicy.ID}, []string{effective[0].ID, effective[1].ID})
+	_, err = policyRepo.GetEffectiveByID(ctx, domain.AuthorizationScope{
+		TenantID:       tenant.ID,
+		OrganizationID: organizationTwo.ID,
+	}, organizationOnePolicy.ID)
+	require.ErrorIs(t, err, domain.ErrPolicyNotFound)
+
+	organizationOnePolicy.WaiverMode = domain.PolicyWaiverApprovalRequired
+	require.NoError(t, policyRepo.Update(ctx, organizationOnePolicy))
+	versions, err := policyRepo.ListVersions(ctx, tenant.ID, organizationOnePolicy.ID, 3)
+	require.NoError(t, err)
+	require.NotEmpty(t, versions)
+	assert.Equal(t, organizationOne.ID, versions[0].OrganizationID)
+	assert.Equal(t, domain.PolicyScopeOrganization, versions[0].ScopeKind)
+	assert.Equal(t, domain.PolicyWaiverApprovalRequired, versions[0].WaiverMode)
+	policyScopeMove := *organizationOnePolicy
+	policyScopeMove.OrganizationID = organizationTwo.ID
+	require.ErrorIs(t, policyRepo.Update(ctx, &policyScopeMove), domain.ErrPolicyNotFound)
+
+	upstreamRepo := postgres.NewUpstreamRepository(pool)
+	newUpstream := func(scope domain.UpstreamScope, organizationID, teamID, name string) *domain.Upstream {
+		return &domain.Upstream{
+			TenantID:       tenant.ID,
+			OrganizationID: organizationID,
+			TeamID:         teamID,
+			ScopeKind:      scope,
+			Name:           name,
+			Ecosystem:      domain.EcosystemNPM,
+			BaseURL:        "https://" + name + ".example.test",
+		}
+	}
+	tenantUpstream := newUpstream(domain.UpstreamScopeTenantShared, "", "", "tenant")
+	organizationUpstream := newUpstream(domain.UpstreamScopeOrganizationShared, organizationOne.ID, "", "organization")
+	teamOneUpstream := newUpstream(domain.UpstreamScopeTeamLocal, organizationOne.ID, teamOne.ID, "team-one")
+	teamTwoUpstream := newUpstream(domain.UpstreamScopeTeamLocal, organizationOne.ID, teamTwo.ID, "team-two")
+	for _, upstream := range []*domain.Upstream{tenantUpstream, organizationUpstream, teamOneUpstream, teamTwoUpstream} {
+		require.NoError(t, upstreamRepo.Create(ctx, upstream))
+	}
+	upstreamScopeMove := *teamOneUpstream
+	upstreamScopeMove.TeamID = teamTwo.ID
+	require.ErrorIs(t, upstreamRepo.Update(ctx, &upstreamScopeMove), domain.ErrUpstreamNotFound)
+
+	visible, err := upstreamRepo.ListVisible(ctx, domain.AuthorizationScope{
+		TenantID:       tenant.ID,
+		OrganizationID: organizationOne.ID,
+		TeamID:         teamOne.ID,
+	})
+	require.NoError(t, err)
+	require.Len(t, visible, 3)
+	assert.ElementsMatch(t, []string{tenantUpstream.ID, organizationUpstream.ID, teamOneUpstream.ID}, []string{visible[0].ID, visible[1].ID, visible[2].ID})
+	_, err = upstreamRepo.GetVisibleByID(ctx, domain.AuthorizationScope{
+		TenantID:       tenant.ID,
+		OrganizationID: organizationOne.ID,
+		TeamID:         teamOne.ID,
+	}, teamTwoUpstream.ID)
+	require.ErrorIs(t, err, domain.ErrUpstreamNotFound)
+	_, err = upstreamRepo.ResolveVisibleByEcosystem(ctx, domain.AuthorizationScope{
+		TenantID:       tenant.ID,
+		OrganizationID: organizationOne.ID,
+		TeamID:         teamOne.ID,
+	}, domain.EcosystemNPM)
+	require.ErrorIs(t, err, domain.ErrUpstreamAmbiguous)
+
+	compatibilityUpstream, err := upstreamRepo.GetByEcosystem(ctx, tenant.ID, domain.EcosystemNPM)
+	require.NoError(t, err)
+	assert.Equal(t, tenantUpstream.ID, compatibilityUpstream.ID)
 }
 
 func TestUpstreamRepository_TenantIsolation(t *testing.T) {

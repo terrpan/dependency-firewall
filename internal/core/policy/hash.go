@@ -11,35 +11,48 @@ import (
 )
 
 type hashablePolicy struct {
-	UpstreamID    string               `json:"upstream_id,omitempty"`
-	Name          string               `json:"name"`
-	Type          domain.PolicyType    `json:"type"`
-	Action        domain.PolicyAction  `json:"action"`
-	SchemaVersion int                  `json:"schema_version"`
-	Priority      int                  `json:"priority"`
-	Enabled       bool                 `json:"enabled"`
-	Config        any                  `json:"config"`
-	Target        *domain.PolicyTarget `json:"target,omitempty"`
+	ScopeKind      domain.PolicyScope      `json:"scope_kind"`
+	OrganizationID string                  `json:"organization_id,omitempty"`
+	WaiverMode     domain.PolicyWaiverMode `json:"waiver_mode"`
+	UpstreamID     string                  `json:"upstream_id,omitempty"`
+	Name           string                  `json:"name"`
+	Type           domain.PolicyType       `json:"type"`
+	Action         domain.PolicyAction     `json:"action"`
+	SchemaVersion  int                     `json:"schema_version"`
+	Priority       int                     `json:"priority"`
+	Enabled        bool                    `json:"enabled"`
+	Config         any                     `json:"config"`
+	Target         *domain.PolicyTarget    `json:"target,omitempty"`
 }
 
 // HashPolicies returns a canonical SHA-256 for the effective tenant policy set.
 func HashPolicies(policies []domain.Policy) (string, error) {
 	hashable := make([]hashablePolicy, len(policies))
 	for i, p := range policies {
+		p.NormalizeScope()
 		hashable[i] = hashablePolicy{
-			UpstreamID:    p.UpstreamID,
-			Name:          p.Name,
-			Type:          p.Type,
-			Action:        p.Action,
-			SchemaVersion: mustNormalizePolicySchemaVersion(p.Type, p.SchemaVersion),
-			Priority:      p.Priority,
-			Enabled:       p.Enabled,
-			Config:        p.Config,
-			Target:        p.Target,
+			ScopeKind:      p.ScopeKind,
+			OrganizationID: p.OrganizationID,
+			WaiverMode:     p.WaiverMode,
+			UpstreamID:     p.UpstreamID,
+			Name:           p.Name,
+			Type:           p.Type,
+			Action:         p.Action,
+			SchemaVersion:  mustNormalizePolicySchemaVersion(p.Type, p.SchemaVersion),
+			Priority:       p.Priority,
+			Enabled:        p.Enabled,
+			Config:         p.Config,
+			Target:         p.Target,
 		}
 	}
 
 	sort.Slice(hashable, func(i, j int) bool {
+		if hashable[i].ScopeKind != hashable[j].ScopeKind {
+			return hashable[i].ScopeKind < hashable[j].ScopeKind
+		}
+		if hashable[i].OrganizationID != hashable[j].OrganizationID {
+			return hashable[i].OrganizationID < hashable[j].OrganizationID
+		}
 		if hashable[i].Priority != hashable[j].Priority {
 			return hashable[i].Priority < hashable[j].Priority
 		}

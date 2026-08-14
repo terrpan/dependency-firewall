@@ -42,14 +42,17 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 		Revision:    "rev-1",
 		GeneratedAt: now,
 		Policies: []domain.Policy{{
-			ID:            "policy-1",
-			TenantID:      "tenant-1",
-			UpstreamID:    "upstream-1",
-			Name:          "targeted cvss",
-			Type:          domain.PolicyTypeCVSSThreshold,
-			Action:        domain.PolicyActionDeny,
-			SchemaVersion: 1,
-			Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: testFloat64Ptr(7)},
+			ID:             "policy-1",
+			TenantID:       "tenant-1",
+			OrganizationID: "organization-1",
+			ScopeKind:      domain.PolicyScopeOrganization,
+			WaiverMode:     domain.PolicyWaiverApprovalRequired,
+			UpstreamID:     "upstream-1",
+			Name:           "targeted cvss",
+			Type:           domain.PolicyTypeCVSSThreshold,
+			Action:         domain.PolicyActionDeny,
+			SchemaVersion:  1,
+			Config:         &domain.CVSSThresholdPolicyConfig{MaxCVSS: testFloat64Ptr(7)},
 			Target: &domain.PolicyTarget{
 				DependencyScopes: []domain.DependencyScope{
 					domain.DependencyScopeDirect,
@@ -64,13 +67,16 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 			UpdatedAt: now,
 		}},
 		Upstreams: []domain.Upstream{{
-			ID:        "upstream-1",
-			TenantID:  "tenant-1",
-			Name:      "public-oci",
-			Ecosystem: domain.EcosystemOCI,
-			BaseURL:   "https://ghcr.io",
-			CreatedAt: now.Add(-time.Hour),
-			UpdatedAt: now,
+			ID:             "upstream-1",
+			TenantID:       "tenant-1",
+			OrganizationID: "organization-1",
+			TeamID:         "team-1",
+			ScopeKind:      domain.UpstreamScopeTeamLocal,
+			Name:           "public-oci",
+			Ecosystem:      domain.EcosystemOCI,
+			BaseURL:        "https://ghcr.io",
+			CreatedAt:      now.Add(-time.Hour),
+			UpdatedAt:      now,
 		}},
 	}
 
@@ -89,8 +95,14 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 		restored.Policies[0].Target.DependencyScopes,
 	)
 	assert.Equal(t, domain.DependencyUnknownWarn, restored.Policies[0].Target.OnUnknown)
+	assert.Equal(t, domain.PolicyScopeOrganization, restored.Policies[0].ScopeKind)
+	assert.Equal(t, "organization-1", restored.Policies[0].OrganizationID)
+	assert.Equal(t, domain.PolicyWaiverApprovalRequired, restored.Policies[0].WaiverMode)
 	require.Len(t, restored.Upstreams, 1)
 	assert.Nil(t, restored.Upstreams[0].Auth)
+	assert.Equal(t, domain.UpstreamScopeTeamLocal, restored.Upstreams[0].ScopeKind)
+	assert.Equal(t, "organization-1", restored.Upstreams[0].OrganizationID)
+	assert.Equal(t, "team-1", restored.Upstreams[0].TeamID)
 }
 
 func TestBundleToDomainFallsBackToLegacyTenantID(t *testing.T) {

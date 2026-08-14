@@ -150,6 +150,28 @@ func TestBundleServiceRevisionChangesWhenTenantRuntimeChanges(t *testing.T) {
 	assert.NotEqual(t, first.Revision, second.Revision)
 }
 
+func TestBundleRevisionTracksPolicyAndUpstreamScope(t *testing.T) {
+	t.Parallel()
+
+	tenant := domain.Tenant{ID: "tenant-1"}
+	policyOne := domain.Policy{ID: "policy-1", ScopeKind: domain.PolicyScopeOrganization, OrganizationID: "organization-1"}
+	policyTwo := policyOne
+	policyTwo.OrganizationID = "organization-2"
+	upstreamOne := domain.Upstream{ID: "upstream-1", ScopeKind: domain.UpstreamScopeTeamLocal, OrganizationID: "organization-1", TeamID: "team-1"}
+	upstreamTwo := upstreamOne
+	upstreamTwo.TeamID = "team-2"
+
+	first, err := bundleRevision(tenant, []domain.Policy{policyOne}, []domain.Upstream{upstreamOne})
+	require.NoError(t, err)
+	policyChanged, err := bundleRevision(tenant, []domain.Policy{policyTwo}, []domain.Upstream{upstreamOne})
+	require.NoError(t, err)
+	upstreamChanged, err := bundleRevision(tenant, []domain.Policy{policyOne}, []domain.Upstream{upstreamTwo})
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first, policyChanged)
+	assert.NotEqual(t, first, upstreamChanged)
+}
+
 func TestBundleServiceRejectsAuthenticatedUpstreamsWhenAuthDisabled(t *testing.T) {
 	t.Parallel()
 

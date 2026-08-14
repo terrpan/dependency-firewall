@@ -45,6 +45,10 @@ func WithAuthenticatedUpstreams(allowed bool) UpstreamServiceOption {
 
 // Create creates an upstream.
 func (s *UpstreamService) Create(ctx context.Context, upstream *domain.Upstream) error {
+	upstream.NormalizeScope()
+	if err := upstream.ValidateScope(); err != nil {
+		return err
+	}
 	capabilities, err := domain.NormalizeUpstreamCapabilities(upstream.Ecosystem, upstream.Capabilities)
 	if err != nil {
 		return err
@@ -80,6 +84,10 @@ func (s *UpstreamService) ListByTenant(ctx context.Context, tenantID string) ([]
 
 // Update updates an upstream.
 func (s *UpstreamService) Update(ctx context.Context, upstream *domain.Upstream) error {
+	upstream.NormalizeScope()
+	if err := upstream.ValidateScope(); err != nil {
+		return err
+	}
 	capabilities, err := domain.NormalizeUpstreamCapabilities(upstream.Ecosystem, upstream.Capabilities)
 	if err != nil {
 		return err

@@ -251,16 +251,22 @@ func (m *mockPolicyRepo) Delete(_ context.Context, tenantID, id string, force bo
 
 func (m *mockPolicyRepo) recordVersionLocked(policy *domain.Policy) {
 	version := domain.PolicyVersion{
-		PolicyID:      policy.ID,
-		Version:       policy.Version,
-		Name:          policy.Name,
-		Type:          policy.Type,
-		Action:        policy.Action,
-		SchemaVersion: policy.SchemaVersion,
-		Config:        policy.Config,
-		Priority:      policy.Priority,
-		Enabled:       policy.Enabled,
-		CreatedAt:     time.Now(),
+		TenantID:       policy.TenantID,
+		PolicyID:       policy.ID,
+		OrganizationID: policy.OrganizationID,
+		ScopeKind:      policy.ScopeKind,
+		WaiverMode:     policy.WaiverMode,
+		Version:        policy.Version,
+		UpstreamID:     policy.UpstreamID,
+		Name:           policy.Name,
+		Type:           policy.Type,
+		Action:         policy.Action,
+		SchemaVersion:  policy.SchemaVersion,
+		Config:         policy.Config,
+		Target:         policy.Target,
+		Priority:       policy.Priority,
+		Enabled:        policy.Enabled,
+		CreatedAt:      time.Now(),
 	}
 	history := append([]domain.PolicyVersion{version}, m.versions[policy.ID]...)
 	if len(history) > domain.MaxRetainedPolicyVersions {

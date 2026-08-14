@@ -22,9 +22,9 @@ func (r *PolicyRepository) ListVersions(
 		limit = retainedPolicyVersionCount
 	}
 
-	rows, err := r.pool.Query(
-		ctx,
-		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
+	rows, err := r.pool.Query(ctx,
+		`SELECT pv.tenant_id, pv.policy_id, pv.version, pv.organization_id, pv.scope_kind, pv.waiver_mode,
+		        pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
 		 FROM policy_versions pv
 		 JOIN policies p ON p.id = pv.policy_id
 		 WHERE p.tenant_id = $1 AND pv.policy_id = $2
@@ -107,9 +107,9 @@ func (r *PolicyRepository) loadRollbackPolicyVersion(
 	tenantID, policyID string,
 	version int,
 ) (domain.PolicyVersion, error) {
-	target, err := scanPolicyVersion(tx.QueryRow(
-		ctx,
-		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
+	target, err := scanPolicyVersion(tx.QueryRow(ctx,
+		`SELECT pv.tenant_id, pv.policy_id, pv.version, pv.organization_id, pv.scope_kind, pv.waiver_mode,
+		        pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
 		 FROM policy_versions pv
 		 JOIN policies p ON p.id = pv.policy_id
 		 WHERE p.tenant_id = $1 AND pv.policy_id = $2 AND pv.version = $3`,
@@ -131,17 +131,20 @@ func (r *PolicyRepository) loadRollbackPolicyVersion(
 
 func rollbackPolicy(tenantID, policyID string, target domain.PolicyVersion) domain.Policy {
 	return domain.Policy{
-		ID:            policyID,
-		TenantID:      tenantID,
-		UpstreamID:    target.UpstreamID,
-		Name:          target.Name,
-		Type:          target.Type,
-		Action:        target.Action,
-		SchemaVersion: target.SchemaVersion,
-		Config:        target.Config,
-		Target:        target.Target,
-		Priority:      target.Priority,
-		Enabled:       target.Enabled,
+		ID:             policyID,
+		TenantID:       tenantID,
+		OrganizationID: target.OrganizationID,
+		ScopeKind:      target.ScopeKind,
+		WaiverMode:     target.WaiverMode,
+		UpstreamID:     target.UpstreamID,
+		Name:           target.Name,
+		Type:           target.Type,
+		Action:         target.Action,
+		SchemaVersion:  target.SchemaVersion,
+		Config:         target.Config,
+		Target:         target.Target,
+		Priority:       target.Priority,
+		Enabled:        target.Enabled,
 	}
 }
 
@@ -167,10 +170,14 @@ func updatePolicyForRollback(
 ) error {
 	err := tx.QueryRow(ctx,
 		`UPDATE policies
-		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, target = $7, priority = $8,
-		     enabled = $9, version = version + 1, updated_at = now()
-		 WHERE tenant_id = $10 AND id = $11
+		 SET waiver_mode = $1, upstream_id = $2,
+		     name = $3, type = $4, action = $5, schema_version = $6, config = $7, target = $8,
+		     priority = $9, enabled = $10, version = version + 1, updated_at = now()
+		 WHERE tenant_id = $11 AND id = $12
+		   AND scope_kind = $13
+		   AND organization_id IS NOT DISTINCT FROM NULLIF($14, '')::uuid
 		 RETURNING version, created_at, updated_at`,
+		target.WaiverMode,
 		nullableString(target.UpstreamID),
 		target.Name,
 		target.Type,
@@ -182,6 +189,8 @@ func updatePolicyForRollback(
 		target.Enabled,
 		tenantID,
 		policyID,
+		target.ScopeKind,
+		target.OrganizationID,
 	).Scan(&policyDef.Version, &policyDef.CreatedAt, &policyDef.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -199,13 +208,16 @@ func recordRollbackPolicyVersion(
 	policyDef domain.Policy,
 	configJSON, targetJSON []byte,
 ) error {
-	_, err := tx.Exec(
-		ctx,
-		`INSERT INTO policy_versions (tenant_id, policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+	_, err := tx.Exec(ctx,
+		`INSERT INTO policy_versions
+		    (tenant_id, policy_id, version, organization_id, scope_kind, waiver_mode, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		tenantID,
 		policyID,
 		policyDef.Version,
+		nullableString(policyDef.OrganizationID),
+		policyDef.ScopeKind,
+		policyDef.WaiverMode,
 		nullableString(policyDef.UpstreamID),
 		policyDef.Name,
 		policyDef.Type,

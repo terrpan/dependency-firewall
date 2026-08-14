@@ -26,8 +26,9 @@ func (r *PolicyRepository) GetByID(ctx context.Context, tenantID, id string) (*d
 	}
 
 	for i := range bundle.Policies {
-		if bundle.Policies[i].ID == id {
-			policyDef := bundle.Policies[i]
+		policyDef := bundle.Policies[i]
+		policyDef.NormalizeScope()
+		if policyDef.ID == id && policyDef.ScopeKind == domain.PolicyScopeAccount {
 			return &policyDef, nil
 		}
 	}
@@ -42,8 +43,72 @@ func (r *PolicyRepository) ListByTenant(ctx context.Context, tenantID string) ([
 		return nil, err
 	}
 
-	policies := make([]domain.Policy, len(bundle.Policies))
-	copy(policies, bundle.Policies)
+	policies := make([]domain.Policy, 0, len(bundle.Policies))
+	for i := range bundle.Policies {
+		policyDef := bundle.Policies[i]
+		policyDef.NormalizeScope()
+		if policyDef.ScopeKind == domain.PolicyScopeAccount {
+			policies = append(policies, policyDef)
+		}
+	}
+	return policies, nil
+}
+
+func (r *PolicyRepository) GetEffectiveByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Policy, error) {
+	policies, err := r.ListEffective(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	for i := range policies {
+		if policies[i].ID == id {
+			return &policies[i], nil
+		}
+	}
+	return nil, domain.ErrPolicyNotFound
+}
+
+func (r *PolicyRepository) ListAccount(ctx context.Context, tenantID string) ([]domain.Policy, error) {
+	return r.ListByTenant(ctx, tenantID)
+}
+
+func (r *PolicyRepository) ListByOrganization(
+	ctx context.Context,
+	tenantID string,
+	organizationID string,
+) ([]domain.Policy, error) {
+	return r.listPolicies(ctx, domain.AuthorizationScope{TenantID: tenantID, OrganizationID: organizationID}, false)
+}
+
+func (r *PolicyRepository) ListEffective(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+) ([]domain.Policy, error) {
+	return r.listPolicies(ctx, scope, true)
+}
+
+func (r *PolicyRepository) listPolicies(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	includeAccount bool,
+) ([]domain.Policy, error) {
+	bundle, err := r.provider.GetTenantBundle(ctx, scope.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	policies := make([]domain.Policy, 0, len(bundle.Policies))
+	for i := range bundle.Policies {
+		policyDef := bundle.Policies[i]
+		policyDef.NormalizeScope()
+		isAccount := includeAccount && policyDef.ScopeKind == domain.PolicyScopeAccount
+		isOrganization := policyDef.ScopeKind == domain.PolicyScopeOrganization && policyDef.OrganizationID == scope.OrganizationID
+		if isAccount || isOrganization {
+			policies = append(policies, policyDef)
+		}
+	}
 	return policies, nil
 }
 
@@ -95,8 +160,9 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 	}
 
 	for i := range bundle.Upstreams {
-		if bundle.Upstreams[i].ID == id {
-			upstream := bundle.Upstreams[i]
+		upstream := bundle.Upstreams[i]
+		upstream.NormalizeScope()
+		if upstream.ID == id && upstream.ScopeKind == domain.UpstreamScopeTenantShared {
 			return &upstream, nil
 		}
 	}
@@ -105,25 +171,29 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 }
 
 // GetByEcosystem returns the active upstream for the requested ecosystem from the tenant bundle.
-func (r *UpstreamRepository) GetByEcosystem(
+func (r *UpstreamRepository) GetByEcosystem(ctx context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+	return r.ResolveVisibleByEcosystem(ctx, domain.AuthorizationScope{TenantID: tenantID}, eco)
+}
+
+func (r *UpstreamRepository) ResolveVisibleByEcosystem(
 	ctx context.Context,
-	tenantID string,
+	scope domain.AuthorizationScope,
 	eco domain.EcosystemType,
 ) (*domain.Upstream, error) {
-	bundle, err := r.provider.GetTenantBundle(ctx, tenantID)
+	upstreams, err := r.ListVisible(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
-
 	var selected *domain.Upstream
-	for i := range bundle.Upstreams {
-		if bundle.Upstreams[i].Ecosystem != eco {
+	for i := range upstreams {
+		if upstreams[i].Ecosystem != eco {
 			continue
 		}
-		if selected == nil || bundle.Upstreams[i].UpdatedAt.After(selected.UpdatedAt) {
-			candidate := bundle.Upstreams[i]
-			selected = &candidate
+		if selected != nil {
+			return nil, domain.ErrUpstreamAmbiguous
 		}
+		candidate := upstreams[i]
+		selected = &candidate
 	}
 	if selected == nil {
 		return nil, domain.ErrUpstreamNotFound
@@ -133,14 +203,57 @@ func (r *UpstreamRepository) GetByEcosystem(
 
 // ListByTenant returns all upstreams from the tenant bundle.
 func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) ([]domain.Upstream, error) {
-	bundle, err := r.provider.GetTenantBundle(ctx, tenantID)
+	return r.ListVisible(ctx, domain.AuthorizationScope{TenantID: tenantID})
+}
+
+func (r *UpstreamRepository) GetVisibleByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Upstream, error) {
+	upstreams, err := r.ListVisible(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	for i := range upstreams {
+		if upstreams[i].ID == id {
+			return &upstreams[i], nil
+		}
+	}
+	return nil, domain.ErrUpstreamNotFound
+}
+
+func (r *UpstreamRepository) ListVisible(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+) ([]domain.Upstream, error) {
+	bundle, err := r.provider.GetTenantBundle(ctx, scope.TenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	upstreams := make([]domain.Upstream, len(bundle.Upstreams))
-	copy(upstreams, bundle.Upstreams)
+	upstreams := make([]domain.Upstream, 0, len(bundle.Upstreams))
+	for i := range bundle.Upstreams {
+		upstream := bundle.Upstreams[i]
+		upstream.NormalizeScope()
+		if upstreamVisible(upstream, scope) {
+			upstreams = append(upstreams, upstream)
+		}
+	}
 	return upstreams, nil
+}
+
+func upstreamVisible(upstream domain.Upstream, scope domain.AuthorizationScope) bool {
+	switch upstream.ScopeKind {
+	case domain.UpstreamScopeTenantShared:
+		return true
+	case domain.UpstreamScopeOrganizationShared:
+		return upstream.OrganizationID == scope.OrganizationID
+	case domain.UpstreamScopeTeamLocal:
+		return upstream.OrganizationID == scope.OrganizationID && upstream.TeamID == scope.TeamID
+	default:
+		return false
+	}
 }
 
 // Create always fails. Upstreams are registered in the control plane; the proxy only reads the ones its tenant bundle

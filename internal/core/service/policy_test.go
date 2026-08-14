@@ -174,16 +174,22 @@ func (s *spyPolicyServiceRepo) recordVersion(policy domain.Policy) {
 		s.versions = make(map[string][]domain.PolicyVersion)
 	}
 	version := domain.PolicyVersion{
-		PolicyID:      policy.ID,
-		Version:       policy.Version,
-		Name:          policy.Name,
-		Type:          policy.Type,
-		Action:        policy.Action,
-		SchemaVersion: policy.SchemaVersion,
-		Config:        policy.Config,
-		Priority:      policy.Priority,
-		Enabled:       policy.Enabled,
-		CreatedAt:     time.Now(),
+		TenantID:       policy.TenantID,
+		PolicyID:       policy.ID,
+		OrganizationID: policy.OrganizationID,
+		ScopeKind:      policy.ScopeKind,
+		WaiverMode:     policy.WaiverMode,
+		Version:        policy.Version,
+		UpstreamID:     policy.UpstreamID,
+		Name:           policy.Name,
+		Type:           policy.Type,
+		Action:         policy.Action,
+		SchemaVersion:  policy.SchemaVersion,
+		Config:         policy.Config,
+		Target:         policy.Target,
+		Priority:       policy.Priority,
+		Enabled:        policy.Enabled,
+		CreatedAt:      time.Now(),
 	}
 	history := append([]domain.PolicyVersion{version}, s.versions[policy.ID]...)
 	if len(history) > domain.MaxRetainedPolicyVersions {
@@ -213,11 +219,40 @@ func (s *stubPolicyUpstreamRepository) GetByID(_ context.Context, tenantID, id s
 	return &copyUpstream, nil
 }
 
-func (s *stubPolicyUpstreamRepository) GetByEcosystem(
-	context.Context,
-	string,
-	domain.EcosystemType,
+func (s *stubPolicyUpstreamRepository) GetVisibleByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
 ) (*domain.Upstream, error) {
+	upstream, err := s.GetByID(ctx, scope.TenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	upstream.NormalizeScope()
+	switch upstream.ScopeKind {
+	case domain.UpstreamScopeTenantShared:
+		return upstream, nil
+	case domain.UpstreamScopeOrganizationShared:
+		if upstream.OrganizationID == scope.OrganizationID {
+			return upstream, nil
+		}
+	case domain.UpstreamScopeTeamLocal:
+		if upstream.OrganizationID == scope.OrganizationID && upstream.TeamID == scope.TeamID {
+			return upstream, nil
+		}
+	}
+	return nil, domain.ErrUpstreamNotFound
+}
+
+func (s *stubPolicyUpstreamRepository) ListVisible(context.Context, domain.AuthorizationScope) ([]domain.Upstream, error) {
+	return nil, nil
+}
+
+func (s *stubPolicyUpstreamRepository) ResolveVisibleByEcosystem(context.Context, domain.AuthorizationScope, domain.EcosystemType) (*domain.Upstream, error) {
+	return nil, domain.ErrUpstreamNotFound
+}
+
+func (s *stubPolicyUpstreamRepository) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
 	return nil, domain.ErrUpstreamNotFound
 }
 
@@ -562,6 +597,41 @@ func TestPolicyService_RejectsIncompatibleUpstreamCapabilities(t *testing.T) {
 	assert.Zero(t, repo.createCalls)
 	assert.Empty(t, cache.invalidatedTenants)
 	assert.Empty(t, revisions.revisions)
+}
+
+func TestPolicyService_RejectsUpstreamOutsidePolicyScope(t *testing.T) {
+	repo := &spyPolicyServiceRepo{}
+	revisions := &spyPolicyRevisionRepository{}
+	cache := &spyPolicyDecisionCache{}
+	upstreams := &stubPolicyUpstreamRepository{
+		upstreams: map[string]domain.Upstream{
+			"tenant-1:team-upstream": {
+				ID:             "team-upstream",
+				TenantID:       "tenant-1",
+				OrganizationID: "organization-1",
+				TeamID:         "team-1",
+				ScopeKind:      domain.UpstreamScopeTeamLocal,
+				Ecosystem:      domain.EcosystemNPM,
+				Capabilities:   domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
+			},
+		},
+	}
+	service := NewPolicyService(repo, revisions, cache, upstreams)
+
+	err := service.Create(context.Background(), &domain.Policy{
+		TenantID:       "tenant-1",
+		OrganizationID: "organization-1",
+		ScopeKind:      domain.PolicyScopeOrganization,
+		UpstreamID:     "team-upstream",
+		Name:           "org-policy",
+		Type:           domain.PolicyTypeCVSSThreshold,
+		Action:         domain.PolicyActionDeny,
+		Config:         &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7)},
+		Enabled:        true,
+	})
+
+	require.ErrorIs(t, err, domain.ErrUpstreamNotFound)
+	assert.Zero(t, repo.createCalls)
 }
 
 func TestPolicyService_ImportPolicies_InvalidatesAfterPartialMutationFailure(t *testing.T) {

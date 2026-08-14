@@ -168,25 +168,29 @@ func newBundleResponse(bundle *domain.TenantBundle) *GetTenantBundleResponse {
 }
 
 func toBundlePolicy(policy domain.Policy) (BundlePolicy, error) {
+	policy.NormalizeScope()
 	config, err := json.Marshal(policy.Config)
 	if err != nil {
 		return BundlePolicy{}, fmt.Errorf("marshalling bundle policy config: %w", err)
 	}
 	return BundlePolicy{
-		ID:            policy.ID,
-		TenantID:      policy.TenantID,
-		UpstreamID:    policy.UpstreamID,
-		Name:          policy.Name,
-		Type:          policy.Type,
-		Action:        policy.Action,
-		SchemaVersion: policy.SchemaVersion,
-		Config:        config,
-		Target:        policy.Target,
-		Priority:      policy.Priority,
-		Enabled:       policy.Enabled,
-		Version:       policy.Version,
-		CreatedAt:     policy.CreatedAt.UTC().Format(bundlewire.TimeLayout),
-		UpdatedAt:     policy.UpdatedAt.UTC().Format(bundlewire.TimeLayout),
+		ID:             policy.ID,
+		TenantID:       policy.TenantID,
+		OrganizationID: policy.OrganizationID,
+		ScopeKind:      policy.ScopeKind,
+		WaiverMode:     policy.WaiverMode,
+		UpstreamID:     policy.UpstreamID,
+		Name:           policy.Name,
+		Type:           policy.Type,
+		Action:         policy.Action,
+		SchemaVersion:  policy.SchemaVersion,
+		Config:         config,
+		Target:         policy.Target,
+		Priority:       policy.Priority,
+		Enabled:        policy.Enabled,
+		Version:        policy.Version,
+		CreatedAt:      policy.CreatedAt.UTC().Format(bundlewire.TimeLayout),
+		UpdatedAt:      policy.UpdatedAt.UTC().Format(bundlewire.TimeLayout),
 	}, nil
 }
 
@@ -196,20 +200,24 @@ func (s *Server) toBundleUpstream(
 	upstream domain.Upstream,
 	peerPublicKey *crypto.PublicKey,
 ) (BundleUpstream, error) {
+	upstream.NormalizeScope()
 	auth, err := s.toBundleUpstreamAuth(ctx, tenantID, upstream, peerPublicKey)
 	if err != nil {
 		return BundleUpstream{}, err
 	}
 	return BundleUpstream{
-		ID:           upstream.ID,
-		TenantID:     upstream.TenantID,
-		Name:         upstream.Name,
-		Ecosystem:    upstream.Ecosystem,
-		BaseURL:      upstream.BaseURL,
-		Capabilities: domain.UpstreamCapabilityStrings(upstream.EffectiveCapabilities()),
-		Auth:         auth,
-		CreatedAt:    upstream.CreatedAt.UTC().Format(bundlewire.TimeLayout),
-		UpdatedAt:    upstream.UpdatedAt.UTC().Format(bundlewire.TimeLayout),
+		ID:             upstream.ID,
+		TenantID:       upstream.TenantID,
+		OrganizationID: upstream.OrganizationID,
+		TeamID:         upstream.TeamID,
+		ScopeKind:      upstream.ScopeKind,
+		Name:           upstream.Name,
+		Ecosystem:      upstream.Ecosystem,
+		BaseURL:        upstream.BaseURL,
+		Capabilities:   domain.UpstreamCapabilityStrings(upstream.EffectiveCapabilities()),
+		Auth:           auth,
+		CreatedAt:      upstream.CreatedAt.UTC().Format(bundlewire.TimeLayout),
+		UpdatedAt:      upstream.UpdatedAt.UTC().Format(bundlewire.TimeLayout),
 	}, nil
 }
 

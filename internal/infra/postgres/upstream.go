@@ -42,17 +42,19 @@ func NewUpstreamRepository(pool *pgxpool.Pool, codecs ...secretCodec) *UpstreamR
 // GetByID returns an upstream scoped to the given tenant.
 func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (*domain.Upstream, error) {
 	var u domain.Upstream
+	var organizationID sql.NullString
+	var teamID sql.NullString
 	var capabilities []string
 	var authType string
 	var authUsername sql.NullString
 	var authSecret sql.NullString
 	var authUpdatedAt sql.NullTime
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, tenant_id, name, ecosystem, base_url, capabilities,
+		`SELECT id, tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url, capabilities,
 		        auth_type, auth_username, auth_secret::text, auth_updated_at,
 		        created_at, updated_at
 		 FROM upstreams WHERE tenant_id = $1 AND id = $2`, tenantID, id,
-	).Scan(&u.ID, &u.TenantID, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.TenantID, &organizationID, &teamID, &u.ScopeKind, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrUpstreamNotFound
@@ -60,6 +62,7 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 		return nil, fmt.Errorf("querying upstream by id: %w", err)
 	}
 	u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
+	attachUpstreamScope(&u, organizationID, teamID)
 	if err := r.attachAuth(&u, authType, authUsername, authSecret, authUpdatedAt); err != nil {
 		return nil, err
 	}
@@ -67,33 +70,63 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 }
 
 // GetByEcosystem returns the active upstream for a tenant's ecosystem.
-func (r *UpstreamRepository) GetByEcosystem(
+func (r *UpstreamRepository) GetByEcosystem(ctx context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+	return r.ResolveVisibleByEcosystem(ctx, domain.AuthorizationScope{TenantID: tenantID}, eco)
+}
+
+// ResolveVisibleByEcosystem returns the only registry visible for an ecosystem.
+func (r *UpstreamRepository) ResolveVisibleByEcosystem(
 	ctx context.Context,
-	tenantID string,
+	scope domain.AuthorizationScope,
 	eco domain.EcosystemType,
 ) (*domain.Upstream, error) {
+	upstreams, err := r.listVisible(ctx, scope, &eco)
+	if err != nil {
+		return nil, err
+	}
+	if len(upstreams) == 0 {
+		return nil, domain.ErrUpstreamNotFound
+	}
+	if len(upstreams) > 1 {
+		return nil, domain.ErrUpstreamAmbiguous
+	}
+	return &upstreams[0], nil
+}
+
+// GetVisibleByID returns an upstream only when the operational scope can use it.
+func (r *UpstreamRepository) GetVisibleByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Upstream, error) {
 	var u domain.Upstream
+	var organizationID sql.NullString
+	var teamID sql.NullString
 	var capabilities []string
 	var authType string
 	var authUsername sql.NullString
 	var authSecret sql.NullString
 	var authUpdatedAt sql.NullTime
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, tenant_id, name, ecosystem, base_url, capabilities,
+		`SELECT id, tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url, capabilities,
 		        auth_type, auth_username, auth_secret::text, auth_updated_at,
 		        created_at, updated_at
 		 FROM upstreams
-		 WHERE tenant_id = $1 AND ecosystem = $2
-		 ORDER BY updated_at DESC, created_at DESC
-		 LIMIT 1`, tenantID, string(eco),
-	).Scan(&u.ID, &u.TenantID, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt)
+		 WHERE tenant_id = $1 AND id = $2
+		   AND (
+		       scope_kind = 'tenant_shared'
+		       OR (scope_kind = 'organization_shared' AND organization_id = NULLIF($3, '')::uuid)
+		       OR (scope_kind = 'team_local' AND organization_id = NULLIF($3, '')::uuid AND team_id = NULLIF($4, '')::uuid)
+		   )`, scope.TenantID, id, scope.OrganizationID, scope.TeamID,
+	).Scan(&u.ID, &u.TenantID, &organizationID, &teamID, &u.ScopeKind, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrUpstreamNotFound
 		}
-		return nil, fmt.Errorf("querying upstream by ecosystem: %w", err)
+		return nil, fmt.Errorf("querying visible upstream by id: %w", err)
 	}
 	u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
+	attachUpstreamScope(&u, organizationID, teamID)
 	if err := r.attachAuth(&u, authType, authUsername, authSecret, authUpdatedAt); err != nil {
 		return nil, err
 	}
@@ -102,11 +135,52 @@ func (r *UpstreamRepository) GetByEcosystem(
 
 // ListByTenant returns all upstreams for a tenant.
 func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) ([]domain.Upstream, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, tenant_id, name, ecosystem, base_url, capabilities,
+	return r.listByQuery(ctx,
+		`SELECT id, tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url, capabilities,
 		        auth_type, auth_username, auth_secret::text, auth_updated_at,
 		        created_at, updated_at
 		 FROM upstreams WHERE tenant_id = $1 ORDER BY created_at`, tenantID)
+}
+
+// ListVisible returns all registries visible to an operational scope.
+func (r *UpstreamRepository) ListVisible(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+) ([]domain.Upstream, error) {
+	return r.listVisible(ctx, scope, nil)
+}
+
+func (r *UpstreamRepository) listVisible(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem *domain.EcosystemType,
+) ([]domain.Upstream, error) {
+	var ecosystemValue any
+	if ecosystem != nil {
+		ecosystemValue = string(*ecosystem)
+	}
+	return r.listByQuery(ctx,
+		`SELECT id, tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url, capabilities,
+		        auth_type, auth_username, auth_secret::text, auth_updated_at,
+		        created_at, updated_at
+		 FROM upstreams
+		 WHERE tenant_id = $1
+		   AND ($4::text IS NULL OR ecosystem = $4)
+		   AND (
+		       scope_kind = 'tenant_shared'
+		       OR (scope_kind = 'organization_shared' AND organization_id = NULLIF($2, '')::uuid)
+		       OR (scope_kind = 'team_local' AND organization_id = NULLIF($2, '')::uuid AND team_id = NULLIF($3, '')::uuid)
+		   )
+		 ORDER BY scope_kind, created_at`, scope.TenantID, scope.OrganizationID, scope.TeamID, ecosystemValue)
+}
+
+func (r *UpstreamRepository) listByQuery(
+	ctx context.Context,
+	query string,
+	args ...any,
+) ([]domain.Upstream, error) {
+	rows, err := r.pool.Query(ctx,
+		query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing upstreams by tenant: %w", err)
 	}
@@ -115,28 +189,18 @@ func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) 
 	var upstreams []domain.Upstream
 	for rows.Next() {
 		var u domain.Upstream
+		var organizationID sql.NullString
+		var teamID sql.NullString
 		var capabilities []string
 		var authType string
 		var authUsername sql.NullString
 		var authSecret sql.NullString
 		var authUpdatedAt sql.NullTime
-		if err := rows.Scan(
-			&u.ID,
-			&u.TenantID,
-			&u.Name,
-			&u.Ecosystem,
-			&u.BaseURL,
-			&capabilities,
-			&authType,
-			&authUsername,
-			&authSecret,
-			&authUpdatedAt,
-			&u.CreatedAt,
-			&u.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(&u.ID, &u.TenantID, &organizationID, &teamID, &u.ScopeKind, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning upstream row: %w", err)
 		}
 		u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
+		attachUpstreamScope(&u, organizationID, teamID)
 		if err := r.attachAuth(&u, authType, authUsername, authSecret, authUpdatedAt); err != nil {
 			return nil, err
 		}
@@ -153,7 +217,7 @@ func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) 
 // decide whether a secret must be rewrapped for the bundle recipient.
 func (r *UpstreamRepository) ListBundleByTenant(ctx context.Context, tenantID string) ([]domain.Upstream, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, tenant_id, name, ecosystem, base_url, capabilities,
+		`SELECT id, tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url, capabilities,
 		        auth_type, auth_username, auth_updated_at,
 		        created_at, updated_at
 		 FROM upstreams WHERE tenant_id = $1 ORDER BY created_at`, tenantID)
@@ -165,26 +229,17 @@ func (r *UpstreamRepository) ListBundleByTenant(ctx context.Context, tenantID st
 	var upstreams []domain.Upstream
 	for rows.Next() {
 		var u domain.Upstream
+		var organizationID sql.NullString
+		var teamID sql.NullString
 		var capabilities []string
 		var authType string
 		var authUsername sql.NullString
 		var authUpdatedAt sql.NullTime
-		if err := rows.Scan(
-			&u.ID,
-			&u.TenantID,
-			&u.Name,
-			&u.Ecosystem,
-			&u.BaseURL,
-			&capabilities,
-			&authType,
-			&authUsername,
-			&authUpdatedAt,
-			&u.CreatedAt,
-			&u.UpdatedAt,
-		); err != nil {
+		if err := rows.Scan(&u.ID, &u.TenantID, &organizationID, &teamID, &u.ScopeKind, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning bundle upstream row: %w", err)
 		}
 		u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
+		attachUpstreamScope(&u, organizationID, teamID)
 		attachBundleAuthMetadata(&u, authType, authUsername, authUpdatedAt)
 		upstreams = append(upstreams, u)
 	}
@@ -196,18 +251,25 @@ func (r *UpstreamRepository) ListBundleByTenant(ctx context.Context, tenantID st
 
 // Create inserts a new upstream and sets its generated ID.
 func (r *UpstreamRepository) Create(ctx context.Context, upstream *domain.Upstream) error {
+	upstream.NormalizeScope()
+	if err := upstream.ValidateScope(); err != nil {
+		return err
+	}
 	authType, authUsername, authSecret, err := r.authColumns(upstream.Auth)
 	if err != nil {
 		return err
 	}
 
 	var authUpdatedAt sql.NullTime
-	err = r.pool.QueryRow(
-		ctx,
-		`INSERT INTO upstreams (tenant_id, name, ecosystem, base_url, capabilities, auth_type, auth_username, auth_secret, auth_updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, CASE WHEN $6 = 'none' THEN NULL ELSE now() END)
+	err = r.pool.QueryRow(ctx,
+		`INSERT INTO upstreams
+		    (tenant_id, organization_id, team_id, scope_kind, name, ecosystem, base_url, capabilities, auth_type, auth_username, auth_secret, auth_updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, CASE WHEN $9 = 'none' THEN NULL ELSE now() END)
 		 RETURNING id, auth_updated_at, created_at, updated_at`,
 		upstream.TenantID,
+		nullableString(upstream.OrganizationID),
+		nullableString(upstream.TeamID),
+		upstream.ScopeKind,
 		upstream.Name,
 		upstream.Ecosystem,
 		upstream.BaseURL,
@@ -230,6 +292,10 @@ func (r *UpstreamRepository) Create(ctx context.Context, upstream *domain.Upstre
 
 // Update modifies an existing upstream scoped to its tenant.
 func (r *UpstreamRepository) Update(ctx context.Context, upstream *domain.Upstream) error {
+	upstream.NormalizeScope()
+	if err := upstream.ValidateScope(); err != nil {
+		return err
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("starting upstream update: %w", err)
@@ -237,10 +303,21 @@ func (r *UpstreamRepository) Update(ctx context.Context, upstream *domain.Upstre
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	ct, err := tx.Exec(ctx,
-		`UPDATE upstreams SET name = $1, ecosystem = $2, base_url = $3, capabilities = $4, updated_at = now()
-		 WHERE tenant_id = $5 AND id = $6`,
-		upstream.Name, upstream.Ecosystem, upstream.BaseURL, domain.UpstreamCapabilityStrings(upstream.Capabilities),
-		upstream.TenantID, upstream.ID,
+		`UPDATE upstreams
+		 SET name = $1, ecosystem = $2, base_url = $3, capabilities = $4, updated_at = now()
+		 WHERE tenant_id = $5 AND id = $6
+		   AND scope_kind = $7
+		   AND organization_id IS NOT DISTINCT FROM NULLIF($8, '')::uuid
+		   AND team_id IS NOT DISTINCT FROM NULLIF($9, '')::uuid`,
+		upstream.Name,
+		upstream.Ecosystem,
+		upstream.BaseURL,
+		domain.UpstreamCapabilityStrings(upstream.Capabilities),
+		upstream.TenantID,
+		upstream.ID,
+		upstream.ScopeKind,
+		upstream.OrganizationID,
+		upstream.TeamID,
 	)
 	if err != nil {
 		if mappedErr := mapConstraintError(err, upstreamConstraintErrors); mappedErr != err {
@@ -419,6 +496,15 @@ func attachBundleAuthMetadata(
 		auth.UpdatedAt = updatedAt.Time
 	}
 	upstream.Auth = auth
+}
+
+func attachUpstreamScope(upstream *domain.Upstream, organizationID, teamID sql.NullString) {
+	if organizationID.Valid {
+		upstream.OrganizationID = organizationID.String
+	}
+	if teamID.Valid {
+		upstream.TeamID = teamID.String
+	}
 }
 
 func clearBytes(value []byte) {

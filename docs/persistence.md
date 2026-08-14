@@ -19,6 +19,8 @@ Only `control-plane` and `all-in-one` modes open PostgreSQL and run migrations. 
 
 Graph roots are unique by Tenant, Organization, optional Team, upstream, package name, and version. Enqueue is therefore idempotent within one operational scope. A completed row is reused rather than refreshed; there is no invalidation/refresh operation. Failed rows become claimable again after their fixed retry time.
 
+Policy and upstream repositories expose explicit operational-scope readers. Effective policy reads combine account policies with the selected Organization and never add Team-authored policies. Visible upstream reads combine Tenant-shared, matching Organization-shared, and exact Team-local records. Bundle revisions and split-mode bundle DTOs include these scope fields. Legacy bundle-backed reads deliberately expose only account policies and Tenant-shared upstreams.
+
 ### Reserved or unwired schema
 
 The migrations also create:

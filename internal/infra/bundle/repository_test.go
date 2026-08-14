@@ -11,7 +11,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
-func TestUpstreamRepositoryGetByEcosystemSelectsMostRecent(t *testing.T) {
+func TestUpstreamRepositoryGetByEcosystemRejectsAmbiguousFallback(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now().UTC()
@@ -25,9 +25,46 @@ func TestUpstreamRepositoryGetByEcosystemSelectsMostRecent(t *testing.T) {
 		},
 	})
 
-	upstream, err := repo.GetByEcosystem(context.Background(), "tenant-1", domain.EcosystemNPM)
+	_, err := repo.GetByEcosystem(context.Background(), "tenant-1", domain.EcosystemNPM)
+	require.ErrorIs(t, err, domain.ErrUpstreamAmbiguous)
+}
+
+func TestScopedBundleRepositoriesFilterVisibilityAndPolicyInheritance(t *testing.T) {
+	t.Parallel()
+
+	provider := staticProvider{bundle: &domain.TenantBundle{
+		TenantID: "tenant-1",
+		Policies: []domain.Policy{
+			{ID: "account", TenantID: "tenant-1", ScopeKind: domain.PolicyScopeAccount},
+			{ID: "org-1", TenantID: "tenant-1", ScopeKind: domain.PolicyScopeOrganization, OrganizationID: "organization-1"},
+			{ID: "org-2", TenantID: "tenant-1", ScopeKind: domain.PolicyScopeOrganization, OrganizationID: "organization-2"},
+		},
+		Upstreams: []domain.Upstream{
+			{ID: "tenant", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeTenantShared},
+			{ID: "org-1", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeOrganizationShared, OrganizationID: "organization-1"},
+			{ID: "team-1", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeTeamLocal, OrganizationID: "organization-1", TeamID: "team-1"},
+			{ID: "team-2", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeTeamLocal, OrganizationID: "organization-1", TeamID: "team-2"},
+		},
+	}}
+
+	policyRepo := NewPolicyRepository(provider)
+	policies, err := policyRepo.ListEffective(context.Background(), domain.AuthorizationScope{
+		TenantID:       "tenant-1",
+		OrganizationID: "organization-1",
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "newer", upstream.ID)
+	require.Len(t, policies, 2)
+	assert.ElementsMatch(t, []string{"account", "org-1"}, []string{policies[0].ID, policies[1].ID})
+
+	upstreamRepo := NewUpstreamRepository(provider)
+	upstreams, err := upstreamRepo.ListVisible(context.Background(), domain.AuthorizationScope{
+		TenantID:       "tenant-1",
+		OrganizationID: "organization-1",
+		TeamID:         "team-1",
+	})
+	require.NoError(t, err)
+	require.Len(t, upstreams, 3)
+	assert.ElementsMatch(t, []string{"tenant", "org-1", "team-1"}, []string{upstreams[0].ID, upstreams[1].ID, upstreams[2].ID})
 }
 
 func TestPolicyRepositoryListByTenantReturnsBundlePolicies(t *testing.T) {

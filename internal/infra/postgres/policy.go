@@ -32,12 +32,10 @@ func NewPolicyRepository(pool *pgxpool.Pool) *PolicyRepository {
 
 // GetByID returns a policy scoped to the given tenant.
 func (r *PolicyRepository) GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error) {
-	p, err := scanPolicy(r.pool.QueryRow(
-		ctx,
-		`SELECT id, tenant_id, upstream_id, name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
-		 FROM policies WHERE tenant_id = $1 AND id = $2`,
-		tenantID,
-		id,
+	p, err := scanPolicy(r.pool.QueryRow(ctx,
+		`SELECT id, tenant_id, organization_id, scope_kind, waiver_mode, upstream_id,
+		        name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
+		 FROM policies WHERE tenant_id = $1 AND id = $2`, tenantID, id,
 	))
 	if err != nil {
 		if errors.Is(err, errNoPolicyRow) {
@@ -50,12 +48,78 @@ func (r *PolicyRepository) GetByID(ctx context.Context, tenantID, id string) (*d
 
 // ListByTenant returns all policies for a tenant, ordered by priority.
 func (r *PolicyRepository) ListByTenant(ctx context.Context, tenantID string) ([]domain.Policy, error) {
-	rows, err := r.pool.Query(
-		ctx,
-		`SELECT id, tenant_id, upstream_id, name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
-		 FROM policies WHERE tenant_id = $1 ORDER BY priority`,
-		tenantID,
-	)
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, tenant_id, organization_id, scope_kind, waiver_mode, upstream_id,
+		        name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
+		 FROM policies WHERE tenant_id = $1 ORDER BY priority`, tenantID)
+	return collectPolicies(rows, err)
+}
+
+// ListAccount returns only Tenant-owned account policies.
+func (r *PolicyRepository) ListAccount(ctx context.Context, tenantID string) ([]domain.Policy, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, tenant_id, organization_id, scope_kind, waiver_mode, upstream_id,
+		        name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
+		 FROM policies
+		 WHERE tenant_id = $1 AND scope_kind = 'account'
+		 ORDER BY priority, name`, tenantID)
+	return collectPolicies(rows, err)
+}
+
+// ListByOrganization returns only policies owned by one Organization.
+func (r *PolicyRepository) ListByOrganization(
+	ctx context.Context,
+	tenantID string,
+	organizationID string,
+) ([]domain.Policy, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, tenant_id, organization_id, scope_kind, waiver_mode, upstream_id,
+		        name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
+		 FROM policies
+		 WHERE tenant_id = $1 AND scope_kind = 'organization' AND organization_id = $2
+		 ORDER BY priority, name`, tenantID, organizationID)
+	return collectPolicies(rows, err)
+}
+
+// ListEffective returns account policies plus policies for the selected Organization.
+func (r *PolicyRepository) ListEffective(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+) ([]domain.Policy, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, tenant_id, organization_id, scope_kind, waiver_mode, upstream_id,
+		        name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
+		 FROM policies
+		 WHERE tenant_id = $1
+		   AND (scope_kind = 'account' OR (scope_kind = 'organization' AND organization_id = NULLIF($2, '')::uuid))
+		 ORDER BY priority, scope_kind, name`, scope.TenantID, scope.OrganizationID)
+	return collectPolicies(rows, err)
+}
+
+// GetEffectiveByID returns one account or matching Organization policy.
+func (r *PolicyRepository) GetEffectiveByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Policy, error) {
+	policyDef, err := scanPolicy(r.pool.QueryRow(ctx,
+		`SELECT id, tenant_id, organization_id, scope_kind, waiver_mode, upstream_id,
+		        name, type, action, schema_version, config, target, priority, enabled, version, created_at, updated_at
+		 FROM policies
+		 WHERE tenant_id = $1 AND id = $2
+		   AND (scope_kind = 'account' OR (scope_kind = 'organization' AND organization_id = NULLIF($3, '')::uuid))`,
+		scope.TenantID, id, scope.OrganizationID,
+	))
+	if err != nil {
+		if errors.Is(err, errNoPolicyRow) {
+			return nil, domain.ErrPolicyNotFound
+		}
+		return nil, fmt.Errorf("querying effective policy by id: %w", err)
+	}
+	return policyDef, nil
+}
+
+func collectPolicies(rows pgx.Rows, err error) ([]domain.Policy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing policies: %w", err)
 	}
@@ -77,6 +141,10 @@ func (r *PolicyRepository) ListByTenant(ctx context.Context, tenantID string) ([
 
 // Create inserts a new policy and its initial version.
 func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) error {
+	policy.NormalizeScope()
+	if err := policy.ValidateScope(); err != nil {
+		return err
+	}
 	if policy.SchemaVersion == 0 {
 		normalizedSchemaVersion, err := corepolicy.NormalizeSchemaVersion(policy.Type, policy.SchemaVersion)
 		if err != nil {
@@ -102,12 +170,15 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
-	err = tx.QueryRow(
-		ctx,
-		`INSERT INTO policies (tenant_id, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	err = tx.QueryRow(ctx,
+		`INSERT INTO policies
+		    (tenant_id, organization_id, scope_kind, waiver_mode, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		 RETURNING id, version, created_at, updated_at`,
 		policy.TenantID,
+		nullableString(policy.OrganizationID),
+		policy.ScopeKind,
+		policy.WaiverMode,
 		nullableString(policy.UpstreamID),
 		policy.Name,
 		policy.Type,
@@ -125,13 +196,16 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 		return fmt.Errorf("inserting policy: %w", err)
 	}
 
-	_, err = tx.Exec(
-		ctx,
-		`INSERT INTO policy_versions (tenant_id, policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+	_, err = tx.Exec(ctx,
+		`INSERT INTO policy_versions
+		    (tenant_id, policy_id, version, organization_id, scope_kind, waiver_mode, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		policy.TenantID,
 		policy.ID,
 		policy.Version,
+		nullableString(policy.OrganizationID),
+		policy.ScopeKind,
+		policy.WaiverMode,
 		nullableString(policy.UpstreamID),
 		policy.Name,
 		policy.Type,
@@ -157,6 +231,10 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 
 // Update modifies an existing policy and records a new version.
 func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) error {
+	policy.NormalizeScope()
+	if err := policy.ValidateScope(); err != nil {
+		return err
+	}
 	if policy.SchemaVersion == 0 {
 		normalizedSchemaVersion, err := corepolicy.NormalizeSchemaVersion(policy.Type, policy.SchemaVersion)
 		if err != nil {
@@ -185,12 +263,27 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	var newVersion int
 	err = tx.QueryRow(ctx,
 		`UPDATE policies
-		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, target = $7, priority = $8,
-		     enabled = $9, version = version + 1, updated_at = now()
-		 WHERE tenant_id = $10 AND id = $11
+		 SET waiver_mode = $1, upstream_id = $2,
+		     name = $3, type = $4, action = $5, schema_version = $6, config = $7, target = $8,
+		     priority = $9, enabled = $10, version = version + 1, updated_at = now()
+		 WHERE tenant_id = $11 AND id = $12
+		   AND scope_kind = $13
+		   AND organization_id IS NOT DISTINCT FROM NULLIF($14, '')::uuid
 		 RETURNING version, updated_at`,
-		nullableString(policy.UpstreamID), policy.Name, policy.Type, policy.Action, policy.SchemaVersion, configJSON,
-		nullableJSON(targetJSON, policy.Target != nil), policy.Priority, policy.Enabled, policy.TenantID, policy.ID,
+		policy.WaiverMode,
+		nullableString(policy.UpstreamID),
+		policy.Name,
+		policy.Type,
+		policy.Action,
+		policy.SchemaVersion,
+		configJSON,
+		nullableJSON(targetJSON, policy.Target != nil),
+		policy.Priority,
+		policy.Enabled,
+		policy.TenantID,
+		policy.ID,
+		policy.ScopeKind,
+		policy.OrganizationID,
 	).Scan(&newVersion, &policy.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -203,13 +296,16 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	}
 	policy.Version = newVersion
 
-	_, err = tx.Exec(
-		ctx,
-		`INSERT INTO policy_versions (tenant_id, policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+	_, err = tx.Exec(ctx,
+		`INSERT INTO policy_versions
+		    (tenant_id, policy_id, version, organization_id, scope_kind, waiver_mode, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		policy.TenantID,
 		policy.ID,
 		newVersion,
+		nullableString(policy.OrganizationID),
+		policy.ScopeKind,
+		policy.WaiverMode,
 		nullableString(policy.UpstreamID),
 		policy.Name,
 		policy.Type,

@@ -85,17 +85,20 @@ func (s *PolicyService) ListVersions(ctx context.Context, tenantID, policyID str
 
 	for i := range versions {
 		if err := policy.ValidatePolicy(domain.Policy{
-			ID:            versions[i].PolicyID,
-			TenantID:      tenantID,
-			UpstreamID:    versions[i].UpstreamID,
-			Name:          versions[i].Name,
-			Type:          versions[i].Type,
-			Action:        versions[i].Action,
-			SchemaVersion: versions[i].SchemaVersion,
-			Config:        versions[i].Config,
-			Priority:      versions[i].Priority,
-			Enabled:       versions[i].Enabled,
-			Version:       versions[i].Version,
+			ID:             versions[i].PolicyID,
+			TenantID:       versions[i].TenantID,
+			OrganizationID: versions[i].OrganizationID,
+			ScopeKind:      versions[i].ScopeKind,
+			WaiverMode:     versions[i].WaiverMode,
+			UpstreamID:     versions[i].UpstreamID,
+			Name:           versions[i].Name,
+			Type:           versions[i].Type,
+			Action:         versions[i].Action,
+			SchemaVersion:  versions[i].SchemaVersion,
+			Config:         versions[i].Config,
+			Priority:       versions[i].Priority,
+			Enabled:        versions[i].Enabled,
+			Version:        versions[i].Version,
 		}); err != nil {
 			return nil, fmt.Errorf("validating stored policy version %d: %w", versions[i].Version, err)
 		}
@@ -132,7 +135,14 @@ func (s *PolicyService) RollbackToVersion(
 		if versions[i].Version != version {
 			continue
 		}
-		if err := s.validateUpstreamScope(ctx, tenantID, versions[i].UpstreamID, versions[i].Type); err != nil {
+		if err := s.validateUpstreamScope(ctx, domain.Policy{
+			TenantID:       versions[i].TenantID,
+			OrganizationID: versions[i].OrganizationID,
+			ScopeKind:      versions[i].ScopeKind,
+			WaiverMode:     versions[i].WaiverMode,
+			UpstreamID:     versions[i].UpstreamID,
+			Type:           versions[i].Type,
+		}); err != nil {
 			return nil, fmt.Errorf("validating rolled back policy upstream: %w", err)
 		}
 		break
@@ -205,10 +215,11 @@ func (s *PolicyService) prepareImportedPolicies(
 	for i := range imported {
 		policies[i] = imported[i]
 		policies[i].TenantID = tenantID
+		policies[i].NormalizeScope()
 		if policies[i].Version == 0 {
 			policies[i].Version = 1
 		}
-		if err := s.validateUpstreamScope(ctx, tenantID, policies[i].UpstreamID, policies[i].Type); err != nil {
+		if err := s.validateUpstreamScope(ctx, policies[i]); err != nil {
 			return nil, fmt.Errorf("validating imported policy %q upstream: %w", policies[i].Name, err)
 		}
 	}
@@ -229,7 +240,7 @@ func (s *PolicyService) existingPoliciesByName(
 
 	existingByName := make(map[string]domain.Policy, len(existingPolicies))
 	for i := range existingPolicies {
-		existingByName[existingPolicies[i].Name] = existingPolicies[i]
+		existingByName[policyScopeName(existingPolicies[i])] = existingPolicies[i]
 	}
 	return existingByName, nil
 }
@@ -254,12 +265,13 @@ func (s *PolicyService) persistImportedPolicy(
 	policyDef *domain.Policy,
 	existingByName map[string]domain.Policy,
 ) error {
-	existing, found := existingByName[policyDef.Name]
+	scopeName := policyScopeName(*policyDef)
+	existing, found := existingByName[scopeName]
 	if !found {
 		if err := s.repo.Create(ctx, policyDef); err != nil {
 			return err
 		}
-		existingByName[policyDef.Name] = *policyDef
+		existingByName[scopeName] = *policyDef
 		return nil
 	}
 
@@ -267,7 +279,7 @@ func (s *PolicyService) persistImportedPolicy(
 	if err := s.repo.Update(ctx, policyDef); err != nil {
 		return err
 	}
-	existingByName[policyDef.Name] = *policyDef
+	existingByName[scopeName] = *policyDef
 	return nil
 }
 
@@ -296,6 +308,7 @@ func (s *PolicyService) importPersistenceError(
 }
 
 func (s *PolicyService) validatePolicyMutation(ctx context.Context, policyDef *domain.Policy) error {
+	policyDef.NormalizeScope()
 	if policyDef.SchemaVersion == 0 {
 		normalizedSchemaVersion, err := policy.NormalizeSchemaVersion(policyDef.Type, policyDef.SchemaVersion)
 		if err != nil {
@@ -306,22 +319,36 @@ func (s *PolicyService) validatePolicyMutation(ctx context.Context, policyDef *d
 	if err := policy.ValidatePolicy(*policyDef); err != nil {
 		return err
 	}
-	return s.validateUpstreamScope(ctx, policyDef.TenantID, policyDef.UpstreamID, policyDef.Type)
+	return s.validateUpstreamScope(ctx, *policyDef)
+}
+
+func policyScopeName(policyDef domain.Policy) string {
+	policyDef.NormalizeScope()
+	return string(policyDef.ScopeKind) + "\x00" + policyDef.OrganizationID + "\x00" + policyDef.Name
 }
 
 func (s *PolicyService) validateUpstreamScope(
 	ctx context.Context,
-	tenantID, upstreamID string,
-	policyType domain.PolicyType,
+	policyDef domain.Policy,
 ) error {
-	if upstreamID == "" || s.upstreams == nil {
+	if policyDef.UpstreamID == "" || s.upstreams == nil {
 		return nil
 	}
-	upstream, err := s.upstreams.GetByID(ctx, tenantID, upstreamID)
+
+	var upstream *domain.Upstream
+	var err error
+	if scoped, ok := s.upstreams.(port.ScopedUpstreamRepository); ok {
+		upstream, err = scoped.GetVisibleByID(ctx, domain.AuthorizationScope{
+			TenantID:       policyDef.TenantID,
+			OrganizationID: policyDef.OrganizationID,
+		}, policyDef.UpstreamID)
+	} else {
+		upstream, err = s.upstreams.GetByID(ctx, policyDef.TenantID, policyDef.UpstreamID)
+	}
 	if err != nil {
 		return err
 	}
-	if err := policy.ValidateUpstreamCompatibility(policyType, *upstream); err != nil {
+	if err := policy.ValidateUpstreamCompatibility(policyDef.Type, *upstream); err != nil {
 		return err
 	}
 	return nil

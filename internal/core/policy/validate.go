@@ -10,6 +10,10 @@ import (
 
 // ValidatePolicy validates a single domain policy.
 func ValidatePolicy(p domain.Policy) error {
+	p.NormalizeScope()
+	if err := p.ValidateScope(); err != nil {
+		return invalidPolicyf("%v", err)
+	}
 	if strings.TrimSpace(p.TenantID) == "" {
 		return invalidPolicyf("tenant_id is required")
 	}
@@ -64,10 +68,12 @@ func ValidatePolicy(p domain.Policy) error {
 func ValidatePolicies(policies []domain.Policy) error {
 	seenNames := make(map[string]int, len(policies))
 	for i, p := range policies {
+		p.NormalizeScope()
 		if err := ValidatePolicy(p); err != nil {
 			return fmt.Errorf("%w: policy %d (%q): %v", domain.ErrInvalidPolicy, i, p.Name, err)
 		}
-		if firstIndex, exists := seenNames[p.Name]; exists {
+		scopeName := strings.Join([]string{string(p.ScopeKind), p.OrganizationID, p.Name}, "\x00")
+		if firstIndex, exists := seenNames[scopeName]; exists {
 			return fmt.Errorf(
 				"%w: policy %d (%q): duplicate policy name %q already used by policy %d",
 				domain.ErrInvalidPolicy,
@@ -77,7 +83,7 @@ func ValidatePolicies(policies []domain.Policy) error {
 				firstIndex,
 			)
 		}
-		seenNames[p.Name] = i
+		seenNames[scopeName] = i
 	}
 	return nil
 }

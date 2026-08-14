@@ -33,20 +33,23 @@ const (
 
 // Policy represents a tenant's policy rule.
 type Policy struct {
-	ID            string
-	TenantID      string
-	UpstreamID    string
-	Name          string
-	Type          PolicyType
-	Action        PolicyAction
-	SchemaVersion int
-	Config        PolicyConfig
-	Target        *PolicyTarget
-	Priority      int
-	Enabled       bool
-	Version       int
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             string
+	TenantID       string
+	OrganizationID string
+	ScopeKind      PolicyScope
+	WaiverMode     PolicyWaiverMode
+	UpstreamID     string
+	Name           string
+	Type           PolicyType
+	Action         PolicyAction
+	SchemaVersion  int
+	Config         PolicyConfig
+	Target         *PolicyTarget
+	Priority       int
+	Enabled        bool
+	Version        int
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // MaxRetainedPolicyVersions is how many point-in-time snapshots are kept per policy. Older versions are pruned on
@@ -55,18 +58,22 @@ const MaxRetainedPolicyVersions = 3
 
 // PolicyVersion stores a point-in-time snapshot of a tenant policy.
 type PolicyVersion struct {
-	PolicyID      string
-	Version       int
-	UpstreamID    string
-	Name          string
-	Type          PolicyType
-	Action        PolicyAction
-	SchemaVersion int
-	Config        PolicyConfig
-	Target        *PolicyTarget
-	Priority      int
-	Enabled       bool
-	CreatedAt     time.Time
+	TenantID       string
+	PolicyID       string
+	Version        int
+	OrganizationID string
+	ScopeKind      PolicyScope
+	WaiverMode     PolicyWaiverMode
+	UpstreamID     string
+	Name           string
+	Type           PolicyType
+	Action         PolicyAction
+	SchemaVersion  int
+	Config         PolicyConfig
+	Target         *PolicyTarget
+	Priority       int
+	Enabled        bool
+	CreatedAt      time.Time
 }
 
 // PolicySetRevision records the canonical tenant policy-set hash at a point in time.

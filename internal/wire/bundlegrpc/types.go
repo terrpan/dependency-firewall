@@ -43,32 +43,38 @@ type BundleTenant struct {
 }
 
 type BundlePolicy struct {
-	ID            string               `json:"id"`
-	TenantID      string               `json:"tenant_id"`
-	UpstreamID    string               `json:"upstream_id,omitempty"`
-	Name          string               `json:"name"`
-	Type          domain.PolicyType    `json:"type"`
-	Action        domain.PolicyAction  `json:"action"`
-	SchemaVersion int                  `json:"schema_version"`
-	Config        json.RawMessage      `json:"config"`
-	Target        *domain.PolicyTarget `json:"target,omitempty"`
-	Priority      int                  `json:"priority"`
-	Enabled       bool                 `json:"enabled"`
-	Version       int                  `json:"version"`
-	CreatedAt     string               `json:"created_at"`
-	UpdatedAt     string               `json:"updated_at"`
+	ID             string                  `json:"id"`
+	TenantID       string                  `json:"tenant_id"`
+	OrganizationID string                  `json:"organization_id,omitempty"`
+	ScopeKind      domain.PolicyScope      `json:"scope_kind"`
+	WaiverMode     domain.PolicyWaiverMode `json:"waiver_mode"`
+	UpstreamID     string                  `json:"upstream_id,omitempty"`
+	Name           string                  `json:"name"`
+	Type           domain.PolicyType       `json:"type"`
+	Action         domain.PolicyAction     `json:"action"`
+	SchemaVersion  int                     `json:"schema_version"`
+	Config         json.RawMessage         `json:"config"`
+	Target         *domain.PolicyTarget    `json:"target,omitempty"`
+	Priority       int                     `json:"priority"`
+	Enabled        bool                    `json:"enabled"`
+	Version        int                     `json:"version"`
+	CreatedAt      string                  `json:"created_at"`
+	UpdatedAt      string                  `json:"updated_at"`
 }
 
 type BundleUpstream struct {
-	ID           string               `json:"id"`
-	TenantID     string               `json:"tenant_id"`
-	Name         string               `json:"name"`
-	Ecosystem    domain.EcosystemType `json:"ecosystem"`
-	BaseURL      string               `json:"base_url"`
-	Capabilities []string             `json:"capabilities"`
-	Auth         *BundleUpstreamAuth  `json:"auth,omitempty"`
-	CreatedAt    string               `json:"created_at"`
-	UpdatedAt    string               `json:"updated_at"`
+	ID             string               `json:"id"`
+	TenantID       string               `json:"tenant_id"`
+	OrganizationID string               `json:"organization_id,omitempty"`
+	TeamID         string               `json:"team_id,omitempty"`
+	ScopeKind      domain.UpstreamScope `json:"scope_kind"`
+	Name           string               `json:"name"`
+	Ecosystem      domain.EcosystemType `json:"ecosystem"`
+	BaseURL        string               `json:"base_url"`
+	Capabilities   []string             `json:"capabilities"`
+	Auth           *BundleUpstreamAuth  `json:"auth,omitempty"`
+	CreatedAt      string               `json:"created_at"`
+	UpdatedAt      string               `json:"updated_at"`
 }
 
 type BundleUpstreamAuth struct {
@@ -191,22 +197,30 @@ func (p BundlePolicy) toDomain() (*domain.Policy, error) {
 		p.Target.Normalize()
 	}
 
-	return &domain.Policy{
-		ID:            p.ID,
-		TenantID:      p.TenantID,
-		UpstreamID:    p.UpstreamID,
-		Name:          p.Name,
-		Type:          p.Type,
-		Action:        p.Action,
-		SchemaVersion: p.SchemaVersion,
-		Config:        config,
-		Target:        p.Target,
-		Priority:      p.Priority,
-		Enabled:       p.Enabled,
-		Version:       p.Version,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
-	}, nil
+	policyDef := &domain.Policy{
+		ID:             p.ID,
+		TenantID:       p.TenantID,
+		OrganizationID: p.OrganizationID,
+		ScopeKind:      p.ScopeKind,
+		WaiverMode:     p.WaiverMode,
+		UpstreamID:     p.UpstreamID,
+		Name:           p.Name,
+		Type:           p.Type,
+		Action:         p.Action,
+		SchemaVersion:  p.SchemaVersion,
+		Config:         config,
+		Target:         p.Target,
+		Priority:       p.Priority,
+		Enabled:        p.Enabled,
+		Version:        p.Version,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
+	}
+	policyDef.NormalizeScope()
+	if err := policyDef.ValidateScope(); err != nil {
+		return nil, fmt.Errorf("validating policy scope: %w", err)
+	}
+	return policyDef, nil
 }
 
 func (u BundleUpstream) toDomain() (*domain.Upstream, error) {
@@ -220,14 +234,21 @@ func (u BundleUpstream) toDomain() (*domain.Upstream, error) {
 	}
 
 	upstream := &domain.Upstream{
-		ID:           u.ID,
-		TenantID:     u.TenantID,
-		Name:         u.Name,
-		Ecosystem:    u.Ecosystem,
-		BaseURL:      u.BaseURL,
-		Capabilities: domain.ParseUpstreamCapabilities(u.Capabilities),
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		ID:             u.ID,
+		TenantID:       u.TenantID,
+		OrganizationID: u.OrganizationID,
+		TeamID:         u.TeamID,
+		ScopeKind:      u.ScopeKind,
+		Name:           u.Name,
+		Ecosystem:      u.Ecosystem,
+		BaseURL:        u.BaseURL,
+		Capabilities:   domain.ParseUpstreamCapabilities(u.Capabilities),
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
+	}
+	upstream.NormalizeScope()
+	if err := upstream.ValidateScope(); err != nil {
+		return nil, fmt.Errorf("validating upstream scope: %w", err)
 	}
 	if u.Auth != nil && u.Auth.Type != "" && u.Auth.Type != domain.UpstreamAuthNone {
 		authUpdatedAt, err := parseBundleTime(u.Auth.UpdatedAt)

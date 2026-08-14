@@ -85,3 +85,26 @@ func TestHashPolicies_ChangesWhenPolicyStateChanges(t *testing.T) {
 
 	assert.NotEqual(t, first, second)
 }
+
+func TestHashPolicies_ChangesWhenPolicyScopeChanges(t *testing.T) {
+	base := domain.Policy{
+		Name:       "block-old",
+		ScopeKind:  domain.PolicyScopeOrganization,
+		WaiverMode: domain.PolicyWaiverApprovalRequired,
+		Type:       domain.PolicyTypeMaximumAge,
+		Action:     domain.PolicyActionDeny,
+		Enabled:    true,
+		Config:     &domain.MaximumAgePolicyConfig{MaxAgeDays: hashPtrInt(365)},
+	}
+	firstPolicy := base
+	firstPolicy.OrganizationID = "organization-1"
+	secondPolicy := base
+	secondPolicy.OrganizationID = "organization-2"
+
+	first, err := HashPolicies([]domain.Policy{firstPolicy})
+	require.NoError(t, err)
+	second, err := HashPolicies([]domain.Policy{secondPolicy})
+	require.NoError(t, err)
+
+	assert.NotEqual(t, first, second)
+}

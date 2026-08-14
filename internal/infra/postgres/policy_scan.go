@@ -20,12 +20,16 @@ type rowScanner interface {
 
 func scanPolicy(row rowScanner) (*domain.Policy, error) {
 	var policy domain.Policy
+	var organizationID sql.NullString
 	var upstreamID sql.NullString
 	var configJSON []byte
 	var targetJSON []byte
 	err := row.Scan(
 		&policy.ID,
 		&policy.TenantID,
+		&organizationID,
+		&policy.ScopeKind,
+		&policy.WaiverMode,
 		&upstreamID,
 		&policy.Name,
 		&policy.Type,
@@ -48,6 +52,9 @@ func scanPolicy(row rowScanner) (*domain.Policy, error) {
 	if upstreamID.Valid {
 		policy.UpstreamID = upstreamID.String
 	}
+	if organizationID.Valid {
+		policy.OrganizationID = organizationID.String
+	}
 	config, err := corepolicy.DecodeStoredConfigJSON(policy.Type, policy.SchemaVersion, configJSON)
 	if err != nil {
 		return nil, fmt.Errorf("decoding policy config: %w", err)
@@ -63,12 +70,17 @@ func scanPolicy(row rowScanner) (*domain.Policy, error) {
 
 func scanPolicyVersion(row rowScanner) (domain.PolicyVersion, error) {
 	var version domain.PolicyVersion
+	var organizationID sql.NullString
 	var upstreamID sql.NullString
 	var configJSON []byte
 	var targetJSON []byte
 	if err := row.Scan(
+		&version.TenantID,
 		&version.PolicyID,
 		&version.Version,
+		&organizationID,
+		&version.ScopeKind,
+		&version.WaiverMode,
 		&upstreamID,
 		&version.Name,
 		&version.Type,
@@ -84,6 +96,9 @@ func scanPolicyVersion(row rowScanner) (domain.PolicyVersion, error) {
 	}
 	if upstreamID.Valid {
 		version.UpstreamID = upstreamID.String
+	}
+	if organizationID.Valid {
+		version.OrganizationID = organizationID.String
 	}
 	config, err := corepolicy.DecodeStoredConfigJSON(version.Type, version.SchemaVersion, configJSON)
 	if err != nil {
