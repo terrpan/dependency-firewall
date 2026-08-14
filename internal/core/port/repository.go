@@ -73,6 +73,15 @@ type SessionBootstrapRepository interface {
 	Bootstrap(ctx context.Context, request domain.SessionBootstrapRequest) (*domain.SessionBootstrapResult, error)
 }
 
+// DataPlaneCredentialRepository stores opaque protocol credential verifiers.
+type DataPlaneCredentialRepository interface {
+	Create(ctx context.Context, credential *domain.DataPlaneCredential) error
+	GetByID(ctx context.Context, tenantID, id string) (*domain.DataPlaneCredential, error)
+	ListByScope(ctx context.Context, tenantID, organizationID, teamID string) ([]domain.DataPlaneCredential, error)
+	ListVerifiersByTenant(ctx context.Context, tenantID string) ([]domain.DataPlaneCredentialVerifier, error)
+	Revoke(ctx context.Context, tenantID, id string, at time.Time) error
+}
+
 // PolicyRepository manages policy persistence.
 type PolicyRepository interface {
 	GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error)

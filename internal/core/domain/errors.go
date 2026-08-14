@@ -53,4 +53,8 @@ var (
 	ErrSessionBootstrapRequired       = errors.New("session bootstrap required")
 	ErrSessionBootstrapConflict       = errors.New("session bootstrap conflict")
 	ErrMembershipCheckUnavailable     = errors.New("tenant membership verification unavailable")
+	ErrCredentialNotFound             = errors.New("data-plane credential not found")
+	ErrCredentialNameConflict         = errors.New("data-plane credential name already exists")
+	ErrCredentialRevoked              = errors.New("data-plane credential revoked")
+	ErrCredentialExpired              = errors.New("data-plane credential expired")
 )

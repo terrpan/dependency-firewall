@@ -39,6 +39,7 @@ type dependencies struct {
 	teamRepo             port.TeamRepository
 	teamMembers          port.TeamMembershipRepository
 	sessionBootstrap     port.SessionBootstrapRepository
+	dataPlaneCredentials port.DataPlaneCredentialRepository
 	policyRepo           port.PolicyRepository
 	scopedPolicyRepo     port.ScopedPolicyRepository
 	policyRevisionRepo   port.PolicyRevisionRepository
@@ -145,6 +146,7 @@ func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
 	d.teamRepo = postgres.NewTeamRepository(d.pool)
 	d.teamMembers = postgres.NewTeamMembershipRepository(d.pool)
 	d.sessionBootstrap = postgres.NewSessionBootstrapRepository(d.pool)
+	d.dataPlaneCredentials = postgres.NewDataPlaneCredentialRepository(d.pool)
 	policyRepo := postgres.NewPolicyRepository(d.pool)
 	d.policyRepo = policyRepo
 	d.scopedPolicyRepo = policyRepo
