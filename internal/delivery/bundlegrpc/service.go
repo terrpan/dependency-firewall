@@ -112,7 +112,11 @@ func (s *Server) getTenantBundleHandler(
 }
 
 // GetTenantBundle invokes the remote bundle service using the given client connection.
-func GetTenantBundle(ctx context.Context, conn grpc.ClientConnInterface, tenantID string) (*domain.TenantBundle, error) {
+func GetTenantBundle(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+) (*domain.TenantBundle, error) {
 	response, err := bundlewire.FetchTenantBundleResponse(ctx, conn, tenantID)
 	if err != nil {
 		return nil, err
@@ -176,7 +180,10 @@ func (s *Server) toBundleResponse(ctx context.Context, bundle *domain.TenantBund
 				// SECURITY: bundle domain memory must not carry plaintext upstream
 				// auth secrets; decrypt and re-encrypt in one rewrapper operation.
 				if bundle.Upstreams[i].Auth.Secret != "" {
-					return nil, fmt.Errorf("%w: bundle upstream auth secret must not be present in domain bundle", domain.ErrUpstreamAuthInvalid)
+					return nil, fmt.Errorf(
+						"%w: bundle upstream auth secret must not be present in domain bundle",
+						domain.ErrUpstreamAuthInvalid,
+					)
 				}
 				if peerPublicKey == nil {
 					var err error
@@ -221,10 +228,19 @@ func (s *Server) toBundleResponse(ctx context.Context, bundle *domain.TenantBund
 	return response, nil
 }
 
-func (s *Server) encryptUpstreamAuthSecret(ctx context.Context, tenantID, upstreamID string, publicKey crypto.PublicKey) ([]byte, error) {
-	return s.secretRewrapper.RewrapUpstreamAuthSecret(ctx, tenantID, upstreamID, func(plaintext []byte) ([]byte, error) {
-		return secrets.EncryptForPublicKey(publicKey, plaintext)
-	})
+func (s *Server) encryptUpstreamAuthSecret(
+	ctx context.Context,
+	tenantID, upstreamID string,
+	publicKey crypto.PublicKey,
+) ([]byte, error) {
+	return s.secretRewrapper.RewrapUpstreamAuthSecret(
+		ctx,
+		tenantID,
+		upstreamID,
+		func(plaintext []byte) ([]byte, error) {
+			return secrets.EncryptForPublicKey(publicKey, plaintext)
+		},
+	)
 }
 
 func peerCertificatePublicKey(ctx context.Context) (crypto.PublicKey, error) {

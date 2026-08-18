@@ -101,12 +101,16 @@ func TestOCIClientOptions_ProxyModeUsesStrictResolver(t *testing.T) {
 	}))
 	defer registry.Close()
 
-	_, err = client.FetchMetadata(context.Background(), domain.Upstream{BaseURL: registry.URL, Auth: auth}, domain.ArtifactIdentity{
-		Ecosystem: domain.EcosystemOCI,
-		Namespace: "acme",
-		Name:      "app",
-		Version:   "1.0.0",
-	})
+	_, err = client.FetchMetadata(
+		context.Background(),
+		domain.Upstream{BaseURL: registry.URL, Auth: auth},
+		domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemOCI,
+			Namespace: "acme",
+			Name:      "app",
+			Version:   "1.0.0",
+		},
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "hybrid secret envelope is required")
 }
@@ -135,12 +139,16 @@ func TestOCIClientOptions_AllInOneModeUsesLegacyCompatibleResolver(t *testing.T)
 	}))
 	defer registry.Close()
 
-	resp, err := client.FetchMetadata(context.Background(), domain.Upstream{BaseURL: registry.URL, Auth: auth}, domain.ArtifactIdentity{
-		Ecosystem: domain.EcosystemOCI,
-		Namespace: "acme",
-		Name:      "app",
-		Version:   "1.0.0",
-	})
+	resp, err := client.FetchMetadata(
+		context.Background(),
+		domain.Upstream{BaseURL: registry.URL, Auth: auth},
+		domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemOCI,
+			Namespace: "acme",
+			Name:      "app",
+			Version:   "1.0.0",
+		},
+	)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 }

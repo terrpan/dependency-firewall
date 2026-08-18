@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 type auditRecorderStub struct {
@@ -38,8 +39,18 @@ func TestRecordRequestDenied_IncludesTopReasonAndReasons(t *testing.T) {
 		Outcome:  domain.DecisionDeny,
 		Reason:   "artifact has vulnerability with severity high at or above threshold moderate",
 		Reasons: []domain.EvaluationReason{
-			{PolicyID: "policy-1", PolicyName: "vuln-threshold", Action: domain.PolicyActionDeny, Message: "severity high >= moderate"},
-			{PolicyID: "policy-2", PolicyName: "cvss-threshold", Action: domain.PolicyActionDeny, Message: "cvss 9.1 >= 7.0"},
+			{
+				PolicyID:   "policy-1",
+				PolicyName: "vuln-threshold",
+				Action:     domain.PolicyActionDeny,
+				Message:    "severity high >= moderate",
+			},
+			{
+				PolicyID:   "policy-2",
+				PolicyName: "cvss-threshold",
+				Action:     domain.PolicyActionDeny,
+				Message:    "cvss 9.1 >= 7.0",
+			},
 		},
 	}
 
@@ -78,7 +89,13 @@ func TestRecordRequestAllowed_IncludesWarningsAndReasons(t *testing.T) {
 		Reason:   "no matching policy",
 		Warnings: []string{"[vuln-threshold] severity high >= moderate"},
 		Reasons: []domain.EvaluationReason{
-			{PolicyID: "policy-3", PolicyName: "vuln-threshold", Action: domain.PolicyActionDeny, Category: domain.ReasonPolicyWarning, Message: "severity high >= moderate"},
+			{
+				PolicyID:   "policy-3",
+				PolicyName: "vuln-threshold",
+				Action:     domain.PolicyActionDeny,
+				Category:   domain.ReasonPolicyWarning,
+				Message:    "severity high >= moderate",
+			},
 		},
 	}
 
@@ -124,7 +141,14 @@ func TestRecordRequestForwarded_DoesNotAttachDecisionEntityOrOutcome(t *testing.
 		},
 	}
 
-	err := RecordRequestForwarded(context.Background(), recorder, audit, decision, "bare npm packument", "request forwarded")
+	err := RecordRequestForwarded(
+		context.Background(),
+		recorder,
+		audit,
+		decision,
+		"bare npm packument",
+		"request forwarded",
+	)
 	require.NoError(t, err)
 	require.Len(t, recorder.events, 1)
 

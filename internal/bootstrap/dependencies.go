@@ -56,7 +56,12 @@ type dependencies struct {
 	npmClient         port.UpstreamClient
 }
 
-func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logger, openDatabase, runMigrations bool) (*dependencies, error) {
+func openDependencies(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	openDatabase, runMigrations bool,
+) (*dependencies, error) {
 	if openDatabase && runMigrations {
 		if err := migrateDatabase(cfg); err != nil {
 			return nil, err

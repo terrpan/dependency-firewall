@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 	"github.com/danielterry/dependency-firewall/internal/errutil"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // AuditService owns audit event emission and read-side access for the control plane.

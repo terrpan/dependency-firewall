@@ -30,7 +30,10 @@ func (s *Server) RecordDecision(ctx context.Context, req *RecordDecisionRequest)
 }
 
 // GetDecisionByArtifact returns the most recent persisted decision for an artifact.
-func (s *Server) GetDecisionByArtifact(ctx context.Context, req *GetDecisionByArtifactRequest) (*GetDecisionByArtifactResponse, error) {
+func (s *Server) GetDecisionByArtifact(
+	ctx context.Context,
+	req *GetDecisionByArtifactRequest,
+) (*GetDecisionByArtifactResponse, error) {
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -42,7 +45,10 @@ func (s *Server) GetDecisionByArtifact(ctx context.Context, req *GetDecisionByAr
 }
 
 // ListDecisionsByTenant lists persisted decisions for a tenant.
-func (s *Server) ListDecisionsByTenant(ctx context.Context, req *ListDecisionsByTenantRequest) (*ListDecisionsByTenantResponse, error) {
+func (s *Server) ListDecisionsByTenant(
+	ctx context.Context,
+	req *ListDecisionsByTenantRequest,
+) (*ListDecisionsByTenantResponse, error) {
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -70,7 +76,10 @@ func (s *Server) HasRecentAllow(ctx context.Context, req *HasRecentAllowRequest)
 }
 
 // RecordAuditEvent persists a proxy-emitted audit event.
-func (s *Server) RecordAuditEvent(ctx context.Context, req *RecordAuditEventRequest) (*RecordAuditEventResponse, error) {
+func (s *Server) RecordAuditEvent(
+	ctx context.Context,
+	req *RecordAuditEventRequest,
+) (*RecordAuditEventResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "event is required")
 	}
@@ -88,7 +97,10 @@ func (s *Server) RecordAuditEvent(ctx context.Context, req *RecordAuditEventRequ
 }
 
 // EnqueueDependencyGraphResolve enqueues an async npm dependency graph resolve request.
-func (s *Server) EnqueueDependencyGraphResolve(ctx context.Context, req *EnqueueDependencyGraphResolveRequest) (*EnqueueDependencyGraphResolveResponse, error) {
+func (s *Server) EnqueueDependencyGraphResolve(
+	ctx context.Context,
+	req *EnqueueDependencyGraphResolveRequest,
+) (*EnqueueDependencyGraphResolveResponse, error) {
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -104,7 +116,10 @@ func (s *Server) EnqueueDependencyGraphResolve(ctx context.Context, req *Enqueue
 }
 
 // ClaimDependencyGraphResolve claims the next async npm dependency graph resolve job.
-func (s *Server) ClaimDependencyGraphResolve(ctx context.Context, req *ClaimDependencyGraphResolveRequest) (*ClaimDependencyGraphResolveResponse, error) {
+func (s *Server) ClaimDependencyGraphResolve(
+	ctx context.Context,
+	req *ClaimDependencyGraphResolveRequest,
+) (*ClaimDependencyGraphResolveResponse, error) {
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -127,21 +142,33 @@ func (s *Server) ClaimDependencyGraphResolve(ctx context.Context, req *ClaimDepe
 }
 
 // CompleteDependencyGraphResolve stores a resolved npm dependency graph.
-func (s *Server) CompleteDependencyGraphResolve(ctx context.Context, req *CompleteDependencyGraphResolveRequest) (*CompleteDependencyGraphResolveResponse, error) {
+func (s *Server) CompleteDependencyGraphResolve(
+	ctx context.Context,
+	req *CompleteDependencyGraphResolveRequest,
+) (*CompleteDependencyGraphResolveResponse, error) {
 	if req == nil || strings.TrimSpace(req.Job.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
 	if strings.TrimSpace(req.GraphHash) == "" {
 		return nil, status.Error(codes.InvalidArgument, "graph_hash is required")
 	}
-	if err := s.service.CompleteDependencyGraphResolve(ctx, *req.Job.ToDomain(), req.Nodes, req.Edges, req.GraphHash); err != nil {
+	if err := s.service.CompleteDependencyGraphResolve(
+		ctx,
+		*req.Job.ToDomain(),
+		req.Nodes,
+		req.Edges,
+		req.GraphHash,
+	); err != nil {
 		return nil, toStatusError(err)
 	}
 	return &CompleteDependencyGraphResolveResponse{}, nil
 }
 
 // FailDependencyGraphResolve records a resolver failure and retry time.
-func (s *Server) FailDependencyGraphResolve(ctx context.Context, req *FailDependencyGraphResolveRequest) (*FailDependencyGraphResolveResponse, error) {
+func (s *Server) FailDependencyGraphResolve(
+	ctx context.Context,
+	req *FailDependencyGraphResolveRequest,
+) (*FailDependencyGraphResolveResponse, error) {
 	if req == nil || strings.TrimSpace(req.Job.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -156,7 +183,10 @@ func (s *Server) FailDependencyGraphResolve(ctx context.Context, req *FailDepend
 }
 
 // LookupDependencyGraphContext returns the graph context summary for a tenant artifact.
-func (s *Server) LookupDependencyGraphContext(ctx context.Context, req *LookupDependencyGraphContextRequest) (*LookupDependencyGraphContextResponse, error) {
+func (s *Server) LookupDependencyGraphContext(
+	ctx context.Context,
+	req *LookupDependencyGraphContextRequest,
+) (*LookupDependencyGraphContextResponse, error) {
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -172,7 +202,10 @@ func (s *Server) LookupDependencyGraphContext(ctx context.Context, req *LookupDe
 }
 
 // WatchDependencyGraphResolve streams wake-up events for queued dependency graph jobs.
-func (s *Server) WatchDependencyGraphResolve(ctx context.Context, req *WatchDependencyGraphResolveRequest) (<-chan struct{}, error) {
+func (s *Server) WatchDependencyGraphResolve(
+	ctx context.Context,
+	req *WatchDependencyGraphResolveRequest,
+) (<-chan struct{}, error) {
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
@@ -183,7 +216,9 @@ func (s *Server) WatchDependencyGraphResolve(ctx context.Context, req *WatchDepe
 	return notifications, nil
 }
 
-func wireFromDomainDependencyGraphResolveRequest(req domain.DependencyGraphResolveRequest) *EnqueueDependencyGraphResolveRequest {
+func wireFromDomainDependencyGraphResolveRequest(
+	req domain.DependencyGraphResolveRequest,
+) *EnqueueDependencyGraphResolveRequest {
 	return &EnqueueDependencyGraphResolveRequest{
 		TenantID: req.TenantID,
 		Upstream: fromDomainUpstream(req.Upstream),

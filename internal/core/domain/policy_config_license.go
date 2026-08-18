@@ -5,7 +5,7 @@ import "fmt"
 // LicensePolicyConfig configures the license policy type.
 type LicensePolicyConfig struct {
 	Licenses []string `json:"licenses,omitempty" yaml:"licenses,omitempty"`
-	DryRun   bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+	DryRun   bool     `json:"dry_run,omitempty"  yaml:"dry_run,omitempty"`
 }
 
 // Validate validates the config.
@@ -33,7 +33,7 @@ const (
 // LicenseAllowlistPolicyConfig configures the license_allowlist policy type.
 type LicenseAllowlistPolicyConfig struct {
 	Licenses []string `json:"licenses,omitempty" yaml:"licenses,omitempty"`
-	DryRun   bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+	DryRun   bool     `json:"dry_run,omitempty"  yaml:"dry_run,omitempty"`
 }
 
 // Validate validates the config.
@@ -52,10 +52,10 @@ func (c *LicenseAllowlistPolicyConfig) DryRunEnabled() bool {
 // LicenseAllowlistPolicyConfigV2 configures license_allowlist schema v2 with
 // explicit handling for missing license data.
 type LicenseAllowlistPolicyConfigV2 struct {
-	Licenses                    []string                        `json:"licenses,omitempty" yaml:"licenses,omitempty"`
-	UnlicensedBehavior          LicenseAllowlistMissingBehavior `json:"unlicensed_behavior,omitempty" yaml:"unlicensed_behavior,omitempty"`
+	Licenses                    []string                        `json:"licenses,omitempty"                      yaml:"licenses,omitempty"`
+	UnlicensedBehavior          LicenseAllowlistMissingBehavior `json:"unlicensed_behavior,omitempty"           yaml:"unlicensed_behavior,omitempty"`
 	UnavailableMetadataBehavior LicenseAllowlistMissingBehavior `json:"unavailable_metadata_behavior,omitempty" yaml:"unavailable_metadata_behavior,omitempty"`
-	DryRun                      bool                            `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+	DryRun                      bool                            `json:"dry_run,omitempty"                       yaml:"dry_run,omitempty"`
 }
 
 // Validate validates the config.
@@ -66,7 +66,10 @@ func (c *LicenseAllowlistPolicyConfigV2) Validate() error {
 	if err := validateLicenseAllowlistMissingBehavior(c.UnlicensedBehavior, "unlicensed_behavior"); err != nil {
 		return err
 	}
-	if err := validateLicenseAllowlistMissingBehavior(c.UnavailableMetadataBehavior, "unavailable_metadata_behavior"); err != nil {
+	if err := validateLicenseAllowlistMissingBehavior(
+		c.UnavailableMetadataBehavior,
+		"unavailable_metadata_behavior",
+	); err != nil {
 		return err
 	}
 	return nil

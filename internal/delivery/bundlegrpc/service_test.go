@@ -51,8 +51,11 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 			SchemaVersion: 1,
 			Config:        &domain.CVSSThresholdPolicyConfig{MaxCVSS: testFloat64Ptr(7)},
 			Target: &domain.PolicyTarget{
-				DependencyScopes: []domain.DependencyScope{domain.DependencyScopeDirect, domain.DependencyScopeTransitive},
-				OnUnknown:        domain.DependencyUnknownWarn,
+				DependencyScopes: []domain.DependencyScope{
+					domain.DependencyScopeDirect,
+					domain.DependencyScopeTransitive,
+				},
+				OnUnknown: domain.DependencyUnknownWarn,
 			},
 			Priority:  10,
 			Enabled:   true,
@@ -80,7 +83,11 @@ func TestBundleRoundTripPreservesTenantRuntime(t *testing.T) {
 	assert.Equal(t, bundle.TenantID, restored.TenantID)
 	require.Len(t, restored.Policies, 1)
 	require.NotNil(t, restored.Policies[0].Target)
-	assert.Equal(t, []domain.DependencyScope{domain.DependencyScopeDirect, domain.DependencyScopeTransitive}, restored.Policies[0].Target.DependencyScopes)
+	assert.Equal(
+		t,
+		[]domain.DependencyScope{domain.DependencyScopeDirect, domain.DependencyScopeTransitive},
+		restored.Policies[0].Target.DependencyScopes,
+	)
 	assert.Equal(t, domain.DependencyUnknownWarn, restored.Policies[0].Target.OnUnknown)
 	require.Len(t, restored.Upstreams, 1)
 	assert.Nil(t, restored.Upstreams[0].Auth)
@@ -102,12 +109,16 @@ func TestBundleResponseEncryptsMetadataOnlyUpstreamAuth(t *testing.T) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	server, err := NewServer(
-		bundleProviderFunc(func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") }),
-		rewrapperFunc(func(_ context.Context, tenantID, upstreamID string, wrap port.UpstreamAuthSecretWrapper) ([]byte, error) {
-			assert.Equal(t, "tenant-1", tenantID)
-			assert.Equal(t, "upstream-1", upstreamID)
-			return wrap([]byte("registry-token"))
-		}),
+		bundleProviderFunc(
+			func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") },
+		),
+		rewrapperFunc(
+			func(_ context.Context, tenantID, upstreamID string, wrap port.UpstreamAuthSecretWrapper) ([]byte, error) {
+				assert.Equal(t, "tenant-1", tenantID)
+				assert.Equal(t, "upstream-1", upstreamID)
+				return wrap([]byte("registry-token"))
+			},
+		),
 	)
 	require.NoError(t, err)
 	bundle := &domain.TenantBundle{
@@ -148,7 +159,9 @@ func TestBundleResponseFailsClosedWithoutPeerCertificateForMetadataAuth(t *testi
 
 	now := time.Now().UTC()
 	server, err := NewServer(
-		bundleProviderFunc(func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") }),
+		bundleProviderFunc(
+			func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") },
+		),
 		rewrapperFunc(func(context.Context, string, string, port.UpstreamAuthSecretWrapper) ([]byte, error) {
 			return []byte("should-not-run"), nil
 		}),
@@ -178,7 +191,9 @@ func TestBundleResponseRejectsPlaintextSecretInDomain(t *testing.T) {
 
 	now := time.Now().UTC()
 	server, err := NewServer(
-		bundleProviderFunc(func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") }),
+		bundleProviderFunc(
+			func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") },
+		),
 		rewrapperFunc(func(context.Context, string, string, port.UpstreamAuthSecretWrapper) ([]byte, error) {
 			return []byte("should-not-run"), nil
 		}),
@@ -213,7 +228,9 @@ func TestBundleResponsePropagatesRewrapperError(t *testing.T) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
 	server, err := NewServer(
-		bundleProviderFunc(func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") }),
+		bundleProviderFunc(
+			func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") },
+		),
 		rewrapperFunc(func(context.Context, string, string, port.UpstreamAuthSecretWrapper) ([]byte, error) {
 			return nil, rewrapErr
 		}),
@@ -248,7 +265,11 @@ func TestNewServerRequiresRewrapper(t *testing.T) {
 
 type rewrapperFunc func(context.Context, string, string, port.UpstreamAuthSecretWrapper) ([]byte, error)
 
-func (f rewrapperFunc) RewrapUpstreamAuthSecret(ctx context.Context, tenantID, upstreamID string, wrap port.UpstreamAuthSecretWrapper) ([]byte, error) {
+func (f rewrapperFunc) RewrapUpstreamAuthSecret(
+	ctx context.Context,
+	tenantID, upstreamID string,
+	wrap port.UpstreamAuthSecretWrapper,
+) ([]byte, error) {
 	return f(ctx, tenantID, upstreamID, wrap)
 }
 
@@ -266,7 +287,9 @@ func peerContext(publicKey any) context.Context {
 
 func bundleResponseForTest(bundle *domain.TenantBundle) (*GetTenantBundleResponse, error) {
 	server, err := NewServer(
-		bundleProviderFunc(func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") }),
+		bundleProviderFunc(
+			func(context.Context, string) (*domain.TenantBundle, error) { return nil, errors.New("unused") },
+		),
 		rewrapperFunc(func(context.Context, string, string, port.UpstreamAuthSecretWrapper) ([]byte, error) {
 			return []byte("unused"), nil
 		}),

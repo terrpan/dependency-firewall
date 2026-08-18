@@ -28,7 +28,10 @@ type lockPackage struct {
 }
 
 // ParsePackageLock converts an npm package-lock.json into graph nodes and edges.
-func ParsePackageLock(root domain.ArtifactIdentity, data []byte) ([]domain.DependencyGraphNode, []domain.DependencyGraphEdge, string, error) {
+func ParsePackageLock(
+	root domain.ArtifactIdentity,
+	data []byte,
+) ([]domain.DependencyGraphNode, []domain.DependencyGraphEdge, string, error) {
 	var lock packageLock
 	if err := json.Unmarshal(data, &lock); err != nil {
 		return nil, nil, "", fmt.Errorf("parsing package-lock.json: %w", err)
@@ -132,7 +135,11 @@ func sortedPackagePaths(packages map[string]lockPackage) []string {
 	return paths
 }
 
-func artifactForLockPackage(root domain.ArtifactIdentity, lockPath string, pkg lockPackage) (domain.ArtifactIdentity, error) {
+func artifactForLockPackage(
+	root domain.ArtifactIdentity,
+	lockPath string,
+	pkg lockPackage,
+) (domain.ArtifactIdentity, error) {
 	if lockPath == "" {
 		if root.Version == "" {
 			return domain.ArtifactIdentity{}, fmt.Errorf("parsing package-lock.json: root version is required")
@@ -144,7 +151,10 @@ func artifactForLockPackage(root domain.ArtifactIdentity, lockPath string, pkg l
 		name = packageNameFromLockPath(lockPath)
 	}
 	if name == "" || pkg.Version == "" {
-		return domain.ArtifactIdentity{}, fmt.Errorf("parsing package-lock.json: package %q has missing name or version", lockPath)
+		return domain.ArtifactIdentity{}, fmt.Errorf(
+			"parsing package-lock.json: package %q has missing name or version",
+			lockPath,
+		)
 	}
 	artifact, err := domain.NormalizeArtifactIdentity(domain.ArtifactIdentity{
 		Ecosystem: domain.EcosystemNPM,

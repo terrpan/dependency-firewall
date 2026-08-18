@@ -95,7 +95,11 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 }
 
 // GetByEcosystem returns the active upstream for the requested ecosystem from the tenant bundle.
-func (r *UpstreamRepository) GetByEcosystem(ctx context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+func (r *UpstreamRepository) GetByEcosystem(
+	ctx context.Context,
+	tenantID string,
+	eco domain.EcosystemType,
+) (*domain.Upstream, error) {
 	bundle, err := r.provider.GetTenantBundle(ctx, tenantID)
 	if err != nil {
 		return nil, err

@@ -78,7 +78,13 @@ func NewDiskCache(opts DiskCacheOptions) (*DiskCache, error) {
 }
 
 // Get retrieves a cached OCI artifact. Returns domain.ErrCacheMiss if not found.
-func (c *DiskCache) Get(_ context.Context, tenantID string, upstreamID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
+func (c *DiskCache) Get(
+	_ context.Context,
+	tenantID string,
+	upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+) (*port.UpstreamResponse, error) {
 	dataPath, metaPath, err := c.finalPaths(tenantID, upstreamID, kind, digest)
 	if err != nil {
 		return nil, err
@@ -114,7 +120,14 @@ func (c *DiskCache) Get(_ context.Context, tenantID string, upstreamID string, k
 }
 
 // StartWrite begins a staged OCI artifact cache write.
-func (c *DiskCache) StartWrite(_ context.Context, tenantID string, upstreamID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
+func (c *DiskCache) StartWrite(
+	_ context.Context,
+	tenantID string,
+	upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+	descriptor port.OCIArtifactDescriptor,
+) (port.OCIArtifactWriter, error) {
 	finalData, finalMeta, err := c.finalPaths(tenantID, upstreamID, kind, digest)
 	if err != nil {
 		return nil, err
@@ -334,7 +347,11 @@ func removeCachedFile(file cachedFile) error {
 	return nil
 }
 
-func (c *DiskCache) finalPaths(tenantID, upstreamID string, kind port.OCIArtifactKind, digest string) (string, string, error) {
+func (c *DiskCache) finalPaths(
+	tenantID, upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+) (string, string, error) {
 	algo, encoded, err := splitDigest(digest)
 	if err != nil {
 		return "", "", err

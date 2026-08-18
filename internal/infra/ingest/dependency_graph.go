@@ -18,7 +18,10 @@ func NewDependencyGraphQueue(client *GRPCClient) *DependencyGraphQueue {
 }
 
 // EnqueueResolve sends one async graph-resolution request to the control plane.
-func (q *DependencyGraphQueue) EnqueueResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (q *DependencyGraphQueue) EnqueueResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	if q == nil || q.client == nil {
 		return false, fmt.Errorf("enqueueing dependency graph resolve: client unavailable")
 	}
@@ -40,7 +43,10 @@ func NewLocalDependencyGraphQueue(service interface {
 }
 
 // EnqueueResolve sends one async graph-resolution request in-process.
-func (q *LocalDependencyGraphQueue) EnqueueResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (q *LocalDependencyGraphQueue) EnqueueResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	if q == nil || q.service == nil {
 		return false, fmt.Errorf("enqueueing dependency graph resolve: service unavailable")
 	}

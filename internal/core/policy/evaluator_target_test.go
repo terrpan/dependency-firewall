@@ -32,21 +32,29 @@ func TestEvaluator_TargetDependencyContext(t *testing.T) {
 			wantOutcome: domain.DecisionAllow,
 		},
 		{
-			name:        "matching dependency type applies target",
-			target:      &domain.PolicyTarget{DependencyTypes: []domain.DependencyType{domain.DependencyTypePeer}},
-			context:     &domain.DependencyContext{Scope: domain.DependencyScopeTransitive, DependencyTypes: []domain.DependencyType{domain.DependencyTypePeer}},
+			name:   "matching dependency type applies target",
+			target: &domain.PolicyTarget{DependencyTypes: []domain.DependencyType{domain.DependencyTypePeer}},
+			context: &domain.DependencyContext{
+				Scope:           domain.DependencyScopeTransitive,
+				DependencyTypes: []domain.DependencyType{domain.DependencyTypePeer},
+			},
 			wantOutcome: domain.DecisionDeny,
 		},
 		{
-			name:         "unknown context defaults to warning",
-			target:       &domain.PolicyTarget{DependencyScopes: []domain.DependencyScope{domain.DependencyScopeTransitive}},
+			name: "unknown context defaults to warning",
+			target: &domain.PolicyTarget{
+				DependencyScopes: []domain.DependencyScope{domain.DependencyScopeTransitive},
+			},
 			context:      &domain.DependencyContext{Scope: domain.DependencyScopeUnknown},
 			wantOutcome:  domain.DecisionAllow,
 			wantWarnings: 1,
 		},
 		{
-			name:        "unknown context can deny",
-			target:      &domain.PolicyTarget{DependencyScopes: []domain.DependencyScope{domain.DependencyScopeTransitive}, OnUnknown: domain.DependencyUnknownDeny},
+			name: "unknown context can deny",
+			target: &domain.PolicyTarget{
+				DependencyScopes: []domain.DependencyScope{domain.DependencyScopeTransitive},
+				OnUnknown:        domain.DependencyUnknownDeny,
+			},
 			context:     &domain.DependencyContext{Scope: domain.DependencyScopeUnknown},
 			wantOutcome: domain.DecisionDeny,
 		},

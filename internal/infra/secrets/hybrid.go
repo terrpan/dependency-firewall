@@ -57,7 +57,11 @@ func DecryptWithPrivateKey(privateKey any, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("unmarshalling hybrid secret envelope: %w", err)
 	}
 	if env.Version != HybridEnvelopeVersion {
-		return nil, fmt.Errorf("unsupported hybrid secret envelope version %d (expected %d)", env.Version, HybridEnvelopeVersion)
+		return nil, fmt.Errorf(
+			"unsupported hybrid secret envelope version %d (expected %d)",
+			env.Version,
+			HybridEnvelopeVersion,
+		)
 	}
 	if !isWellFormedHybridEnvelope(env) {
 		return nil, fmt.Errorf("invalid hybrid secret envelope")

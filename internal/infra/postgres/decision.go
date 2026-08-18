@@ -61,12 +61,20 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 	if err != nil {
 		return fmt.Errorf("marshalling dependency context: %w", err)
 	}
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRow(
+		ctx,
 		`INSERT INTO decisions (tenant_id, artifact_id, outcome, policy_id, policy_hash, reason, warnings, dependency_context, cached_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING id, evaluated_at`,
-		decision.TenantID, artifactID, decision.Outcome, policyID,
-		decision.PolicyHash, decision.Reason, warnings, nullableJSON(dependencyContextJSON, decision.DependencyContext != nil), decision.CachedAt,
+		decision.TenantID,
+		artifactID,
+		decision.Outcome,
+		policyID,
+		decision.PolicyHash,
+		decision.Reason,
+		warnings,
+		nullableJSON(dependencyContextJSON, decision.DependencyContext != nil),
+		decision.CachedAt,
 	).Scan(&decision.ID, &decision.EvaluatedAt)
 	if err != nil {
 		return fmt.Errorf("inserting decision: %w", err)
@@ -75,11 +83,17 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 	// Insert the evaluation record and its reasons.
 	if len(decision.Reasons) > 0 {
 		var evaluationID string
-		err = tx.QueryRow(ctx,
+		err = tx.QueryRow(
+			ctx,
 			`INSERT INTO evaluations (tenant_id, artifact_id, outcome, policy_id, reason, dependency_context)
 			 VALUES ($1, $2, $3, $4, $5, $6)
 			 RETURNING id`,
-			decision.TenantID, artifactID, decision.Outcome, policyID, decision.Reason, nullableJSON(dependencyContextJSON, decision.DependencyContext != nil),
+			decision.TenantID,
+			artifactID,
+			decision.Outcome,
+			policyID,
+			decision.Reason,
+			nullableJSON(dependencyContextJSON, decision.DependencyContext != nil),
 		).Scan(&evaluationID)
 		if err != nil {
 			return fmt.Errorf("inserting evaluation: %w", err)
@@ -109,11 +123,16 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 }
 
 // GetByArtifact returns the most recent decision for a tenant's artifact.
-func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (r *DecisionRepository) GetByArtifact(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	var d domain.Decision
 	var policyID *string
 	var policyHash *string
-	row := r.pool.QueryRow(ctx,
+	row := r.pool.QueryRow(
+		ctx,
 		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.dependency_context, d.cached_at, d.evaluated_at,
 		        a.ecosystem, a.namespace, a.name, a.version, a.digest
 		 FROM decisions d
@@ -123,14 +142,31 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 		   AND a.version = $5 AND a.digest = $6
 		 ORDER BY d.evaluated_at DESC
 		 LIMIT 1`,
-		tenantID, artifact.Ecosystem, artifact.Namespace,
-		artifact.Name, artifact.Version, artifact.Digest,
+		tenantID,
+		artifact.Ecosystem,
+		artifact.Namespace,
+		artifact.Name,
+		artifact.Version,
+		artifact.Digest,
 	)
 	var dependencyContextJSON []byte
-	err := row.Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason, &d.Warnings, &dependencyContextJSON,
-		&d.CachedAt, &d.EvaluatedAt,
-		&d.Artifact.Ecosystem, &d.Artifact.Namespace, &d.Artifact.Name,
-		&d.Artifact.Version, &d.Artifact.Digest)
+	err := row.Scan(
+		&d.ID,
+		&d.TenantID,
+		&d.Outcome,
+		&policyID,
+		&policyHash,
+		&d.Reason,
+		&d.Warnings,
+		&dependencyContextJSON,
+		&d.CachedAt,
+		&d.EvaluatedAt,
+		&d.Artifact.Ecosystem,
+		&d.Artifact.Namespace,
+		&d.Artifact.Name,
+		&d.Artifact.Version,
+		&d.Artifact.Digest,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrArtifactNotFound
@@ -150,8 +186,14 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 }
 
 // ListByTenant returns decisions for a tenant ordered by evaluated_at descending.
-func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
-	rows, err := r.pool.Query(ctx,
+func (r *DecisionRepository) ListByTenant(
+	ctx context.Context,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
+	rows, err := r.pool.Query(
+		ctx,
 		`SELECT d.id, d.tenant_id, d.outcome, d.policy_id, d.policy_hash, d.reason, d.warnings, d.dependency_context, d.cached_at, d.evaluated_at,
 		        a.ecosystem, a.namespace, a.name, a.version, a.digest
 		 FROM decisions d
@@ -167,7 +209,11 @@ func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, 
 		   )
 		 ORDER BY d.evaluated_at DESC
 		 LIMIT $3 OFFSET $4`,
-		tenantID, search, limit, offset)
+		tenantID,
+		search,
+		limit,
+		offset,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("listing decisions: %w", err)
 	}
@@ -180,8 +226,23 @@ func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, 
 		var policyHash *string
 		var eco, ns, name, ver, dig *string
 		var dependencyContextJSON []byte
-		if err := rows.Scan(&d.ID, &d.TenantID, &d.Outcome, &policyID, &policyHash, &d.Reason,
-			&d.Warnings, &dependencyContextJSON, &d.CachedAt, &d.EvaluatedAt, &eco, &ns, &name, &ver, &dig); err != nil {
+		if err := rows.Scan(
+			&d.ID,
+			&d.TenantID,
+			&d.Outcome,
+			&policyID,
+			&policyHash,
+			&d.Reason,
+			&d.Warnings,
+			&dependencyContextJSON,
+			&d.CachedAt,
+			&d.EvaluatedAt,
+			&eco,
+			&ns,
+			&name,
+			&ver,
+			&dig,
+		); err != nil {
 			return nil, fmt.Errorf("scanning decision row: %w", err)
 		}
 		if policyID != nil {
@@ -231,7 +292,12 @@ func decodeDecisionDependencyContext(data []byte, decision *domain.Decision) err
 
 // HasRecentAllow checks if a recent allow decision exists for the given
 // tenant, ecosystem, namespace, and name (any version/digest).
-func (r *DecisionRepository) HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func (r *DecisionRepository) HasRecentAllow(
+	ctx context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	var exists bool
 	err := r.pool.QueryRow(ctx,
 		`SELECT EXISTS(

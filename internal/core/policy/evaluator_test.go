@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func ptrFloat64(v float64) *float64  { return &v }
@@ -64,9 +65,16 @@ func TestEvaluate(t *testing.T) {
 					Config: &domain.CVSSThresholdPolicyConfig{MaxCVSS: ptrFloat64(7.0)}, Priority: 0, Enabled: true,
 				},
 				{
-					ID: "p2", TenantID: "tenant-1", Name: "block-untrusted",
-					Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
-					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted-registry"}}, Priority: 1, Enabled: true,
+					ID:       "p2",
+					TenantID: "tenant-1",
+					Name:     "block-untrusted",
+					Type:     domain.PolicyTypeBlocklist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.NamespaceListPolicyConfig{
+						Namespaces: []string{"untrusted-registry"},
+					},
+					Priority: 1,
+					Enabled:  true,
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
@@ -88,9 +96,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p1", TenantID: "tenant-1", Name: "allow-internal",
-					Type: domain.PolicyTypeAllowlist, Action: domain.PolicyActionAllow,
-					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}}, Priority: 0, Enabled: true,
+					ID:       "p1",
+					TenantID: "tenant-1",
+					Name:     "allow-internal",
+					Type:     domain.PolicyTypeAllowlist,
+					Action:   domain.PolicyActionAllow,
+					Config: &domain.NamespaceListPolicyConfig{
+						Namespaces: []string{"internal"},
+					},
+					Priority: 0,
+					Enabled:  true,
 				},
 			},
 			wantOutcome:    domain.DecisionAllow,
@@ -138,9 +153,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p-license-allowlist", TenantID: "tenant-1", Name: "allow-approved-licenses",
-					Type: domain.PolicyTypeLicenseAllowlist, Action: domain.PolicyActionDeny,
-					Config: &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT", "Apache-2.0"}}, Priority: 0, Enabled: true,
+					ID:       "p-license-allowlist",
+					TenantID: "tenant-1",
+					Name:     "allow-approved-licenses",
+					Type:     domain.PolicyTypeLicenseAllowlist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfig{
+						Licenses: []string{"MIT", "Apache-2.0"},
+					},
+					Priority: 0,
+					Enabled:  true,
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
@@ -211,9 +233,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p-license-allowlist", TenantID: "tenant-1", Name: "allow-approved-licenses",
-					Type: domain.PolicyTypeLicenseAllowlist, Action: domain.PolicyActionDeny,
-					Config: &domain.LicenseAllowlistPolicyConfig{Licenses: []string{"MIT", "Apache-2.0"}}, Priority: 0, Enabled: true,
+					ID:       "p-license-allowlist",
+					TenantID: "tenant-1",
+					Name:     "allow-approved-licenses",
+					Type:     domain.PolicyTypeLicenseAllowlist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.LicenseAllowlistPolicyConfig{
+						Licenses: []string{"MIT", "Apache-2.0"},
+					},
+					Priority: 0,
+					Enabled:  true,
 				},
 			},
 			wantOutcome:   domain.DecisionAllow,
@@ -234,9 +263,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p-namespace-allowlist", TenantID: "tenant-1", Name: "allow-only-approved-namespaces",
-					Type: domain.PolicyTypeNamespaceAllowlist, Action: domain.PolicyActionDeny,
-					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"library", "docker"}}, Priority: 0, Enabled: true,
+					ID:       "p-namespace-allowlist",
+					TenantID: "tenant-1",
+					Name:     "allow-only-approved-namespaces",
+					Type:     domain.PolicyTypeNamespaceAllowlist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.NamespaceListPolicyConfig{
+						Namespaces: []string{"library", "docker"},
+					},
+					Priority: 0,
+					Enabled:  true,
 				},
 			},
 			wantOutcome:   domain.DecisionDeny,
@@ -258,9 +294,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p-namespace-allowlist", TenantID: "tenant-1", Name: "allow-only-approved-namespaces",
-					Type: domain.PolicyTypeNamespaceAllowlist, Action: domain.PolicyActionDeny,
-					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"library", "docker"}}, Priority: 0, Enabled: true,
+					ID:       "p-namespace-allowlist",
+					TenantID: "tenant-1",
+					Name:     "allow-only-approved-namespaces",
+					Type:     domain.PolicyTypeNamespaceAllowlist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.NamespaceListPolicyConfig{
+						Namespaces: []string{"library", "docker"},
+					},
+					Priority: 0,
+					Enabled:  true,
 				},
 			},
 			wantOutcome:   domain.DecisionAllow,
@@ -283,9 +326,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p1", TenantID: "tenant-1", Name: "allow-internal",
-					Type: domain.PolicyTypeAllowlist, Action: domain.PolicyActionAllow,
-					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"internal"}}, Priority: 0, Enabled: true,
+					ID:       "p1",
+					TenantID: "tenant-1",
+					Name:     "allow-internal",
+					Type:     domain.PolicyTypeAllowlist,
+					Action:   domain.PolicyActionAllow,
+					Config: &domain.NamespaceListPolicyConfig{
+						Namespaces: []string{"internal"},
+					},
+					Priority: 0,
+					Enabled:  true,
 				},
 				{
 					ID: "p2", TenantID: "tenant-1", Name: "block-high-cvss",
@@ -335,9 +385,16 @@ func TestEvaluate(t *testing.T) {
 			},
 			policies: []domain.Policy{
 				{
-					ID: "p2", TenantID: "tenant-1", Name: "block-untrusted",
-					Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
-					Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted-registry"}}, Priority: 5, Enabled: true,
+					ID:       "p2",
+					TenantID: "tenant-1",
+					Name:     "block-untrusted",
+					Type:     domain.PolicyTypeBlocklist,
+					Action:   domain.PolicyActionDeny,
+					Config: &domain.NamespaceListPolicyConfig{
+						Namespaces: []string{"untrusted-registry"},
+					},
+					Priority: 5,
+					Enabled:  true,
 				},
 				{
 					ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",
@@ -425,9 +482,16 @@ func TestEvaluate_SamePriorityDeterministic(t *testing.T) {
 
 	policies := []domain.Policy{
 		{
-			ID: "p2", TenantID: "tenant-1", Name: "block-untrusted",
-			Type: domain.PolicyTypeBlocklist, Action: domain.PolicyActionDeny,
-			Config: &domain.NamespaceListPolicyConfig{Namespaces: []string{"untrusted-registry"}}, Priority: 0, Enabled: true,
+			ID:       "p2",
+			TenantID: "tenant-1",
+			Name:     "block-untrusted",
+			Type:     domain.PolicyTypeBlocklist,
+			Action:   domain.PolicyActionDeny,
+			Config: &domain.NamespaceListPolicyConfig{
+				Namespaces: []string{"untrusted-registry"},
+			},
+			Priority: 0,
+			Enabled:  true,
 		},
 		{
 			ID: "p1", TenantID: "tenant-1", Name: "block-high-cvss",

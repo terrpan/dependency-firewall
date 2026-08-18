@@ -36,7 +36,12 @@ type DependencyGraphWorker struct {
 
 // NewDependencyGraphWorker creates a new DependencyGraphWorker. watcher may be
 // nil, in which case the worker relies solely on interval polling.
-func NewDependencyGraphWorker(resolver port.DependencyGraphResolver, watcher port.DependencyGraphJobWatcher, cfg DependencyGraphWorkerConfig, logger *slog.Logger) *DependencyGraphWorker {
+func NewDependencyGraphWorker(
+	resolver port.DependencyGraphResolver,
+	watcher port.DependencyGraphJobWatcher,
+	cfg DependencyGraphWorkerConfig,
+	logger *slog.Logger,
+) *DependencyGraphWorker {
 	return &DependencyGraphWorker{resolver: resolver, watcher: watcher, cfg: cfg, logger: logger}
 }
 
@@ -158,7 +163,10 @@ func (w *DependencyGraphWorker) resolveJob(ctx context.Context, job domain.Depen
 	)
 }
 
-func resolveNPMGraph(ctx context.Context, job domain.DependencyGraphResolveRequest) ([]domain.DependencyGraphNode, []domain.DependencyGraphEdge, string, error) {
+func resolveNPMGraph(
+	ctx context.Context,
+	job domain.DependencyGraphResolveRequest,
+) ([]domain.DependencyGraphNode, []domain.DependencyGraphEdge, string, error) {
 	dir, err := os.MkdirTemp("", "dependency-firewall-npm-graph-*")
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("creating resolver workspace: %w", err)

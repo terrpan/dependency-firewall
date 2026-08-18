@@ -11,7 +11,11 @@ import (
 	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
 )
 
-func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, req policyRequest) (*PolicyResponse, error) {
+func (h *PolicyHandler) createPolicy(
+	ctx context.Context,
+	rawTenantID string,
+	req policyRequest,
+) (*PolicyResponse, error) {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -58,7 +62,15 @@ func (h *PolicyHandler) createPolicy(ctx context.Context, rawTenantID string, re
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			return nil, huma.Error400BadRequest("policy upstream not found")
 		}
-		return nil, humaInternalError(ctx, h.logger, "creating policy", err, "failed to create policy", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"creating policy",
+			err,
+			"failed to create policy",
+			"tenant_id",
+			tenantID,
+		)
 	}
 
 	return toPolicyResponse(p), nil
@@ -76,17 +88,34 @@ func (h *PolicyHandler) listPolicies(ctx context.Context, rawTenantID string) ([
 	policies, err := h.policies.ListByTenant(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains deprecated stored policies; run the policy data migration",
+			)
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data",
+			)
 		}
-		return nil, humaInternalError(ctx, h.logger, "listing policies", err, "failed to list policies", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"listing policies",
+			err,
+			"failed to list policies",
+			"tenant_id",
+			tenantID,
+		)
 	}
 	return toPoliciesResponse(policies), nil
 }
 
-func (h *PolicyHandler) listPolicyVersions(ctx context.Context, rawTenantID, id string) ([]*PolicyVersionResponse, error) {
+func (h *PolicyHandler) listPolicyVersions(
+	ctx context.Context,
+	rawTenantID, id string,
+) ([]*PolicyVersionResponse, error) {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -101,12 +130,28 @@ func (h *PolicyHandler) listPolicyVersions(ctx context.Context, rawTenantID, id 
 			return nil, huma.Error404NotFound("policy not found")
 		}
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains deprecated stored policies; run the policy data migration",
+			)
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data",
+			)
 		}
-		return nil, humaInternalError(ctx, h.logger, "listing policy versions", err, "failed to list policy versions", "tenant_id", tenantID, "policy_id", id)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"listing policy versions",
+			err,
+			"failed to list policy versions",
+			"tenant_id",
+			tenantID,
+			"policy_id",
+			id,
+		)
 	}
 	return toPolicyVersionsResponse(versions), nil
 }
@@ -126,17 +171,37 @@ func (h *PolicyHandler) getPolicy(ctx context.Context, rawTenantID, id string) (
 			return nil, huma.Error404NotFound("policy not found")
 		}
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains deprecated stored policies; run the policy data migration",
+			)
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data",
+			)
 		}
-		return nil, humaInternalError(ctx, h.logger, "getting policy", err, "failed to get policy", "tenant_id", tenantID, "policy_id", id)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"getting policy",
+			err,
+			"failed to get policy",
+			"tenant_id",
+			tenantID,
+			"policy_id",
+			id,
+		)
 	}
 	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string, req policyRequest) (*PolicyResponse, error) {
+func (h *PolicyHandler) updatePolicy(
+	ctx context.Context,
+	rawTenantID, id string,
+	req policyRequest,
+) (*PolicyResponse, error) {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -188,12 +253,26 @@ func (h *PolicyHandler) updatePolicy(ctx context.Context, rawTenantID, id string
 		if errors.Is(err, domain.ErrPolicyNotFound) {
 			return nil, huma.Error404NotFound("policy not found")
 		}
-		return nil, humaInternalError(ctx, h.logger, "updating policy", err, "failed to update policy", "tenant_id", tenantID, "policy_id", id)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"updating policy",
+			err,
+			"failed to update policy",
+			"tenant_id",
+			tenantID,
+			"policy_id",
+			id,
+		)
 	}
 	return toPolicyResponse(p), nil
 }
 
-func (h *PolicyHandler) rollbackPolicy(ctx context.Context, rawTenantID, id string, req policyRollbackRequest) (*PolicyResponse, error) {
+func (h *PolicyHandler) rollbackPolicy(
+	ctx context.Context,
+	rawTenantID, id string,
+	req policyRollbackRequest,
+) (*PolicyResponse, error) {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -211,10 +290,16 @@ func (h *PolicyHandler) rollbackPolicy(ctx context.Context, rawTenantID, id stri
 			return nil, huma.Error404NotFound("policy version not found")
 		}
 		if errors.Is(err, domain.ErrDeprecatedPolicyConfig) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains deprecated stored policies; run the policy data migration")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains deprecated stored policies; run the policy data migration",
+			)
 		}
 		if errors.Is(err, domain.ErrUnsupportedPolicySchemaVersion) {
-			return nil, huma.NewError(http.StatusConflict, "tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data")
+			return nil, huma.NewError(
+				http.StatusConflict,
+				"tenant contains policies with an unsupported schema_version; upgrade the service or migrate policy data",
+			)
 		}
 		if errors.Is(err, domain.ErrInvalidPolicy) {
 			return nil, huma.Error400BadRequest(err.Error())
@@ -222,7 +307,17 @@ func (h *PolicyHandler) rollbackPolicy(ctx context.Context, rawTenantID, id stri
 		if errors.Is(err, domain.ErrPolicyUpstreamIncompatible) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, humaInternalError(ctx, h.logger, "rolling back policy", err, "failed to rollback policy", "tenant_id", tenantID, "policy_id", id)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"rolling back policy",
+			err,
+			"failed to rollback policy",
+			"tenant_id",
+			tenantID,
+			"policy_id",
+			id,
+		)
 	}
 
 	return toPolicyResponse(p), nil
@@ -244,7 +339,17 @@ func (h *PolicyHandler) deletePolicy(ctx context.Context, rawTenantID, id string
 		if errors.Is(err, domain.ErrPolicyNotFound) {
 			return huma.Error404NotFound("policy not found")
 		}
-		return humaInternalError(ctx, h.logger, "deleting policy", err, "failed to delete policy", "tenant_id", tenantID, "policy_id", id)
+		return humaInternalError(
+			ctx,
+			h.logger,
+			"deleting policy",
+			err,
+			"failed to delete policy",
+			"tenant_id",
+			tenantID,
+			"policy_id",
+			id,
+		)
 	}
 	return nil
 }

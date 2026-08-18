@@ -6,7 +6,12 @@ import (
 	"google.golang.org/grpc"
 )
 
-func (s *Server) recordDecisionHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) recordDecisionHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &RecordDecisionRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -21,7 +26,12 @@ func (s *Server) recordDecisionHandler(srv any, ctx context.Context, dec func(an
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) getDecisionByArtifactHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) getDecisionByArtifactHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &GetDecisionByArtifactRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -36,7 +46,12 @@ func (s *Server) getDecisionByArtifactHandler(srv any, ctx context.Context, dec 
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) listDecisionsByTenantHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) listDecisionsByTenantHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ListDecisionsByTenantRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -51,7 +66,12 @@ func (s *Server) listDecisionsByTenantHandler(srv any, ctx context.Context, dec 
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) hasRecentAllowHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) hasRecentAllowHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &HasRecentAllowRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -66,7 +86,12 @@ func (s *Server) hasRecentAllowHandler(srv any, ctx context.Context, dec func(an
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) recordAuditEventHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) recordAuditEventHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &RecordAuditEventRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -81,7 +106,12 @@ func (s *Server) recordAuditEventHandler(srv any, ctx context.Context, dec func(
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) enqueueDependencyGraphResolveHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) enqueueDependencyGraphResolveHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &EnqueueDependencyGraphResolveRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -91,12 +121,20 @@ func (s *Server) enqueueDependencyGraphResolveHandler(srv any, ctx context.Conte
 	}
 	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/" + serviceName + "/EnqueueDependencyGraphResolve"}
 	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(proxyIngestGRPCService).EnqueueDependencyGraphResolve(ctx, req.(*EnqueueDependencyGraphResolveRequest))
+		return srv.(proxyIngestGRPCService).EnqueueDependencyGraphResolve(
+			ctx,
+			req.(*EnqueueDependencyGraphResolveRequest),
+		)
 	}
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) claimDependencyGraphResolveHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) claimDependencyGraphResolveHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ClaimDependencyGraphResolveRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -111,7 +149,12 @@ func (s *Server) claimDependencyGraphResolveHandler(srv any, ctx context.Context
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) completeDependencyGraphResolveHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) completeDependencyGraphResolveHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &CompleteDependencyGraphResolveRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -121,12 +164,20 @@ func (s *Server) completeDependencyGraphResolveHandler(srv any, ctx context.Cont
 	}
 	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/" + serviceName + "/CompleteDependencyGraphResolve"}
 	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(proxyIngestGRPCService).CompleteDependencyGraphResolve(ctx, req.(*CompleteDependencyGraphResolveRequest))
+		return srv.(proxyIngestGRPCService).CompleteDependencyGraphResolve(
+			ctx,
+			req.(*CompleteDependencyGraphResolveRequest),
+		)
 	}
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) failDependencyGraphResolveHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) failDependencyGraphResolveHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &FailDependencyGraphResolveRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -141,7 +192,12 @@ func (s *Server) failDependencyGraphResolveHandler(srv any, ctx context.Context,
 	return interceptor(ctx, req, info, handler)
 }
 
-func (s *Server) lookupDependencyGraphContextHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func (s *Server) lookupDependencyGraphContextHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &LookupDependencyGraphContextRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -151,7 +207,10 @@ func (s *Server) lookupDependencyGraphContextHandler(srv any, ctx context.Contex
 	}
 	info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/" + serviceName + "/LookupDependencyGraphContext"}
 	handler := func(ctx context.Context, req any) (any, error) {
-		return srv.(proxyIngestGRPCService).LookupDependencyGraphContext(ctx, req.(*LookupDependencyGraphContextRequest))
+		return srv.(proxyIngestGRPCService).LookupDependencyGraphContext(
+			ctx,
+			req.(*LookupDependencyGraphContextRequest),
+		)
 	}
 	return interceptor(ctx, req, info, handler)
 }

@@ -72,7 +72,12 @@ func TestShouldResolveDependencyContext(t *testing.T) {
 	t.Parallel()
 
 	req := dependencyContextRequest()
-	targeted := []domain.Policy{{Enabled: true, Target: &domain.PolicyTarget{DependencyScopes: []domain.DependencyScope{domain.DependencyScopeDirect}}}}
+	targeted := []domain.Policy{
+		{
+			Enabled: true,
+			Target:  &domain.PolicyTarget{DependencyScopes: []domain.DependencyScope{domain.DependencyScopeDirect}},
+		},
+	}
 
 	assert.True(t, shouldResolveDependencyContext(req, targeted))
 
@@ -102,14 +107,22 @@ type stubDependencyContextCache struct {
 	err               error
 }
 
-func (s *stubDependencyContextCache) Get(context.Context, domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (s *stubDependencyContextCache) Get(
+	context.Context,
+	domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.dependencyContext, nil
 }
 
-func (s *stubDependencyContextCache) Set(context.Context, domain.DependencyContextSummaryKey, domain.DependencyContext, time.Duration) error {
+func (s *stubDependencyContextCache) Set(
+	context.Context,
+	domain.DependencyContextSummaryKey,
+	domain.DependencyContext,
+	time.Duration,
+) error {
 	return nil
 }
 
@@ -117,23 +130,44 @@ type stubDependencyGraphRepository struct {
 	lookupErr error
 }
 
-func (s *stubDependencyGraphRepository) EnqueueResolve(context.Context, domain.DependencyGraphResolveRequest) (bool, error) {
+func (s *stubDependencyGraphRepository) EnqueueResolve(
+	context.Context,
+	domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	return false, nil
 }
 
-func (s *stubDependencyGraphRepository) ClaimNextResolveJob(context.Context, string, time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (s *stubDependencyGraphRepository) ClaimNextResolveJob(
+	context.Context,
+	string,
+	time.Time,
+) (*domain.DependencyGraphResolveRequest, error) {
 	return nil, nil
 }
 
-func (s *stubDependencyGraphRepository) CompleteResolve(context.Context, domain.DependencyGraphResolveRequest, []domain.DependencyGraphNode, []domain.DependencyGraphEdge, string) error {
+func (s *stubDependencyGraphRepository) CompleteResolve(
+	context.Context,
+	domain.DependencyGraphResolveRequest,
+	[]domain.DependencyGraphNode,
+	[]domain.DependencyGraphEdge,
+	string,
+) error {
 	return nil
 }
 
-func (s *stubDependencyGraphRepository) FailResolve(context.Context, domain.DependencyGraphResolveRequest, string, time.Time) error {
+func (s *stubDependencyGraphRepository) FailResolve(
+	context.Context,
+	domain.DependencyGraphResolveRequest,
+	string,
+	time.Time,
+) error {
 	return nil
 }
 
-func (s *stubDependencyGraphRepository) LookupContext(context.Context, domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (s *stubDependencyGraphRepository) LookupContext(
+	context.Context,
+	domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	if s.lookupErr != nil {
 		return nil, s.lookupErr
 	}

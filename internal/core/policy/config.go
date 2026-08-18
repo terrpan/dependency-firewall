@@ -53,7 +53,11 @@ func DecodeStoredConfigJSON(policyType domain.PolicyType, schemaVersion int, raw
 		return nil, invalidPolicyf("config is required")
 	}
 	if hasDeprecatedEnforceJSON(trimmed) {
-		return nil, fmt.Errorf("%w: stored policy config uses deprecated %q field; run the policy data migration", domain.ErrDeprecatedPolicyConfig, "enforce")
+		return nil, fmt.Errorf(
+			"%w: stored policy config uses deprecated %q field; run the policy data migration",
+			domain.ErrDeprecatedPolicyConfig,
+			"enforce",
+		)
 	}
 	return DecodeConfigJSON(policyType, schemaVersion, trimmed)
 }

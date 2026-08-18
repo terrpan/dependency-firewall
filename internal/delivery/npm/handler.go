@@ -104,7 +104,14 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 		Artifact:      artifact,
 		Operation:     "metadata",
 	}
-	if err := proxyflow.RecordRequestReceived(r.Context(), h.audit, audit, r, "npm metadata request received", nil); err != nil {
+	if err := proxyflow.RecordRequestReceived(
+		r.Context(),
+		h.audit,
+		audit,
+		r,
+		"npm metadata request received",
+		nil,
+	); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -122,7 +129,13 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
-		if err := proxyflow.RecordRequestDenied(r.Context(), h.audit, audit, decision, "npm metadata request denied"); err != nil {
+		if err := proxyflow.RecordRequestDenied(
+			r.Context(),
+			h.audit,
+			audit,
+			decision,
+			"npm metadata request denied",
+		); err != nil {
 			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -144,12 +157,23 @@ func (h *RegistryHandler) handleMetadata(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	} else {
-		if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "npm metadata request allowed"); err != nil {
+		if err := proxyflow.RecordRequestAllowed(
+			r.Context(),
+			h.audit,
+			audit,
+			decision,
+			"npm metadata request allowed",
+		); err != nil {
 			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
 	}
-	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "npm upstream metadata fetch started"); err != nil {
+	if err := proxyflow.RecordUpstreamFetchStarted(
+		r.Context(),
+		h.audit,
+		audit,
+		"npm upstream metadata fetch started",
+	); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -223,7 +247,14 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 		Artifact:      artifact,
 		Operation:     "tarball",
 	}
-	if err := proxyflow.RecordRequestReceived(r.Context(), h.audit, audit, r, "npm tarball request received", nil); err != nil {
+	if err := proxyflow.RecordRequestReceived(
+		r.Context(),
+		h.audit,
+		audit,
+		r,
+		"npm tarball request received",
+		nil,
+	); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
@@ -241,7 +272,13 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if decision.Outcome == domain.DecisionDeny {
-		if err := proxyflow.RecordRequestDenied(r.Context(), h.audit, audit, decision, "npm tarball request denied"); err != nil {
+		if err := proxyflow.RecordRequestDenied(
+			r.Context(),
+			h.audit,
+			audit,
+			decision,
+			"npm tarball request denied",
+		); err != nil {
 			writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -250,11 +287,22 @@ func (h *RegistryHandler) handleTarball(w http.ResponseWriter, r *http.Request, 
 	}
 
 	addWarningHeaders(w, decision)
-	if err := proxyflow.RecordRequestAllowed(r.Context(), h.audit, audit, decision, "npm tarball request allowed"); err != nil {
+	if err := proxyflow.RecordRequestAllowed(
+		r.Context(),
+		h.audit,
+		audit,
+		decision,
+		"npm tarball request allowed",
+	); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	if err := proxyflow.RecordUpstreamFetchStarted(r.Context(), h.audit, audit, "npm upstream tarball fetch started"); err != nil {
+	if err := proxyflow.RecordUpstreamFetchStarted(
+		r.Context(),
+		h.audit,
+		audit,
+		"npm upstream tarball fetch started",
+	); err != nil {
 		writeNPMError(w, "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}

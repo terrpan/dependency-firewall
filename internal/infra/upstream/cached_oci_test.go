@@ -32,7 +32,12 @@ type stubOCIArtifactCache struct {
 	startWriteErr     error
 }
 
-func (s *stubOCIArtifactCache) Get(_ context.Context, tenantID, upstreamID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
+func (s *stubOCIArtifactCache) Get(
+	_ context.Context,
+	tenantID, upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+) (*port.UpstreamResponse, error) {
 	s.getCalls++
 	s.lastGetTenantID = tenantID
 	s.lastGetUpstreamID = upstreamID
@@ -41,7 +46,13 @@ func (s *stubOCIArtifactCache) Get(_ context.Context, tenantID, upstreamID strin
 	return s.getResp, s.getErr
 }
 
-func (s *stubOCIArtifactCache) StartWrite(_ context.Context, tenantID, upstreamID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
+func (s *stubOCIArtifactCache) StartWrite(
+	_ context.Context,
+	tenantID, upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+	descriptor port.OCIArtifactDescriptor,
+) (port.OCIArtifactWriter, error) {
 	s.startWriteCalls++
 	s.lastWriteTenant = tenantID
 	s.lastWriteUpstream = upstreamID
@@ -85,7 +96,11 @@ type stubUpstreamClient struct {
 	resolveErr    error
 }
 
-func (s *stubUpstreamClient) FetchMetadata(context.Context, domain.Upstream, domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (s *stubUpstreamClient) FetchMetadata(
+	context.Context,
+	domain.Upstream,
+	domain.ArtifactIdentity,
+) (*port.UpstreamResponse, error) {
 	s.metadataCalls++
 	return s.metadataResp, s.metadataErr
 }
@@ -95,7 +110,11 @@ func (s *stubUpstreamClient) FetchContent(context.Context, domain.Upstream, stri
 	return s.contentResp, s.contentErr
 }
 
-func (s *stubUpstreamClient) ResolveReference(context.Context, domain.Upstream, domain.ArtifactIdentity) (string, error) {
+func (s *stubUpstreamClient) ResolveReference(
+	context.Context,
+	domain.Upstream,
+	domain.ArtifactIdentity,
+) (string, error) {
 	return s.resolveDigest, s.resolveErr
 }
 
@@ -109,7 +128,11 @@ func TestCachedOCIClientFetchContent_CacheHitBypassesDelegate(t *testing.T) {
 	delegate := &stubUpstreamClient{}
 	client := NewCachedOCIClient(delegate, cache, nil)
 
-	resp, err := client.FetchContent(context.Background(), domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"}, "sha256:abc")
+	resp, err := client.FetchContent(
+		context.Background(),
+		domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"},
+		"sha256:abc",
+	)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -135,7 +158,11 @@ func TestCachedOCIClientFetchContent_CacheMissStreamsAndCommits(t *testing.T) {
 	}
 	client := NewCachedOCIClient(delegate, cache, nil)
 
-	resp, err := client.FetchContent(context.Background(), domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"}, "sha256:abc")
+	resp, err := client.FetchContent(
+		context.Background(),
+		domain.Upstream{ID: "upstream-1", TenantID: "tenant-1"},
+		"sha256:abc",
+	)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 

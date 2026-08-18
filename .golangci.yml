@@ -1,0 +1,149 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true
+      print-issued-lines: true
+      print-linter-name: true
+
+linters:
+  default: none
+  enable:
+    # Error-handling & correctness
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+
+    # Style checks (linters)
+    - revive
+    - misspell
+    - whitespace
+    - nolintlint
+
+    # Complexity
+    - gocyclo
+    - gocognit
+    - funlen
+
+    # Security
+    - gosec
+
+    # Performance
+    - prealloc
+
+    # Maintainability
+    - dupl
+    - gocritic
+
+  exclusions:
+    rules:
+      # lighten up tests
+      - path: '_test\.go'
+        linters:
+          - gocyclo
+          - dupl
+          - funlen
+          - errcheck
+          - gocognit
+          - gosec
+
+      # skip generated protobufs
+      - path: '.*\.pb\.go'
+        linters:
+          - revive
+
+      # Transport translation layers are mechanical request/response DTOs and
+      # thin handler wrappers. Requiring doc comments on each field-mapping
+      # type adds noise without adding meaning; the contract they mirror is
+      # documented in docs/architecture.md and the proto definitions.
+      - path: "internal/(wire|delivery)/(ingest|bundle)grpc/"
+        text: "exported: exported (type|method|function|const|var)"
+        linters:
+          - revive
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (*os.File).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Stmt).Close
+
+    gocyclo:
+      min-complexity: 15
+
+    funlen:
+      lines: 80
+      statements: 40
+      ignore-comments: true
+
+    gocognit:
+      min-complexity: 20
+
+    revive:
+      severity: warning
+      rules:
+        - name: exported
+          severity: error
+        - name: var-naming
+          severity: error
+
+    govet:
+      enable-all: true
+      disable:
+        # Reports every read of a variable shadowed in an inner scope. In Go,
+        # shadowing `err` and `ctx` inside a narrower scope is idiomatic.
+        - shadow
+        # Struct field ordering for padding. Optimising layout conflicts with
+        # grouping fields by meaning, and none of these structs are allocated
+        # in volumes where the saved bytes matter.
+        - fieldalignment
+
+    staticcheck:
+      checks:
+        - all
+        # Package comments on every package. This module is an application, not
+        # a published library; package-level intent lives in docs/ instead.
+        - -ST1000
+
+    gosec:
+      severity: medium
+      confidence: low
+      excludes:
+        # Unhandled errors, already covered by errcheck with better reporting.
+        - G104
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    dupl:
+      threshold: 100
+
+formatters:
+  enable:
+    - goimports
+    - golines
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/danielterry/dependency-firewall
+    golines:
+      max-len: 120
+      tab-len: 4
+      shorten-comments: false
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

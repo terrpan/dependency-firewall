@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"gopkg.in/yaml.v3"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 var validActions = map[string]domain.PolicyAction{

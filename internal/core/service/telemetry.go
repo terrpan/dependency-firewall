@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 const serviceTracerName = "github.com/danielterry/dependency-firewall/internal/core/service"

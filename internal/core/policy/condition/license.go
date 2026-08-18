@@ -51,7 +51,10 @@ func (l LicenseAllowlist) Evaluate(req domain.AccessRequest, config domain.Polic
 	}
 
 	if req.Metadata == nil {
-		matched, reason := applyMissingLicenseBehavior(unavailableBehavior, licenseMetadataUnavailableReason(req.Artifact))
+		matched, reason := applyMissingLicenseBehavior(
+			unavailableBehavior,
+			licenseMetadataUnavailableReason(req.Artifact),
+		)
 		return matched, reason, nil
 	}
 

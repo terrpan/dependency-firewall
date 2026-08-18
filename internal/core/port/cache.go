@@ -10,7 +10,12 @@ import (
 
 // DecisionCache caches evaluated decisions.
 type DecisionCache interface {
-	Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, dependencyContextHash string) (*domain.Decision, error)
+	Get(
+		ctx context.Context,
+		tenantID string,
+		artifact domain.ArtifactIdentity,
+		dependencyContextHash string,
+	) (*domain.Decision, error)
 	Set(ctx context.Context, decision *domain.Decision, ttl time.Duration) error
 	Invalidate(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) error
 	InvalidateTenant(ctx context.Context, tenantID string) error
@@ -19,14 +24,25 @@ type DecisionCache interface {
 // MetadataCache caches enrichment metadata.
 type MetadataCache interface {
 	Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error)
-	Set(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, metadata *domain.ArtifactMetadata, ttl time.Duration) error
+	Set(
+		ctx context.Context,
+		tenantID string,
+		artifact domain.ArtifactIdentity,
+		metadata *domain.ArtifactMetadata,
+		ttl time.Duration,
+	) error
 	InvalidateTenant(ctx context.Context, tenantID string) error
 }
 
 // DependencyContextCache caches graph context summaries for hot request-path lookups.
 type DependencyContextCache interface {
 	Get(ctx context.Context, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error)
-	Set(ctx context.Context, key domain.DependencyContextSummaryKey, dependencyContext domain.DependencyContext, ttl time.Duration) error
+	Set(
+		ctx context.Context,
+		key domain.DependencyContextSummaryKey,
+		dependencyContext domain.DependencyContext,
+		ttl time.Duration,
+	) error
 }
 
 // OCIArtifactKind identifies the OCI artifact type stored in the cache.
@@ -52,6 +68,19 @@ type OCIArtifactWriter interface {
 
 // OCIArtifactCache caches OCI manifests and blobs by tenant, upstream, and immutable digest.
 type OCIArtifactCache interface {
-	Get(ctx context.Context, tenantID string, upstreamID string, kind OCIArtifactKind, digest string) (*UpstreamResponse, error)
-	StartWrite(ctx context.Context, tenantID string, upstreamID string, kind OCIArtifactKind, digest string, descriptor OCIArtifactDescriptor) (OCIArtifactWriter, error)
+	Get(
+		ctx context.Context,
+		tenantID string,
+		upstreamID string,
+		kind OCIArtifactKind,
+		digest string,
+	) (*UpstreamResponse, error)
+	StartWrite(
+		ctx context.Context,
+		tenantID string,
+		upstreamID string,
+		kind OCIArtifactKind,
+		digest string,
+		descriptor OCIArtifactDescriptor,
+	) (OCIArtifactWriter, error)
 }

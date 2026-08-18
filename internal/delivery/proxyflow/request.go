@@ -14,7 +14,12 @@ func RequestIDFromContext(ctx context.Context) string {
 	return requestID
 }
 
-func NewAccessRequest(ctx context.Context, tenantID string, upstream domain.Upstream, artifact domain.ArtifactIdentity) domain.AccessRequest {
+func NewAccessRequest(
+	ctx context.Context,
+	tenantID string,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) domain.AccessRequest {
 	return domain.AccessRequest{
 		TenantID:  tenantID,
 		RequestID: RequestIDFromContext(ctx),

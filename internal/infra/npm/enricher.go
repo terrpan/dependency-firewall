@@ -49,7 +49,11 @@ type scorecardClient interface {
 }
 
 // NewMetadataEnricher creates a new npm metadata enricher.
-func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger, scorecards ...scorecardClient) *MetadataEnricher {
+func NewMetadataEnricher(
+	httpClient *http.Client,
+	logger *slog.Logger,
+	scorecards ...scorecardClient,
+) *MetadataEnricher {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultTimeout}
 	} else if httpClient.Timeout == 0 {
@@ -68,7 +72,10 @@ func NewMetadataEnricher(httpClient *http.Client, logger *slog.Logger, scorecard
 }
 
 // Enrich fetches package metadata from the npm registry to populate PublishedAt and Licenses.
-func (e *MetadataEnricher) Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (e *MetadataEnricher) Enrich(
+	ctx context.Context,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	e.logger.InfoContext(ctx, "npm enricher called",
 		"ecosystem", artifact.Ecosystem,
 		"name", artifact.Name,

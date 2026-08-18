@@ -46,7 +46,14 @@ func appendControlPlaneErrors(statuses []int, additions ...int) []int {
 	return merged
 }
 
-func humaInternalError(ctx context.Context, logger *slog.Logger, logMessage string, err error, clientMessage string, attrs ...any) error {
+func humaInternalError(
+	ctx context.Context,
+	logger *slog.Logger,
+	logMessage string,
+	err error,
+	clientMessage string,
+	attrs ...any,
+) error {
 	if isCanceledRequest(ctx, err) {
 		return huma.NewError(statusClientClosedRequest, "request canceled")
 	}

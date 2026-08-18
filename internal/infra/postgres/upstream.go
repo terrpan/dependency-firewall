@@ -67,7 +67,11 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 }
 
 // GetByEcosystem returns the active upstream for a tenant's ecosystem.
-func (r *UpstreamRepository) GetByEcosystem(ctx context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+func (r *UpstreamRepository) GetByEcosystem(
+	ctx context.Context,
+	tenantID string,
+	eco domain.EcosystemType,
+) (*domain.Upstream, error) {
 	var u domain.Upstream
 	var capabilities []string
 	var authType string
@@ -116,7 +120,20 @@ func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) 
 		var authUsername sql.NullString
 		var authSecret sql.NullString
 		var authUpdatedAt sql.NullTime
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&u.ID,
+			&u.TenantID,
+			&u.Name,
+			&u.Ecosystem,
+			&u.BaseURL,
+			&capabilities,
+			&authType,
+			&authUsername,
+			&authSecret,
+			&authUpdatedAt,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning upstream row: %w", err)
 		}
 		u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
@@ -152,7 +169,19 @@ func (r *UpstreamRepository) ListBundleByTenant(ctx context.Context, tenantID st
 		var authType string
 		var authUsername sql.NullString
 		var authUpdatedAt sql.NullTime
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&u.ID,
+			&u.TenantID,
+			&u.Name,
+			&u.Ecosystem,
+			&u.BaseURL,
+			&capabilities,
+			&authType,
+			&authUsername,
+			&authUpdatedAt,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning bundle upstream row: %w", err)
 		}
 		u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
@@ -173,11 +202,19 @@ func (r *UpstreamRepository) Create(ctx context.Context, upstream *domain.Upstre
 	}
 
 	var authUpdatedAt sql.NullTime
-	err = r.pool.QueryRow(ctx,
+	err = r.pool.QueryRow(
+		ctx,
 		`INSERT INTO upstreams (tenant_id, name, ecosystem, base_url, capabilities, auth_type, auth_username, auth_secret, auth_updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, CASE WHEN $6 = 'none' THEN NULL ELSE now() END)
 		 RETURNING id, auth_updated_at, created_at, updated_at`,
-		upstream.TenantID, upstream.Name, upstream.Ecosystem, upstream.BaseURL, domain.UpstreamCapabilityStrings(upstream.Capabilities), authType, authUsername, authSecret,
+		upstream.TenantID,
+		upstream.Name,
+		upstream.Ecosystem,
+		upstream.BaseURL,
+		domain.UpstreamCapabilityStrings(upstream.Capabilities),
+		authType,
+		authUsername,
+		authSecret,
 	).Scan(&upstream.ID, &authUpdatedAt, &upstream.CreatedAt, &upstream.UpdatedAt)
 	if err != nil {
 		if mappedErr := mapConstraintError(err, upstreamConstraintErrors); mappedErr != err {
@@ -263,7 +300,11 @@ func (r *UpstreamRepository) Delete(ctx context.Context, tenantID, id string) er
 
 // RewrapUpstreamAuthSecret decrypts one stored secret and immediately passes
 // the plaintext bytes to wrap. The plaintext buffer is cleared before returning.
-func (r *UpstreamRepository) RewrapUpstreamAuthSecret(ctx context.Context, tenantID, upstreamID string, wrap port.UpstreamAuthSecretWrapper) ([]byte, error) {
+func (r *UpstreamRepository) RewrapUpstreamAuthSecret(
+	ctx context.Context,
+	tenantID, upstreamID string,
+	wrap port.UpstreamAuthSecretWrapper,
+) ([]byte, error) {
 	if wrap == nil {
 		return nil, fmt.Errorf("upstream auth secret wrapper is not configured")
 	}
@@ -321,7 +362,12 @@ func (r *UpstreamRepository) authColumns(auth *domain.UpstreamAuth) (string, any
 	return string(auth.Type), username, string(encrypted), nil
 }
 
-func (r *UpstreamRepository) attachAuth(upstream *domain.Upstream, authType string, username, encryptedSecret sql.NullString, updatedAt sql.NullTime) error {
+func (r *UpstreamRepository) attachAuth(
+	upstream *domain.Upstream,
+	authType string,
+	username, encryptedSecret sql.NullString,
+	updatedAt sql.NullTime,
+) error {
 	if authType == "" || authType == string(domain.UpstreamAuthNone) {
 		upstream.Auth = nil
 		return nil
@@ -352,7 +398,12 @@ func (r *UpstreamRepository) attachAuth(upstream *domain.Upstream, authType stri
 	return nil
 }
 
-func attachBundleAuthMetadata(upstream *domain.Upstream, authType string, username sql.NullString, updatedAt sql.NullTime) {
+func attachBundleAuthMetadata(
+	upstream *domain.Upstream,
+	authType string,
+	username sql.NullString,
+	updatedAt sql.NullTime,
+) {
 	if authType == "" || authType == string(domain.UpstreamAuthNone) {
 		upstream.Auth = nil
 		return

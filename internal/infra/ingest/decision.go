@@ -26,7 +26,11 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 }
 
 // GetByArtifact fetches the most recent decision for an artifact.
-func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (r *DecisionRepository) GetByArtifact(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("getting decision by artifact: client unavailable")
 	}
@@ -34,7 +38,12 @@ func (r *DecisionRepository) GetByArtifact(ctx context.Context, tenantID string,
 }
 
 // ListByTenant lists decisions for a tenant.
-func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+func (r *DecisionRepository) ListByTenant(
+	ctx context.Context,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("listing decisions: client unavailable")
 	}
@@ -42,7 +51,12 @@ func (r *DecisionRepository) ListByTenant(ctx context.Context, tenantID string, 
 }
 
 // HasRecentAllow checks whether an artifact has a recent allow decision.
-func (r *DecisionRepository) HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func (r *DecisionRepository) HasRecentAllow(
+	ctx context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	if r == nil || r.client == nil {
 		return false, fmt.Errorf("checking recent allow: client unavailable")
 	}

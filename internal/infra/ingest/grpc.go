@@ -47,17 +47,31 @@ func (c *GRPCClient) RecordDecision(ctx context.Context, decision *domain.Decisi
 }
 
 // GetDecisionByArtifact fetches the most recent persisted decision for an artifact.
-func (c *GRPCClient) GetDecisionByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (c *GRPCClient) GetDecisionByArtifact(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	return ingestwire.GetDecisionByArtifact(ctx, c.conn, tenantID, artifact)
 }
 
 // ListDecisionsByTenant fetches persisted decisions for a tenant.
-func (c *GRPCClient) ListDecisionsByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+func (c *GRPCClient) ListDecisionsByTenant(
+	ctx context.Context,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
 	return ingestwire.ListDecisionsByTenant(ctx, c.conn, tenantID, limit, offset, search)
 }
 
 // HasRecentAllow checks whether an artifact has a recent allow decision.
-func (c *GRPCClient) HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func (c *GRPCClient) HasRecentAllow(
+	ctx context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	return ingestwire.HasRecentAllow(ctx, c.conn, tenantID, ecosystem, namespace, name)
 }
 
@@ -72,27 +86,48 @@ func (c *GRPCClient) RecordAuditEvent(ctx context.Context, event *domain.AuditEv
 }
 
 // EnqueueDependencyGraphResolve enqueues one dependency graph resolve request.
-func (c *GRPCClient) EnqueueDependencyGraphResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (c *GRPCClient) EnqueueDependencyGraphResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	return ingestwire.EnqueueDependencyGraphResolve(ctx, c.conn, req)
 }
 
 // ClaimNextResolveJob claims the next dependency graph resolver job through the control plane.
-func (c *GRPCClient) ClaimNextResolveJob(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (c *GRPCClient) ClaimNextResolveJob(
+	ctx context.Context,
+	tenantID string,
+	now time.Time,
+) (*domain.DependencyGraphResolveRequest, error) {
 	return ingestwire.ClaimDependencyGraphResolve(ctx, c.conn, tenantID, now)
 }
 
 // CompleteResolve persists a completed dependency graph through the control plane.
-func (c *GRPCClient) CompleteResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error {
+func (c *GRPCClient) CompleteResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+	nodes []domain.DependencyGraphNode,
+	edges []domain.DependencyGraphEdge,
+	graphHash string,
+) error {
 	return ingestwire.CompleteDependencyGraphResolve(ctx, c.conn, req, nodes, edges, graphHash)
 }
 
 // FailResolve persists a dependency graph resolver failure through the control plane.
-func (c *GRPCClient) FailResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error {
+func (c *GRPCClient) FailResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+	message string,
+	retryAfter time.Time,
+) error {
 	return ingestwire.FailDependencyGraphResolve(ctx, c.conn, req, message, retryAfter)
 }
 
 // LookupContext loads the dependency graph context summary for an artifact through the control plane.
-func (c *GRPCClient) LookupContext(ctx context.Context, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (c *GRPCClient) LookupContext(
+	ctx context.Context,
+	key domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	return ingestwire.LookupDependencyGraphContext(ctx, c.conn, key)
 }
 

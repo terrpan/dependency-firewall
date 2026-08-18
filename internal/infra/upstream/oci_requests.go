@@ -19,7 +19,11 @@ func ociManifestURL(upstream domain.Upstream, artifact domain.ArtifactIdentity, 
 	)
 }
 
-func (c *OCIClient) executeOCIGet(ctx context.Context, upstream domain.Upstream, url string) (*port.UpstreamResponse, error) {
+func (c *OCIClient) executeOCIGet(
+	ctx context.Context,
+	upstream domain.Upstream,
+	url string,
+) (*port.UpstreamResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating GET request: %w", err)

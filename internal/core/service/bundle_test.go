@@ -426,7 +426,11 @@ func (s *stubBundleUpstreamRepo) GetByID(context.Context, string, string) (*doma
 	return nil, nil
 }
 
-func (s *stubBundleUpstreamRepo) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
+func (s *stubBundleUpstreamRepo) GetByEcosystem(
+	context.Context,
+	string,
+	domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return nil, nil
 }
 

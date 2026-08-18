@@ -24,7 +24,11 @@ type Provider struct {
 }
 
 // Start initializes global OpenTelemetry tracing state for one runtime process.
-func Start(ctx context.Context, cfg config.TelemetryConfig, serviceName, version, commit, buildTime string) (*Provider, error) {
+func Start(
+	ctx context.Context,
+	cfg config.TelemetryConfig,
+	serviceName, version, commit, buildTime string,
+) (*Provider, error) {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},

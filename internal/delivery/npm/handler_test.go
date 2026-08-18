@@ -55,21 +55,40 @@ type mockDecisionRepository struct {
 
 func (m *mockDecisionRepository) Record(_ context.Context, _ *domain.Decision) error { return nil }
 
-func (m *mockDecisionRepository) GetByArtifact(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.Decision, error) {
+func (m *mockDecisionRepository) GetByArtifact(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 
-func (m *mockDecisionRepository) ListByTenant(_ context.Context, _ string, _, _ int, _ string) ([]domain.Decision, error) {
+func (m *mockDecisionRepository) ListByTenant(
+	_ context.Context,
+	_ string,
+	_, _ int,
+	_ string,
+) ([]domain.Decision, error) {
 	return nil, nil
 }
 
-func (m *mockDecisionRepository) HasRecentAllow(_ context.Context, _ string, _ domain.EcosystemType, _, _ string) (bool, error) {
+func (m *mockDecisionRepository) HasRecentAllow(
+	_ context.Context,
+	_ string,
+	_ domain.EcosystemType,
+	_, _ string,
+) (bool, error) {
 	return m.hasRecentAllow, nil
 }
 
 type mockDecisionCache struct{}
 
-func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity, _ string) (*domain.Decision, error) {
+func (m *mockDecisionCache) Get(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+	_ string,
+) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 
@@ -87,11 +106,21 @@ func (m *mockDecisionCache) InvalidateTenant(_ context.Context, _ string) error 
 
 type mockMetadataCache struct{}
 
-func (m *mockMetadataCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (m *mockMetadataCache) Get(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	return nil, domain.ErrCacheMiss
 }
 
-func (m *mockMetadataCache) Set(_ context.Context, _ string, _ domain.ArtifactIdentity, _ *domain.ArtifactMetadata, _ time.Duration) error {
+func (m *mockMetadataCache) Set(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+	_ *domain.ArtifactMetadata,
+	_ time.Duration,
+) error {
 	return nil
 }
 
@@ -108,7 +137,10 @@ func (m *mockEnricher) Enrich(_ context.Context, _ domain.ArtifactIdentity) (*do
 // mockAgeEnricher returns old publish dates for versioned requests, nil for unversioned.
 type mockAgeEnricher struct{}
 
-func (m *mockAgeEnricher) Enrich(_ context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (m *mockAgeEnricher) Enrich(
+	_ context.Context,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	if artifact.Version == "" {
 		return &domain.ArtifactMetadata{}, nil
 	}
@@ -121,7 +153,11 @@ type mockUpstreamClient struct {
 	blobBody     string
 }
 
-func (m *mockUpstreamClient) FetchMetadata(_ context.Context, _ domain.Upstream, _ domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (m *mockUpstreamClient) FetchMetadata(
+	_ context.Context,
+	_ domain.Upstream,
+	_ domain.ArtifactIdentity,
+) (*port.UpstreamResponse, error) {
 	return &port.UpstreamResponse{
 		StatusCode:  http.StatusOK,
 		ContentType: "application/json",
@@ -130,7 +166,11 @@ func (m *mockUpstreamClient) FetchMetadata(_ context.Context, _ domain.Upstream,
 	}, nil
 }
 
-func (m *mockUpstreamClient) FetchContent(_ context.Context, _ domain.Upstream, _ string) (*port.UpstreamResponse, error) {
+func (m *mockUpstreamClient) FetchContent(
+	_ context.Context,
+	_ domain.Upstream,
+	_ string,
+) (*port.UpstreamResponse, error) {
 	return &port.UpstreamResponse{
 		StatusCode:  http.StatusOK,
 		ContentType: "application/octet-stream",
@@ -139,7 +179,11 @@ func (m *mockUpstreamClient) FetchContent(_ context.Context, _ domain.Upstream, 
 	}, nil
 }
 
-func (m *mockUpstreamClient) ResolveReference(_ context.Context, _ domain.Upstream, _ domain.ArtifactIdentity) (string, error) {
+func (m *mockUpstreamClient) ResolveReference(
+	_ context.Context,
+	_ domain.Upstream,
+	_ domain.ArtifactIdentity,
+) (string, error) {
 	return "", domain.ErrArtifactNotFound
 }
 
@@ -151,7 +195,11 @@ func (m *mockUpstreamRepository) GetByID(_ context.Context, _, _ string) (*domai
 	return m.upstream, nil
 }
 
-func (m *mockUpstreamRepository) GetByEcosystem(_ context.Context, _ string, _ domain.EcosystemType) (*domain.Upstream, error) {
+func (m *mockUpstreamRepository) GetByEcosystem(
+	_ context.Context,
+	_ string,
+	_ domain.EcosystemType,
+) (*domain.Upstream, error) {
 	if m.upstream == nil {
 		return nil, domain.ErrUpstreamNotFound
 	}
@@ -184,7 +232,11 @@ func newTestHandler(policies []domain.Policy, hasRecentAllow bool) *RegistryHand
 	return newTestHandlerWithEnricher(policies, hasRecentAllow, &mockEnricher{})
 }
 
-func newTestHandlerWithEnricher(policies []domain.Policy, hasRecentAllow bool, enricher port.Enricher) *RegistryHandler {
+func newTestHandlerWithEnricher(
+	policies []domain.Policy,
+	hasRecentAllow bool,
+	enricher port.Enricher,
+) *RegistryHandler {
 	return newTestHandlerWithEnricherAndAudit(policies, hasRecentAllow, enricher, nil)
 }
 
@@ -537,13 +589,23 @@ func Test_handleMetadata_unversionedRequestSkipsLicenseAllowlistButTarballStillD
 	metaReq = withTenant(metaReq)
 	metaRR := httptest.NewRecorder()
 	mux.ServeHTTP(metaRR, metaReq)
-	assert.Equal(t, http.StatusOK, metaRR.Code, "metadata request should be allowed so npm can resolve a concrete version")
+	assert.Equal(
+		t,
+		http.StatusOK,
+		metaRR.Code,
+		"metadata request should be allowed so npm can resolve a concrete version",
+	)
 
 	tarballReq := httptest.NewRequest(http.MethodGet, "/npm/react/-/react-19.2.0.tgz", nil)
 	tarballReq = withTenant(tarballReq)
 	tarballRR := httptest.NewRecorder()
 	mux.ServeHTTP(tarballRR, tarballReq)
-	assert.Equal(t, http.StatusForbidden, tarballRR.Code, "versioned tarball request should still fail closed when no license is declared")
+	assert.Equal(
+		t,
+		http.StatusForbidden,
+		tarballRR.Code,
+		"versioned tarball request should still fail closed when no license is declared",
+	)
 
 	var resp npmErrorResponse
 	err := json.NewDecoder(tarballRR.Body).Decode(&resp)

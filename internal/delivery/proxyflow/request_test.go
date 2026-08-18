@@ -31,7 +31,11 @@ func (s *upstreamRepoStub) GetByID(_ context.Context, tenantID, id string) (*dom
 	return s.byID, nil
 }
 
-func (s *upstreamRepoStub) GetByEcosystem(_ context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+func (s *upstreamRepoStub) GetByEcosystem(
+	_ context.Context,
+	tenantID string,
+	eco domain.EcosystemType,
+) (*domain.Upstream, error) {
 	s.lastByEcoTenant = tenantID
 	s.lastByEco = eco
 	if s.errByEcosystem != nil {

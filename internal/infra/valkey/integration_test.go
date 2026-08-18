@@ -289,7 +289,16 @@ func TestMetadataCache_realValkey(t *testing.T) {
 			Version:   "5.4.1",
 		}
 
-		require.NoError(t, cache.Set(ctx, "tenant-ttl", artifact, &domain.ArtifactMetadata{MaxCVSS: ptrFloat64(5.5)}, 200*time.Millisecond))
+		require.NoError(
+			t,
+			cache.Set(
+				ctx,
+				"tenant-ttl",
+				artifact,
+				&domain.ArtifactMetadata{MaxCVSS: ptrFloat64(5.5)},
+				200*time.Millisecond,
+			),
+		)
 
 		require.Eventually(t, func() bool {
 			_, err := cache.Get(ctx, "tenant-ttl", artifact, "")

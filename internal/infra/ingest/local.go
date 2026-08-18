@@ -27,7 +27,11 @@ func (r *LocalDecisionRepository) Record(ctx context.Context, decision *domain.D
 }
 
 // GetByArtifact fetches the most recent decision for an artifact.
-func (r *LocalDecisionRepository) GetByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (r *LocalDecisionRepository) GetByArtifact(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	if r == nil || r.service == nil {
 		return nil, fmt.Errorf("getting decision by artifact: service unavailable")
 	}
@@ -35,7 +39,12 @@ func (r *LocalDecisionRepository) GetByArtifact(ctx context.Context, tenantID st
 }
 
 // ListByTenant lists decisions for a tenant.
-func (r *LocalDecisionRepository) ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+func (r *LocalDecisionRepository) ListByTenant(
+	ctx context.Context,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
 	if r == nil || r.service == nil {
 		return nil, fmt.Errorf("listing decisions: service unavailable")
 	}
@@ -43,7 +52,12 @@ func (r *LocalDecisionRepository) ListByTenant(ctx context.Context, tenantID str
 }
 
 // HasRecentAllow checks whether an artifact has a recent allow decision.
-func (r *LocalDecisionRepository) HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func (r *LocalDecisionRepository) HasRecentAllow(
+	ctx context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	if r == nil || r.service == nil {
 		return false, fmt.Errorf("checking recent allow: service unavailable")
 	}

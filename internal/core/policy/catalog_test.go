@@ -25,7 +25,13 @@ func TestTypeCatalog_CoversSupportedPolicyTypes(t *testing.T) {
 		assert.NotEmpty(t, descriptor.Example, "example for %q", descriptor.Type)
 		assert.Positive(t, descriptor.CurrentSchemaVersion, "current schema version for %q", descriptor.Type)
 		assert.NotEmpty(t, descriptor.SupportedSchemaVersions, "supported schema versions for %q", descriptor.Type)
-		assert.Contains(t, descriptor.SupportedSchemaVersions, descriptor.CurrentSchemaVersion, "current schema version for %q", descriptor.Type)
+		assert.Contains(
+			t,
+			descriptor.SupportedSchemaVersions,
+			descriptor.CurrentSchemaVersion,
+			"current schema version for %q",
+			descriptor.Type,
+		)
 		assert.NotEmpty(t, descriptor.SupportedActions, "supported actions for %q", descriptor.Type)
 		assert.NotEmpty(t, descriptor.SupportedEcosystems, "supported ecosystems for %q", descriptor.Type)
 

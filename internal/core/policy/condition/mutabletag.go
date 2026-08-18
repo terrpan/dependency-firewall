@@ -13,7 +13,11 @@ type BlockMutableTag struct{}
 func (b BlockMutableTag) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) (bool, string, error) {
 	typed, ok := config.(*domain.BlockMutableTagPolicyConfig)
 	if !ok {
-		return false, "", fmt.Errorf("block_mutable_tag requires %T, got %T", &domain.BlockMutableTagPolicyConfig{}, config)
+		return false, "", fmt.Errorf(
+			"block_mutable_tag requires %T, got %T",
+			&domain.BlockMutableTagPolicyConfig{},
+			config,
+		)
 	}
 	if err := typed.Validate(); err != nil {
 		return false, "", err

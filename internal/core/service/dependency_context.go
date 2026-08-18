@@ -37,7 +37,10 @@ func NewDependencyContextService(
 }
 
 // Resolve returns the best available context and whether an async resolve job was enqueued.
-func (s *DependencyContextService) Resolve(ctx context.Context, req domain.AccessRequest) (domain.DependencyContext, bool, error) {
+func (s *DependencyContextService) Resolve(
+	ctx context.Context,
+	req domain.AccessRequest,
+) (domain.DependencyContext, bool, error) {
 	if s == nil {
 		return domain.NewUnknownDependencyContext(), false, nil
 	}

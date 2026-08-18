@@ -19,7 +19,11 @@ type stubManifestLister struct {
 	errs map[string]error
 }
 
-func (s *stubManifestLister) ListManifestDependencyNames(_ context.Context, _ domain.Upstream, artifact domain.ArtifactIdentity) ([]string, error) {
+func (s *stubManifestLister) ListManifestDependencyNames(
+	_ context.Context,
+	_ domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := artifact.Name + "@" + artifact.Version
@@ -35,7 +39,10 @@ type recordingGraphQueue struct {
 	err      error
 }
 
-func (q *recordingGraphQueue) EnqueueResolve(_ context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (q *recordingGraphQueue) EnqueueResolve(
+	_ context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.err != nil {
@@ -66,9 +73,9 @@ func snapshotPackages(specs ...string) []domain.ArtifactIdentity {
 
 func TestNPMInstallSnapshotService_ProcessSnapshot_InfersSingleRoot(t *testing.T) {
 	lister := &stubManifestLister{deps: map[string][]string{
-		"morgan@1.10.0":   {"basic-auth", "debug", "on-finished"},
-		"basic-auth@2.0.1": {"safe-buffer"},
-		"debug@2.6.9":      {"ms"},
+		"morgan@1.10.0":     {"basic-auth", "debug", "on-finished"},
+		"basic-auth@2.0.1":  {"safe-buffer"},
+		"debug@2.6.9":       {"ms"},
 		"on-finished@2.3.0": {"ee-first"},
 		"safe-buffer@5.1.2": nil,
 		"ms@2.0.0":          nil,
@@ -99,7 +106,7 @@ func TestNPMInstallSnapshotService_ProcessSnapshot_InfersSingleRoot(t *testing.T
 
 func TestNPMInstallSnapshotService_ProcessSnapshot_MultipleRoots(t *testing.T) {
 	lister := &stubManifestLister{deps: map[string][]string{
-		"morgan@1.10.0": {"debug"},
+		"morgan@1.10.0":  {"debug"},
 		"express@4.18.2": {"debug"},
 		"debug@2.6.9":    nil,
 	}}

@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 // --- mock enricher ---
@@ -42,7 +43,11 @@ func (m *mockMetadataCache) cacheKey(tenantID string, artifact domain.ArtifactId
 	return tenantID + ":" + string(artifact.Ecosystem) + ":" + artifact.Name + ":" + artifact.Version
 }
 
-func (m *mockMetadataCache) Get(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (m *mockMetadataCache) Get(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	key := m.cacheKey(tenantID, artifact)
 	if meta, ok := m.store[key]; ok {
 		return meta, nil
@@ -50,7 +55,13 @@ func (m *mockMetadataCache) Get(_ context.Context, tenantID string, artifact dom
 	return nil, domain.ErrCacheMiss
 }
 
-func (m *mockMetadataCache) Set(_ context.Context, tenantID string, artifact domain.ArtifactIdentity, metadata *domain.ArtifactMetadata, ttl time.Duration) error {
+func (m *mockMetadataCache) Set(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+	metadata *domain.ArtifactMetadata,
+	ttl time.Duration,
+) error {
 	m.setCalls++
 	m.lastTTL = ttl
 	key := m.cacheKey(tenantID, artifact)

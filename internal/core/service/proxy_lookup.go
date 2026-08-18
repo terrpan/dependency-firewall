@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func (s *AccessService) normalizeAccessRequest(

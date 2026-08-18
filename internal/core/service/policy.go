@@ -139,7 +139,11 @@ func (s *PolicyService) Update(ctx context.Context, policyDef *domain.Policy) er
 }
 
 // RollbackToVersion restores a policy from a retained version snapshot.
-func (s *PolicyService) RollbackToVersion(ctx context.Context, tenantID, policyID string, version int) (*domain.Policy, error) {
+func (s *PolicyService) RollbackToVersion(
+	ctx context.Context,
+	tenantID, policyID string,
+	version int,
+) (*domain.Policy, error) {
 	versions, err := s.repo.ListVersions(ctx, tenantID, policyID, domain.MaxRetainedPolicyVersions)
 	if err != nil {
 		return nil, fmt.Errorf("listing policy versions for rollback: %w", err)
@@ -237,9 +241,18 @@ func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, imp
 		if persistErr != nil {
 			if mutated {
 				if finalizeErr := s.finalizeTenantMutation(ctx, tenantID); finalizeErr != nil {
-					return 0, fmt.Errorf("persisting imported policy %q: %w; finalizing partial import: %v", policies[i].Name, persistErr, finalizeErr)
+					return 0, fmt.Errorf(
+						"persisting imported policy %q: %w; finalizing partial import: %v",
+						policies[i].Name,
+						persistErr,
+						finalizeErr,
+					)
 				}
-				return 0, fmt.Errorf("persisting imported policy %q: %w; partial import already recorded a new policy revision and invalidated cached decisions", policies[i].Name, persistErr)
+				return 0, fmt.Errorf(
+					"persisting imported policy %q: %w; partial import already recorded a new policy revision and invalidated cached decisions",
+					policies[i].Name,
+					persistErr,
+				)
 			}
 			return 0, fmt.Errorf("persisting imported policy %q: %w", policies[i].Name, persistErr)
 		}

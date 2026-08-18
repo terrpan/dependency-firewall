@@ -3,9 +3,10 @@ package condition
 import (
 	"testing"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func ptrFloat64(v float64) *float64                            { return &v }

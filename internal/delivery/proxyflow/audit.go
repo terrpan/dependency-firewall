@@ -20,7 +20,14 @@ type AuditContext struct {
 	Operation     string
 }
 
-func RecordRequestReceived(ctx context.Context, recorder AuditRecorder, audit AuditContext, r *http.Request, message string, extraPayload map[string]any) error {
+func RecordRequestReceived(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	r *http.Request,
+	message string,
+	extraPayload map[string]any,
+) error {
 	payload := basePayload(audit.Operation)
 	payload["method"] = r.Method
 	payload["path"] = r.URL.Path
@@ -38,7 +45,13 @@ func RecordRequestReceived(ctx context.Context, recorder AuditRecorder, audit Au
 	})
 }
 
-func RecordRequestDenied(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, message string) error {
+func RecordRequestDenied(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	decision *domain.Decision,
+	message string,
+) error {
 	return record(ctx, recorder, requestAuditEvent(
 		audit,
 		domain.AuditEventRequestDenied,
@@ -51,7 +64,13 @@ func RecordRequestDenied(ctx context.Context, recorder AuditRecorder, audit Audi
 	))
 }
 
-func RecordRequestAllowed(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, message string) error {
+func RecordRequestAllowed(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	decision *domain.Decision,
+	message string,
+) error {
 	return record(ctx, recorder, requestAuditEvent(
 		audit,
 		domain.AuditEventRequestAllowed,
@@ -64,7 +83,13 @@ func RecordRequestAllowed(ctx context.Context, recorder AuditRecorder, audit Aud
 	))
 }
 
-func RecordRequestForwarded(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, reason, message string) error {
+func RecordRequestForwarded(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	decision *domain.Decision,
+	reason, message string,
+) error {
 	payload := map[string]any{"reason": reason}
 	if decision != nil {
 		payload["evaluation_outcome"] = decision.Outcome
@@ -82,7 +107,12 @@ func RecordSimpleRequestAllowed(ctx context.Context, recorder AuditRecorder, aud
 	return record(ctx, recorder, requestAuditEvent(audit, domain.AuditEventRequestAllowed, message, nil, nil))
 }
 
-func RecordSimpleRequestDenied(ctx context.Context, recorder AuditRecorder, audit AuditContext, reason, message string) error {
+func RecordSimpleRequestDenied(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	reason, message string,
+) error {
 	return record(ctx, recorder, requestAuditEvent(
 		audit,
 		domain.AuditEventRequestDenied,
@@ -105,7 +135,13 @@ func RecordUpstreamFetchStarted(ctx context.Context, recorder AuditRecorder, aud
 	})
 }
 
-func RecordUpstreamFetchFailed(ctx context.Context, recorder AuditRecorder, audit AuditContext, message string, err error) error {
+func RecordUpstreamFetchFailed(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	message string,
+	err error,
+) error {
 	return record(ctx, recorder, domain.AuditEvent{
 		TenantID:      audit.TenantID,
 		CorrelationID: audit.CorrelationID,

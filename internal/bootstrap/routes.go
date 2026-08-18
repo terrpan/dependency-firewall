@@ -36,7 +36,10 @@ func registerControlPlaneRoutes(
 				client: telemetry.WrapHTTPClient(&http.Client{Timeout: 3 * time.Second}),
 			}))
 		} else {
-			healthOptions = append(healthOptions, service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"))
+			healthOptions = append(
+				healthOptions,
+				service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"),
+			)
 		}
 	}
 
@@ -54,15 +57,29 @@ func registerControlPlaneRoutes(
 	apidelivery.NewHealthHandler(healthService, logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	tenantService := service.NewTenantService(deps.tenantRepo)
-	policyService := service.NewPolicyService(deps.policyRepo, deps.policyRevisionRepo, deps.decisionCache, deps.upstreamRepo)
+	policyService := service.NewPolicyService(
+		deps.policyRepo,
+		deps.policyRevisionRepo,
+		deps.decisionCache,
+		deps.upstreamRepo,
+	)
 	cacheService := service.NewCacheService(deps.decisionCache, deps.metadataCache)
 	upstreamService := service.NewUpstreamService(
 		deps.upstreamRepo,
 		deps.policyRepo,
-		service.WithAuthenticatedUpstreams(cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls"),
+		service.WithAuthenticatedUpstreams(
+			cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls",
+		),
 	)
 	evaluationService := service.NewEvaluationService(deps.decisionRepo)
-	auditListService := service.NewAuditService(nil, deps.auditRepo, logger, cfg.Audit.Enabled, parseAuditFailureMode(cfg.Audit.FailureMode), parseAuditDetailLevel(cfg.Audit.DetailLevel))
+	auditListService := service.NewAuditService(
+		nil,
+		deps.auditRepo,
+		logger,
+		cfg.Audit.Enabled,
+		parseAuditFailureMode(cfg.Audit.FailureMode),
+		parseAuditDetailLevel(cfg.Audit.DetailLevel),
+	)
 
 	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
@@ -108,12 +125,25 @@ func registerProxyRoutes(
 		service.WithDependencyContextService(dependencyContextService),
 	)
 
-	ociHandler := ocidelivery.NewRegistryHandler(accessService, deps.ociClient, bundleUpstreamRepo, logger, deps.auditService)
+	ociHandler := ocidelivery.NewRegistryHandler(
+		accessService,
+		deps.ociClient,
+		bundleUpstreamRepo,
+		logger,
+		deps.auditService,
+	)
 	var snapshotService *service.NPMInstallSnapshotService
 	if manifests, ok := deps.npmClient.(port.NPMManifestDependencyLister); ok && deps.dependencyGraphQueue != nil {
 		snapshotService = service.NewNPMInstallSnapshotService(manifests, deps.dependencyGraphQueue, logger)
 	}
-	npmHandler := npmdelivery.NewRegistryHandler(accessService, deps.npmClient, bundleUpstreamRepo, logger, deps.auditService, snapshotService)
+	npmHandler := npmdelivery.NewRegistryHandler(
+		accessService,
+		deps.npmClient,
+		bundleUpstreamRepo,
+		logger,
+		deps.auditService,
+		snapshotService,
+	)
 
 	if registerHealth {
 		healthOptions := []service.HealthOption{

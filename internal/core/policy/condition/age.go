@@ -34,7 +34,11 @@ func (m MinimumAge) Evaluate(req domain.AccessRequest, config domain.PolicyConfi
 	ageDaysRounded := int(math.Floor(ageDays))
 
 	if ageDays < float64(*typed.MinAgeDays) {
-		return true, fmt.Sprintf("artifact published %d days ago, minimum required is %d days", ageDaysRounded, *typed.MinAgeDays), nil
+		return true, fmt.Sprintf(
+			"artifact published %d days ago, minimum required is %d days",
+			ageDaysRounded,
+			*typed.MinAgeDays,
+		), nil
 	}
 
 	return false, "", nil
@@ -65,7 +69,11 @@ func (m MaximumAge) Evaluate(req domain.AccessRequest, config domain.PolicyConfi
 	ageDaysRounded := int(math.Floor(ageDays))
 
 	if ageDays > float64(*typed.MaxAgeDays) {
-		return true, fmt.Sprintf("artifact published %d days ago, maximum allowed is %d days", ageDaysRounded, *typed.MaxAgeDays), nil
+		return true, fmt.Sprintf(
+			"artifact published %d days ago, maximum allowed is %d days",
+			ageDaysRounded,
+			*typed.MaxAgeDays,
+		), nil
 	}
 
 	return false, "", nil

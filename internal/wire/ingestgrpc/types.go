@@ -383,28 +383,61 @@ func (e AuditEvent) ToDomain() (*domain.AuditEvent, error) {
 	}, nil
 }
 
-func RecordDecision(ctx context.Context, conn grpc.ClientConnInterface, decision *domain.Decision) (*domain.Decision, error) {
+func RecordDecision(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	decision *domain.Decision,
+) (*domain.Decision, error) {
 	if decision == nil {
 		return nil, fmt.Errorf("decision is required")
 	}
 	response := &RecordDecisionResponse{}
-	if err := conn.Invoke(ctx, RecordDecisionMethod, &RecordDecisionRequest{Decision: FromDomainDecision(decision)}, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		RecordDecisionMethod,
+		&RecordDecisionRequest{Decision: FromDomainDecision(decision)},
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return nil, MapClientError(err)
 	}
 	return response.Decision.ToDomain()
 }
 
-func GetDecisionByArtifact(ctx context.Context, conn grpc.ClientConnInterface, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func GetDecisionByArtifact(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	response := &GetDecisionByArtifactResponse{}
-	if err := conn.Invoke(ctx, GetDecisionByArtifactMethod, &GetDecisionByArtifactRequest{TenantID: tenantID, Artifact: FromDomainArtifactIdentity(artifact)}, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		GetDecisionByArtifactMethod,
+		&GetDecisionByArtifactRequest{TenantID: tenantID, Artifact: FromDomainArtifactIdentity(artifact)},
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return nil, MapClientError(err)
 	}
 	return response.Decision.ToDomain()
 }
 
-func ListDecisionsByTenant(ctx context.Context, conn grpc.ClientConnInterface, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+func ListDecisionsByTenant(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
 	response := &ListDecisionsByTenantResponse{}
-	if err := conn.Invoke(ctx, ListDecisionsByTenantMethod, &ListDecisionsByTenantRequest{TenantID: tenantID, Limit: limit, Offset: offset, Search: search}, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		ListDecisionsByTenantMethod,
+		&ListDecisionsByTenantRequest{TenantID: tenantID, Limit: limit, Offset: offset, Search: search},
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return nil, MapClientError(err)
 	}
 	decisions := make([]domain.Decision, 0, len(response.Decisions))
@@ -418,38 +451,81 @@ func ListDecisionsByTenant(ctx context.Context, conn grpc.ClientConnInterface, t
 	return decisions, nil
 }
 
-func HasRecentAllow(ctx context.Context, conn grpc.ClientConnInterface, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func HasRecentAllow(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	response := &HasRecentAllowResponse{}
-	if err := conn.Invoke(ctx, HasRecentAllowMethod, &HasRecentAllowRequest{TenantID: tenantID, Ecosystem: ecosystem, Namespace: namespace, Name: name}, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		HasRecentAllowMethod,
+		&HasRecentAllowRequest{TenantID: tenantID, Ecosystem: ecosystem, Namespace: namespace, Name: name},
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return false, MapClientError(err)
 	}
 	return response.Allowed, nil
 }
 
-func RecordAuditEvent(ctx context.Context, conn grpc.ClientConnInterface, event *domain.AuditEvent) (*domain.AuditEvent, error) {
+func RecordAuditEvent(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	event *domain.AuditEvent,
+) (*domain.AuditEvent, error) {
 	if event == nil {
 		return nil, fmt.Errorf("event is required")
 	}
 	response := &RecordAuditEventResponse{}
-	if err := conn.Invoke(ctx, RecordAuditEventMethod, &RecordAuditEventRequest{Event: FromDomainAuditEvent(event)}, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		RecordAuditEventMethod,
+		&RecordAuditEventRequest{Event: FromDomainAuditEvent(event)},
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return nil, MapClientError(err)
 	}
 	return response.Event.ToDomain()
 }
 
-func EnqueueDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, req domain.DependencyGraphResolveRequest) (bool, error) {
+func EnqueueDependencyGraphResolve(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	response := &EnqueueDependencyGraphResolveResponse{}
 	wireReq := FromDomainDependencyGraphResolveRequest(req)
-	if err := conn.Invoke(ctx, EnqueueDependencyGraphResolveMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		EnqueueDependencyGraphResolveMethod,
+		wireReq,
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return false, MapClientError(err)
 	}
 	return response.Enqueued, nil
 }
 
-func ClaimDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func ClaimDependencyGraphResolve(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+	now time.Time,
+) (*domain.DependencyGraphResolveRequest, error) {
 	response := &ClaimDependencyGraphResolveResponse{}
 	req := &ClaimDependencyGraphResolveRequest{TenantID: tenantID, Now: formatTime(now)}
-	if err := conn.Invoke(ctx, ClaimDependencyGraphResolveMethod, req, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		ClaimDependencyGraphResolveMethod,
+		req,
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return nil, MapClientError(err)
 	}
 	if response.Job == nil {
@@ -458,7 +534,14 @@ func ClaimDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterf
 	return response.Job.ToDomain(), nil
 }
 
-func CompleteDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error {
+func CompleteDependencyGraphResolve(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	req domain.DependencyGraphResolveRequest,
+	nodes []domain.DependencyGraphNode,
+	edges []domain.DependencyGraphEdge,
+	graphHash string,
+) error {
 	wireReq := &CompleteDependencyGraphResolveRequest{
 		Job:       *FromDomainDependencyGraphResolveRequest(req),
 		Nodes:     nodes,
@@ -466,33 +549,61 @@ func CompleteDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInt
 		GraphHash: graphHash,
 	}
 	response := &CompleteDependencyGraphResolveResponse{}
-	if err := conn.Invoke(ctx, CompleteDependencyGraphResolveMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		CompleteDependencyGraphResolveMethod,
+		wireReq,
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return MapClientError(err)
 	}
 	return nil
 }
 
-func FailDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error {
+func FailDependencyGraphResolve(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	req domain.DependencyGraphResolveRequest,
+	message string,
+	retryAfter time.Time,
+) error {
 	wireReq := &FailDependencyGraphResolveRequest{
 		Job:        *FromDomainDependencyGraphResolveRequest(req),
 		Message:    message,
 		RetryAfter: formatTime(retryAfter),
 	}
 	response := &FailDependencyGraphResolveResponse{}
-	if err := conn.Invoke(ctx, FailDependencyGraphResolveMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		FailDependencyGraphResolveMethod,
+		wireReq,
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return MapClientError(err)
 	}
 	return nil
 }
 
-func LookupDependencyGraphContext(ctx context.Context, conn grpc.ClientConnInterface, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func LookupDependencyGraphContext(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	key domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	response := &LookupDependencyGraphContextResponse{}
 	wireReq := &LookupDependencyGraphContextRequest{
 		TenantID:   key.TenantID,
 		UpstreamID: key.UpstreamID,
 		Artifact:   FromDomainArtifactIdentity(key.Artifact),
 	}
-	if err := conn.Invoke(ctx, LookupDependencyGraphContextMethod, wireReq, response, grpc.ForceCodec(jsonCodec{})); err != nil {
+	if err := conn.Invoke(
+		ctx,
+		LookupDependencyGraphContextMethod,
+		wireReq,
+		response,
+		grpc.ForceCodec(jsonCodec{}),
+	); err != nil {
 		return nil, MapClientError(err)
 	}
 	if response.Context == nil {
@@ -513,8 +624,17 @@ type DependencyGraphResolveJobStream struct {
 }
 
 // WatchDependencyGraphResolve opens a server stream of queued-job wake-up events.
-func WatchDependencyGraphResolve(ctx context.Context, conn grpc.ClientConnInterface, tenantID string) (*DependencyGraphResolveJobStream, error) {
-	stream, err := conn.NewStream(ctx, watchDependencyGraphResolveStreamDesc, WatchDependencyGraphResolveMethod, grpc.ForceCodec(jsonCodec{}))
+func WatchDependencyGraphResolve(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+) (*DependencyGraphResolveJobStream, error) {
+	stream, err := conn.NewStream(
+		ctx,
+		watchDependencyGraphResolveStreamDesc,
+		WatchDependencyGraphResolveMethod,
+		grpc.ForceCodec(jsonCodec{}),
+	)
 	if err != nil {
 		return nil, MapClientError(err)
 	}

@@ -16,10 +16,10 @@ const (
 
 // ScorecardPolicyConfig configures the scorecard policy type.
 type ScorecardPolicyConfig struct {
-	MinScore                     *float64                     `json:"min_score,omitempty" yaml:"min_score,omitempty"`
-	Checks                       map[string]float64           `json:"checks,omitempty" yaml:"checks,omitempty"`
+	MinScore                     *float64                     `json:"min_score,omitempty"                      yaml:"min_score,omitempty"`
+	Checks                       map[string]float64           `json:"checks,omitempty"                         yaml:"checks,omitempty"`
 	UnavailableScorecardBehavior ScorecardUnavailableBehavior `json:"unavailable_scorecard_behavior,omitempty" yaml:"unavailable_scorecard_behavior,omitempty"`
-	DryRun                       bool                         `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+	DryRun                       bool                         `json:"dry_run,omitempty"                        yaml:"dry_run,omitempty"`
 }
 
 // Validate validates the config.
@@ -35,7 +35,10 @@ func (c *ScorecardPolicyConfig) Validate() error {
 			return err
 		}
 	}
-	if err := validateScorecardUnavailableBehavior(c.UnavailableScorecardBehavior, "unavailable_scorecard_behavior"); err != nil {
+	if err := validateScorecardUnavailableBehavior(
+		c.UnavailableScorecardBehavior,
+		"unavailable_scorecard_behavior",
+	); err != nil {
 		return err
 	}
 

@@ -76,7 +76,10 @@ policies:
 
 func TestToDomainPolicies(t *testing.T) {
 	t.Run("missing tenant_id returns error", func(t *testing.T) {
-		pf := &PolicyFile{TenantID: "", Policies: []PolicyDef{{Name: "x", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny"}}}
+		pf := &PolicyFile{
+			TenantID: "",
+			Policies: []PolicyDef{{Name: "x", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny"}},
+		}
 		_, err := ToDomainPolicies(pf)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "tenant_id is required")
@@ -230,7 +233,14 @@ func TestToDomainPolicies(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
-				{Name: "p1", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny", Config: map[string]any{"max_cvss": 7.0}, Enabled: nil},
+				{
+					Name:          "p1",
+					Type:          "cvss_threshold",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Config:        map[string]any{"max_cvss": 7.0},
+					Enabled:       nil,
+				},
 			},
 		}
 		policies, err := ToDomainPolicies(pf)
@@ -242,7 +252,14 @@ func TestToDomainPolicies(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
-				{Name: "p1", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny", Config: map[string]any{"max_cvss": 7.0}, Enabled: boolPtr(false)},
+				{
+					Name:          "p1",
+					Type:          "cvss_threshold",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Config:        map[string]any{"max_cvss": 7.0},
+					Enabled:       boolPtr(false),
+				},
 			},
 		}
 		policies, err := ToDomainPolicies(pf)
@@ -254,9 +271,27 @@ func TestToDomainPolicies(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
-				{Name: "first", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny", Config: map[string]any{"max_cvss": 7.0}},
-				{Name: "second", Type: "allowlist", SchemaVersion: intPtr(1), Action: "allow", Config: map[string]any{"namespaces": []string{"internal"}}},
-				{Name: "third", Type: "blocklist", SchemaVersion: intPtr(1), Action: "deny", Config: map[string]any{"namespaces": []string{"blocked"}}},
+				{
+					Name:          "first",
+					Type:          "cvss_threshold",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Config:        map[string]any{"max_cvss": 7.0},
+				},
+				{
+					Name:          "second",
+					Type:          "allowlist",
+					SchemaVersion: intPtr(1),
+					Action:        "allow",
+					Config:        map[string]any{"namespaces": []string{"internal"}},
+				},
+				{
+					Name:          "third",
+					Type:          "blocklist",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Config:        map[string]any{"namespaces": []string{"blocked"}},
+				},
 			},
 		}
 		policies, err := ToDomainPolicies(pf)
@@ -274,9 +309,30 @@ func TestToDomainPolicies(t *testing.T) {
 		pf := &PolicyFile{
 			TenantID: "t1",
 			Policies: []PolicyDef{
-				{Name: "first", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny", Priority: &p10, Config: map[string]any{"max_cvss": 7.0}},
-				{Name: "second", Type: "allowlist", SchemaVersion: intPtr(1), Action: "allow", Priority: &p20, Config: map[string]any{"namespaces": []string{"internal"}}},
-				{Name: "third", Type: "blocklist", SchemaVersion: intPtr(1), Action: "deny", Priority: &p5, Config: map[string]any{"namespaces": []string{"blocked"}}},
+				{
+					Name:          "first",
+					Type:          "cvss_threshold",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Priority:      &p10,
+					Config:        map[string]any{"max_cvss": 7.0},
+				},
+				{
+					Name:          "second",
+					Type:          "allowlist",
+					SchemaVersion: intPtr(1),
+					Action:        "allow",
+					Priority:      &p20,
+					Config:        map[string]any{"namespaces": []string{"internal"}},
+				},
+				{
+					Name:          "third",
+					Type:          "blocklist",
+					SchemaVersion: intPtr(1),
+					Action:        "deny",
+					Priority:      &p5,
+					Config:        map[string]any{"namespaces": []string{"blocked"}},
+				},
 			},
 		}
 		policies, err := ToDomainPolicies(pf)

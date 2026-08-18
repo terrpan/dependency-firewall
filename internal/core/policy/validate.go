@@ -21,11 +21,20 @@ func ValidatePolicy(p domain.Policy) error {
 		return invalidPolicyf("unknown policy type %q", p.Type)
 	}
 	if _, ok := validActions[string(p.Action)]; !ok {
-		return invalidPolicyf("invalid action %q, must be %q or %q", p.Action, domain.PolicyActionAllow, domain.PolicyActionDeny)
+		return invalidPolicyf(
+			"invalid action %q, must be %q or %q",
+			p.Action,
+			domain.PolicyActionAllow,
+			domain.PolicyActionDeny,
+		)
 	}
 	if !slices.Contains(definition.descriptor.SupportedActions, p.Action) {
 		if len(definition.descriptor.SupportedActions) == 1 {
-			return invalidPolicyf("policy type %q requires action %q", p.Type, definition.descriptor.SupportedActions[0])
+			return invalidPolicyf(
+				"policy type %q requires action %q",
+				p.Type,
+				definition.descriptor.SupportedActions[0],
+			)
 		}
 		return invalidPolicyf("policy type %q does not support action %q", p.Type, p.Action)
 	}
@@ -59,7 +68,14 @@ func ValidatePolicies(policies []domain.Policy) error {
 			return fmt.Errorf("%w: policy %d (%q): %v", domain.ErrInvalidPolicy, i, p.Name, err)
 		}
 		if firstIndex, exists := seenNames[p.Name]; exists {
-			return fmt.Errorf("%w: policy %d (%q): duplicate policy name %q already used by policy %d", domain.ErrInvalidPolicy, i, p.Name, p.Name, firstIndex)
+			return fmt.Errorf(
+				"%w: policy %d (%q): duplicate policy name %q already used by policy %d",
+				domain.ErrInvalidPolicy,
+				i,
+				p.Name,
+				p.Name,
+				firstIndex,
+			)
 		}
 		seenNames[p.Name] = i
 	}

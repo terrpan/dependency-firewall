@@ -33,10 +33,16 @@ func (r *AuditEventRepository) Record(ctx context.Context, event *domain.AuditEv
 		entityID = &event.EntityID
 	}
 
-	if _, err := r.pool.Exec(ctx,
+	if _, err := r.pool.Exec(
+		ctx,
 		`INSERT INTO audit_events (tenant_id, event_type, entity_type, entity_id, payload, created_at)
 		 VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
-		event.TenantID, string(event.EventType), nullableAuditString(event.EntityType), entityID, payload, event.CreatedAt,
+		event.TenantID,
+		string(event.EventType),
+		nullableAuditString(event.EntityType),
+		entityID,
+		payload,
+		event.CreatedAt,
 	); err != nil {
 		return fmt.Errorf("inserting audit event: %w", err)
 	}
@@ -45,7 +51,10 @@ func (r *AuditEventRepository) Record(ctx context.Context, event *domain.AuditEv
 }
 
 // ListByTenant returns tenant-scoped audit events ordered by newest first.
-func (r *AuditEventRepository) ListByTenant(ctx context.Context, filter domain.AuditEventFilter) ([]domain.AuditEvent, error) {
+func (r *AuditEventRepository) ListByTenant(
+	ctx context.Context,
+	filter domain.AuditEventFilter,
+) ([]domain.AuditEvent, error) {
 	limit := filter.Limit
 	if limit <= 0 {
 		limit = 50
@@ -105,7 +114,15 @@ func (r *AuditEventRepository) ListByTenant(ctx context.Context, filter domain.A
 		var entityType *string
 		var entityID *string
 		var payloadBytes []byte
-		if err := rows.Scan(&event.ID, &event.TenantID, &event.EventType, &entityType, &entityID, &payloadBytes, &event.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&event.ID,
+			&event.TenantID,
+			&event.EventType,
+			&entityType,
+			&entityID,
+			&payloadBytes,
+			&event.CreatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning audit event row: %w", err)
 		}
 		if entityType != nil {

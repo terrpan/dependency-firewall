@@ -62,7 +62,11 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 	return retryResp, nil
 }
 
-func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth *domain.UpstreamAuth) (string, time.Duration, bool, error) {
+func (c *OCIClient) fetchBearerToken(
+	ctx context.Context,
+	challenge string,
+	auth *domain.UpstreamAuth,
+) (string, time.Duration, bool, error) {
 	params, ok := parseBearerChallenge(challenge)
 	if !ok {
 		return "", 0, false, nil
