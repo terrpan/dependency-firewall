@@ -6,3 +6,4 @@ examples/npm/package.json
 examples/npm/.npmrc
 examples/mtls/certs/
 examples/mtls/data/
+.DS_Store

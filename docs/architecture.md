@@ -119,6 +119,16 @@ Any matching deny wins. Allow rules do not bypass a later deny. Evaluation error
 
 Bare npm packuments have no enforceable version and deliberately skip enrichment, decision caching, and decision persistence. OCI blobs do not rerun this flow; they require a recent manifest-level allow for the repository.
 
+### Request-path scanning constraint
+
+The proxy does not execute or scan package contents inline as part of policy
+evaluation. Request-path decisions use normalized artifact identity, configured
+metadata/enrichment providers, and precomputed dependency context.
+
+Introducing inline artifact execution or scanning is an architectural change,
+not an enrichment implementation detail, because it changes request-path
+isolation, latency, resource, and failure characteristics.
+
 ## Bundle availability
 
 The split proxy caches bundles in process and refreshes them on demand after `bundle.refresh_interval`. When refresh fails, an existing bundle is used as last-known-good; a tenant with no cached bundle cannot be served.

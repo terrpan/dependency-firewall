@@ -21,6 +21,15 @@
 - Shared ports in core must use protocol-neutral names when they are used by more than one ecosystem.
 - Protocol-specific terms such as manifest, blob, tarball, and tag belong in delivery or ecosystem-specific infrastructure packages.
 
+### Boundary validation
+
+- Decode external JSON/YAML into typed delivery or configuration DTOs before
+  entering core workflows.
+- Declarative validation libraries may handle structural boundary concerns such
+  as required fields and formats when they remove repetitive validation code.
+- Keep business invariants in explicit typed core/domain validation rather than
+  encoding them in delivery-layer validation rules.
+
 ## Web UI standards
 
 - Follow the principles and review checklist in [`ui-redesign.md`](./ui-redesign.md).
@@ -32,6 +41,21 @@
 - Delete superseded selectors, components, tokens, and tests in the same migration that makes them obsolete.
 - Treat light and dark themes, keyboard operation, visible focus, reduced motion, and responsive behavior as acceptance requirements.
 - UI changes pass `npm run lint`, `npm run build`, relevant mocked Playwright tests, and `git diff --check`.
+
+## HTTP clients and streaming
+
+- Reusable HTTP client types contain reusable configuration and dependencies
+  only. Never retain `*http.Request`, request bodies, headers, URL parameters,
+  or other per-request mutable state on a shared client.
+- Construct a fresh request for each operation and attach request-specific state
+  to that request.
+- Treat `io.Reader` values as consumable. If a request body must be replayed,
+  retain bounded source data and recreate the reader or provide `GetBody`.
+- Avoid unbounded buffering of artifact content; preserve streaming where
+  practical.
+- `io.Pipe` producers must always terminate on success or failure. Multipart and
+  other ordered streams must be written sequentially; concurrent or out-of-order
+  writes can corrupt the stream.
 
 ## API Response DTOs
 
@@ -60,3 +84,12 @@
 - Use testcontainers or similar for integration tests against PostgreSQL and Valkey.
 - Use testify package for tests
 - Browser tests should assert behavior and accessibility through roles, labels, keyboard input, and stable application state. Screenshots support review but do not replace behavioral assertions.
+
+## Documentation
+
+- Keep design documentation concise, structured, and implementation-oriented.
+- Use established terms such as delivery, core, infrastructure, `tenant_id`,
+  Valkey, and upstream consistently.
+- Clearly distinguish control-plane management behavior from data-plane proxy
+  behavior.
+- Clearly distinguish implemented behavior from possible future work.

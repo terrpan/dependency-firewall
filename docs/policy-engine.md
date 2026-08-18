@@ -17,6 +17,15 @@ Policies decide whether an artifact may pass through the proxy. Each policy belo
 
 Priority is deterministic ordering, not override precedence. Use lower numbers for reasons that should be surfaced first.
 
+## DSL design constraints
+
+The policy model is intentionally declarative and constrained. Policy types are
+compiled into the application and use typed, versioned configuration.
+
+Do not introduce arbitrary scripting, executable user expressions, loops, or
+other Turing-complete constructs into policy configuration. Extend policy
+behavior through explicit policy types and the policy catalog.
+
 ## Policy document
 
 Every item must declare `schema_version`; missing or unsupported versions are rejected.
@@ -50,7 +59,7 @@ JSON uses the same shape:
       "schema_version": 1,
       "action": "deny",
       "priority": 10,
-      "config": {"tags": ["latest"]}
+      "config": { "tags": ["latest"] }
     }
   ]
 }
@@ -90,18 +99,18 @@ Dependency context is requested only for concrete npm artifacts when an enabled 
 
 The compiled catalog and `GET /api/v1/policy-types` are authoritative.
 
-| Type | Schemas | Actions | Ecosystem | Required capability | Missing enrichment behavior |
-| --- | --- | --- | --- | --- | --- |
-| `cvss_threshold` | 1 | deny | npm | `vulnerability_lookup` | skip |
-| `minimum_age` | 1 | deny | npm | `publish_time` | skip |
-| `maximum_age` | 1 | deny | npm | `publish_time` | skip |
-| `block_mutable_tag` | 1 | deny | OCI | `manifest_digest_lookup` | no external enrichment |
-| `scorecard` | 1 | deny | npm | `scorecard_lookup` | configured `deny` or `skip` |
-| `license` | 1 | allow, deny | npm | `licenses` | skip |
-| `license_allowlist` | 1, 2 | deny | npm | `licenses` | v1 denies; v2 configured per case |
-| `allowlist` | 1 | allow | npm, OCI | none | no external enrichment |
-| `namespace_allowlist` | 1 | deny | npm, OCI | none | no external enrichment |
-| `blocklist` | 1 | deny | npm, OCI | none | no external enrichment |
+| Type                  | Schemas | Actions     | Ecosystem | Required capability      | Missing enrichment behavior       |
+| --------------------- | ------- | ----------- | --------- | ------------------------ | --------------------------------- |
+| `cvss_threshold`      | 1       | deny        | npm       | `vulnerability_lookup`   | skip                              |
+| `minimum_age`         | 1       | deny        | npm       | `publish_time`           | skip                              |
+| `maximum_age`         | 1       | deny        | npm       | `publish_time`           | skip                              |
+| `block_mutable_tag`   | 1       | deny        | OCI       | `manifest_digest_lookup` | no external enrichment            |
+| `scorecard`           | 1       | deny        | npm       | `scorecard_lookup`       | configured `deny` or `skip`       |
+| `license`             | 1       | allow, deny | npm       | `licenses`               | skip                              |
+| `license_allowlist`   | 1, 2    | deny        | npm       | `licenses`               | v1 denies; v2 configured per case |
+| `allowlist`           | 1       | allow       | npm, OCI  | none                     | no external enrichment            |
+| `namespace_allowlist` | 1       | deny        | npm, OCI  | none                     | no external enrichment            |
+| `blocklist`           | 1       | deny        | npm, OCI  | none                     | no external enrichment            |
 
 OCI vulnerability, Scorecard, and license enrichment are not implemented. Do not use npm-only metadata policies as OCI enforcement promises.
 
@@ -257,16 +266,16 @@ Capability vocabulary:
 
 ## Policy lifecycle API
 
-| Operation | Method and path |
-| --- | --- |
-| List/create | `GET`, `POST /api/v1/policies` |
-| Get/update/delete | `GET`, `PUT`, `DELETE /api/v1/policies/{id}` |
-| Type catalog | `GET /api/v1/policy-types` |
-| Import YAML/JSON | `POST /api/v1/policies/import` |
-| Version history | `GET /api/v1/policies/{id}/versions` |
-| Rollback | `POST /api/v1/policies/{id}/rollback` |
-| Decision-cache clear | `DELETE /api/v1/cache/decisions` |
-| Metadata-cache clear | `DELETE /api/v1/cache/metadata` |
+| Operation            | Method and path                              |
+| -------------------- | -------------------------------------------- |
+| List/create          | `GET`, `POST /api/v1/policies`               |
+| Get/update/delete    | `GET`, `PUT`, `DELETE /api/v1/policies/{id}` |
+| Type catalog         | `GET /api/v1/policy-types`                   |
+| Import YAML/JSON     | `POST /api/v1/policies/import`               |
+| Version history      | `GET /api/v1/policies/{id}/versions`         |
+| Rollback             | `POST /api/v1/policies/{id}/rollback`        |
+| Decision-cache clear | `DELETE /api/v1/cache/decisions`             |
+| Metadata-cache clear | `DELETE /api/v1/cache/metadata`              |
 
 Example import:
 
