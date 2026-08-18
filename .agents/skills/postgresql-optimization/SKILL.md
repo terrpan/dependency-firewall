@@ -1,4 +1,4 @@
----
+ßß---
 name: postgresql-optimization
 description: 'PostgreSQL-specific development assistant focusing on unique PostgreSQL features, advanced data types, and PostgreSQL-exclusive capabilities. Covers JSONB operations, array types, custom types, range/geometric types, full-text search, window functions, and PostgreSQL extensions ecosystem.'
 ---
@@ -326,7 +326,7 @@ SELECT * FROM users WHERE data @> '{"role": "admin"}';
 
 ### Index Strategy
 - [ ] Create indexes for frequently queried columns
-- [ ] Use composite indexes for multi-column searches
+- [ ] Use composite indexes for multi-column searchßßes
 - [ ] Consider partial indexes for filtered queries
 - [ ] Remove unused or duplicate indexes
 - [ ] Monitor index bloat and fragmentation
