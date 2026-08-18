@@ -1,6 +1,6 @@
-ßß---
+---
 name: postgresql-optimization
-description: 'PostgreSQL-specific development assistant focusing on unique PostgreSQL features, advanced data types, and PostgreSQL-exclusive capabilities. Covers JSONB operations, array types, custom types, range/geometric types, full-text search, window functions, and PostgreSQL extensions ecosystem.'
+description: "PostgreSQL-specific development assistant focusing on unique PostgreSQL features, advanced data types, and PostgreSQL-exclusive capabilities. Covers JSONB operations, array types, custom types, range/geometric types, full-text search, window functions, and PostgreSQL extensions ecosystem."
 ---
 
 # PostgreSQL Development Assistant
@@ -10,6 +10,7 @@ Expert PostgreSQL guidance for ${selection} (or entire project if no selection).
 ## � PostgreSQL-Specific Features
 
 ### JSONB Operations
+
 ```sql
 -- Advanced JSONB queries
 CREATE TABLE events (
@@ -31,6 +32,7 @@ SELECT jsonb_agg(data) FROM events WHERE data ? 'user_id';
 ```
 
 ### Array Operations
+
 ```sql
 -- PostgreSQL arrays
 CREATE TABLE posts (
@@ -49,6 +51,7 @@ SELECT array_agg(DISTINCT category) FROM posts, unnest(categories) as category;
 ```
 
 ### Window Functions & Analytics
+
 ```sql
 -- Advanced window functions
 SELECT
@@ -67,6 +70,7 @@ FROM sales;
 ```
 
 ### Full-Text Search
+
 ```sql
 -- PostgreSQL full-text search
 CREATE TABLE documents (
@@ -97,6 +101,7 @@ ORDER BY rank DESC;
 ## � PostgreSQL Performance Tuning
 
 ### Query Optimization
+
 ```sql
 -- EXPLAIN ANALYZE for performance analysis
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
@@ -115,6 +120,7 @@ LIMIT 10;
 ```
 
 ### Index Strategies
+
 ```sql
 -- Composite indexes for multi-column queries
 CREATE INDEX idx_orders_user_date ON orders(user_id, order_date);
@@ -130,6 +136,7 @@ CREATE INDEX idx_orders_covering ON orders(user_id, status) INCLUDE (total, crea
 ```
 
 ### Connection & Memory Management
+
 ```sql
 -- Check connection usage
 SELECT count(*) as connections, state
@@ -145,6 +152,7 @@ WHERE name IN ('shared_buffers', 'work_mem', 'maintenance_work_mem');
 ## �️ PostgreSQL Advanced Data Types
 
 ### Custom Types & Domains
+
 ```sql
 -- Create custom types
 CREATE TYPE address_type AS (
@@ -170,6 +178,7 @@ CREATE TABLE customers (
 ```
 
 ### Range Types
+
 ```sql
 -- PostgreSQL range types
 CREATE TABLE reservations (
@@ -190,6 +199,7 @@ EXCLUDE USING gist (room_id WITH =, reservation_period WITH &&);
 ```
 
 ### Geometric Types
+
 ```sql
 -- PostgreSQL geometric types
 CREATE TABLE locations (
@@ -211,6 +221,7 @@ CREATE INDEX idx_locations_coords ON locations USING gist(coordinates);
 ## 📊 PostgreSQL Extensions & Tools
 
 ### Useful Extensions
+
 ```sql
 -- Enable commonly used extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";    -- UUID generation
@@ -226,6 +237,7 @@ SELECT similarity('postgresql', 'postgersql'); -- Fuzzy matching
 ```
 
 ### Monitoring & Maintenance
+
 ```sql
 -- Database size and growth
 SELECT pg_size_pretty(pg_database_size(current_database())) as db_size;
@@ -243,6 +255,7 @@ WHERE idx_scan = 0;  -- Unused indexes
 ```
 
 ### PostgreSQL-Specific Optimization Tips
+
 - **Use EXPLAIN (ANALYZE, BUFFERS)** for detailed query analysis
 - **Configure postgresql.conf** for your workload (OLTP vs OLAP)
 - **Use connection pooling** (pgbouncer) for high-concurrency applications
@@ -253,6 +266,7 @@ WHERE idx_scan = 0;  -- Unused indexes
 ## 📊 Monitoring and Maintenance
 
 ### Query Performance Monitoring
+
 ```sql
 -- Identify slow queries
 SELECT query, calls, total_time, mean_time, rows
@@ -267,6 +281,7 @@ WHERE idx_scan = 0;
 ```
 
 ### Database Maintenance
+
 - **VACUUM and ANALYZE**: Regular maintenance for performance
 - **Index Maintenance**: Monitor and rebuild fragmented indexes
 - **Statistics Updates**: Keep query planner statistics current
@@ -275,6 +290,7 @@ WHERE idx_scan = 0;
 ## 🛠️ Common Query Patterns
 
 ### Pagination
+
 ```sql
 -- ❌ BAD: OFFSET for large datasets
 SELECT * FROM products ORDER BY id OFFSET 10000 LIMIT 20;
@@ -287,6 +303,7 @@ LIMIT 20;
 ```
 
 ### Aggregation
+
 ```sql
 -- ❌ BAD: Inefficient grouping
 SELECT user_id, COUNT(*)
@@ -305,6 +322,7 @@ GROUP BY user_id;
 ```
 
 ### JSON Queries
+
 ```sql
 -- ❌ BAD: Inefficient JSON querying
 SELECT * FROM users WHERE data::text LIKE '%admin%';
@@ -318,6 +336,7 @@ SELECT * FROM users WHERE data @> '{"role": "admin"}';
 ## 📋 Optimization Checklist
 
 ### Query Analysis
+
 - [ ] Run EXPLAIN ANALYZE for expensive queries
 - [ ] Check for sequential scans on large tables
 - [ ] Verify appropriate join algorithms
@@ -325,13 +344,15 @@ SELECT * FROM users WHERE data @> '{"role": "admin"}';
 - [ ] Analyze sort and aggregation operations
 
 ### Index Strategy
+
 - [ ] Create indexes for frequently queried columns
-- [ ] Use composite indexes for multi-column searchßßes
+- [ ] Use composite indexes for multi-column searches
 - [ ] Consider partial indexes for filtered queries
 - [ ] Remove unused or duplicate indexes
 - [ ] Monitor index bloat and fragmentation
 
 ### Security Review
+
 - [ ] Use parameterized queries exclusively
 - [ ] Implement proper access controls
 - [ ] Enable row-level security where needed
@@ -339,6 +360,7 @@ SELECT * FROM users WHERE data @> '{"role": "admin"}';
 - [ ] Use secure connection methods
 
 ### Performance Monitoring
+
 - [ ] Set up query performance monitoring
 - [ ] Configure appropriate log settings
 - [ ] Monitor connection pool usage
@@ -348,7 +370,8 @@ SELECT * FROM users WHERE data @> '{"role": "admin"}';
 ## 🎯 Optimization Output Format
 
 ### Query Analysis Results
-```
+
+````
 ## Query Performance Analysis
 
 **Original Query**:
@@ -365,10 +388,11 @@ SELECT * FROM users WHERE data @> '{"role": "admin"}';
 **Recommended Indexes**:
 ```sql
 CREATE INDEX idx_table_column ON table(column);
-```
+````
 
 **Performance Impact**: Expected 80% improvement in execution time
-```
+
+````
 
 ## 🚀 Advanced PostgreSQL Features
 
@@ -382,9 +406,10 @@ SELECT
     SUM(amount) OVER (PARTITION BY product_id ORDER BY order_date) as running_total,
     ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY amount DESC) as rank
 FROM sales;
-```
+````
 
 ### Common Table Expressions (CTEs)
+
 ```sql
 -- Recursive queries for hierarchical data
 WITH RECURSIVE category_tree AS (
