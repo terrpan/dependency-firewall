@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PropsWithChildren,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 import {
   type Notification,
   type NotificationInput,
@@ -36,9 +29,7 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
       timersRef.current.delete(id)
     }
 
-    setNotifications((currentNotifications) =>
-      currentNotifications.filter((notification) => notification.id !== id),
-    )
+    setNotifications((currentNotifications) => currentNotifications.filter((notification) => notification.id !== id))
   }, [])
 
   const notify = useCallback(
@@ -80,19 +71,19 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
   return (
     <NotificationsContext.Provider value={value}>
       {children}
-      <div className={applicationClass("toast-stack")} aria-atomic="true" aria-live="polite">
+      <div className={applicationClass('toast-stack')} aria-atomic="true" aria-live="polite">
         {notifications.map((notification) => (
           <section
             key={notification.id}
             className={applicationClass('toast', `toast-${notification.tone}`)}
             role={notification.tone === 'error' ? 'alert' : 'status'}
           >
-            <div className={applicationClass("toast-body")}>
+            <div className={applicationClass('toast-body')}>
               <strong>{notification.title}</strong>
               {notification.description ? <p>{notification.description}</p> : null}
             </div>
             <button
-              className={applicationClass("toast-dismiss")}
+              className={applicationClass('toast-dismiss')}
               onClick={() => dismiss(notification.id)}
               type="button"
             >

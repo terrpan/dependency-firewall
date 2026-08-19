@@ -22,10 +22,7 @@ export function formatUpstreamOptionLabel(upstream: Upstream) {
   return `${upstream.name} (${upstream.ecosystem.toUpperCase()})`
 }
 
-export function formatPolicyScopeLabel(
-  policy: PolicyDisplayRecord,
-  upstreamsByID: Map<string, Upstream>,
-) {
+export function formatPolicyScopeLabel(policy: PolicyDisplayRecord, upstreamsByID: Map<string, Upstream>) {
   const upstreamID = policy.upstream_id?.trim()
   if (!upstreamID) {
     return 'Tenant-wide (legacy)'
@@ -35,10 +32,7 @@ export function formatPolicyScopeLabel(
   return upstream ? formatUpstreamOptionLabel(upstream) : `Upstream ${upstreamID}`
 }
 
-export function formatPolicyScopeCaption(
-  policy: PolicyDisplayRecord,
-  upstreamsByID: Map<string, Upstream>,
-) {
+export function formatPolicyScopeCaption(policy: PolicyDisplayRecord, upstreamsByID: Map<string, Upstream>) {
   const upstreamID = policy.upstream_id?.trim()
   if (!upstreamID) {
     return 'Legacy tenant-wide scope'
@@ -135,7 +129,9 @@ export function getPolicyConfigFields(policy: PolicyDisplayRecord): Array<{ labe
       }
       fields.push({
         label: 'When Scorecard unavailable',
-        values: [(policy.config.unavailable_scorecard_behavior ?? 'deny') === 'skip' ? 'Skip this policy' : 'Deny artifact'],
+        values: [
+          (policy.config.unavailable_scorecard_behavior ?? 'deny') === 'skip' ? 'Skip this policy' : 'Deny artifact',
+        ],
       })
       return fields
     }
@@ -146,15 +142,15 @@ export function getPolicyConfigFields(policy: PolicyDisplayRecord): Array<{ labe
         { label: 'Approved licenses', values: policy.config.licenses },
         ...(policy.schema_version >= 2
           ? [
-            {
-              label: 'When unlicensed',
-              values: [formatLicenseAllowlistBehaviorLabel(policy.config.unlicensed_behavior)],
-            },
-            {
-              label: 'When metadata unavailable',
-              values: [formatLicenseAllowlistBehaviorLabel(policy.config.unavailable_metadata_behavior)],
-            },
-          ]
+              {
+                label: 'When unlicensed',
+                values: [formatLicenseAllowlistBehaviorLabel(policy.config.unlicensed_behavior)],
+              },
+              {
+                label: 'When metadata unavailable',
+                values: [formatLicenseAllowlistBehaviorLabel(policy.config.unavailable_metadata_behavior)],
+              },
+            ]
           : []),
       ]
     case 'allowlist':
@@ -173,7 +169,7 @@ export function getPolicyConfigDetail(policy: PolicyDisplayRecord) {
   }
 
   const primaryValue =
-    primaryField.values.length <= 1 ? primaryField.values[0] ?? 'No value' : summarizeListValues(primaryField.values)
+    primaryField.values.length <= 1 ? (primaryField.values[0] ?? 'No value') : summarizeListValues(primaryField.values)
 
   return {
     label: primaryField.label,
@@ -203,7 +199,9 @@ export function getPolicyBehaviorSummary(policy: PolicyDisplayRecord): string {
     case 'scorecard': {
       const thresholds = [
         policy.config.min_score === undefined ? null : `overall score is below ${policy.config.min_score}`,
-        policy.config.checks && Object.keys(policy.config.checks).length > 0 ? 'a named check is below its minimum' : null,
+        policy.config.checks && Object.keys(policy.config.checks).length > 0
+          ? 'a named check is below its minimum'
+          : null,
       ].filter((value): value is string => Boolean(value))
       return `${verb} packages when ${thresholds.join(' or ') || 'the OpenSSF Scorecard rule matches'}.`
     }
@@ -244,17 +242,15 @@ export function getPolicyTargetSummary(policy: PolicyDisplayRecord): string {
     parts.push('All dependencies')
   }
   if (target.on_unknown) {
-    parts.push(`Unknown graph: ${target.on_unknown === 'warn' ? 'Warn only' : target.on_unknown === 'deny' ? 'Evaluate normally' : 'Skip'}`)
+    parts.push(
+      `Unknown graph: ${target.on_unknown === 'warn' ? 'Warn only' : target.on_unknown === 'deny' ? 'Evaluate normally' : 'Skip'}`,
+    )
   }
 
   return parts.join(' • ')
 }
 
-export function matchesPolicySearch(
-  policy: TypedPolicy,
-  upstreamsByID: Map<string, Upstream>,
-  query: string,
-) {
+export function matchesPolicySearch(policy: TypedPolicy, upstreamsByID: Map<string, Upstream>, query: string) {
   const normalizedQuery = query.trim().toLowerCase()
   if (!normalizedQuery) {
     return true

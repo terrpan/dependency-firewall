@@ -1,6 +1,9 @@
 import { expect, installApi, installAuth, test } from './fixtures'
 
-test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page) })
+test.beforeEach(async ({ page }) => {
+  await installAuth(page)
+  await installApi(page)
+})
 
 test('filters, selects, highlights, zooms, and deselects graph nodes', async ({ page }, testInfo) => {
   await page.goto('/dependency-graphs')
@@ -11,7 +14,9 @@ test('filters, selects, highlights, zooms, and deselects graph nodes', async ({ 
   await expect(nodes).toHaveCount(3)
   await expect(edges).toHaveCount(2)
   await expect(page.getByRole('button', { name: 'react version 19.2.0, direct dependency at depth 1' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'react-app depends on react as a Production dependency' })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'react-app depends on react as a Production dependency' }),
+  ).toBeVisible()
   await expect(page.getByLabel('Show through depth')).toHaveValue('all')
   await expect(page.getByText('Deepest dependency').locator('..')).toContainText('2')
   await expect(page.getByText('abc123def456', { exact: true })).not.toBeVisible()
@@ -28,19 +33,25 @@ test('filters, selects, highlights, zooms, and deselects graph nodes', async ({ 
   const draggedNode = nodes.first()
   const connectedLine = edges.first().locator('line').first()
   const originalNodeTransform = await draggedNode.getAttribute('transform')
-  const originalLineEndpoints = await connectedLine.evaluate(line =>
-    ['x1', 'y1', 'x2', 'y2'].map(attribute => line.getAttribute(attribute)).join(','),
+  const originalLineEndpoints = await connectedLine.evaluate((line) =>
+    ['x1', 'y1', 'x2', 'y2'].map((attribute) => line.getAttribute(attribute)).join(','),
   )
   const nodeBounds = await draggedNode.boundingBox()
   expect(nodeBounds).not.toBeNull()
   await page.mouse.move(nodeBounds!.x + nodeBounds!.width / 2, nodeBounds!.y + nodeBounds!.height / 2)
   await page.mouse.down()
-  await page.mouse.move(nodeBounds!.x + nodeBounds!.width / 2 + 80, nodeBounds!.y + nodeBounds!.height / 2 + 48, { steps: 8 })
+  await page.mouse.move(nodeBounds!.x + nodeBounds!.width / 2 + 80, nodeBounds!.y + nodeBounds!.height / 2 + 48, {
+    steps: 8,
+  })
   await page.mouse.up()
   await expect.poll(() => draggedNode.getAttribute('transform')).not.toBe(originalNodeTransform)
-  await expect.poll(() => connectedLine.evaluate(line =>
-    ['x1', 'y1', 'x2', 'y2'].map(attribute => line.getAttribute(attribute)).join(','),
-  )).not.toBe(originalLineEndpoints)
+  await expect
+    .poll(() =>
+      connectedLine.evaluate((line) =>
+        ['x1', 'y1', 'x2', 'y2'].map((attribute) => line.getAttribute(attribute)).join(','),
+      ),
+    )
+    .not.toBe(originalLineEndpoints)
 
   await nodes.nth(1).focus()
   await page.keyboard.press('Enter')

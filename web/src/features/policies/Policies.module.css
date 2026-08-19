@@ -100,12 +100,12 @@
 }
 
 .policy-preview-toggle-button.active {
-  background: rgba(14, 165, 233, 0.16);
+  background: rgb(14, 165, 233, 16%);
   color: var(--accent);
 }
 
 .policy-preview-toggle-button:focus-visible {
-  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline: 2px solid rgb(56, 189, 248, 55%);
   outline-offset: 2px;
 }
 
@@ -153,12 +153,12 @@
 
 .policy-detail-tab.active {
   border-color: var(--accent-border);
-  background: rgba(14, 165, 233, 0.16);
+  background: rgb(14, 165, 233, 16%);
   color: var(--accent);
 }
 
 .policy-detail-tab:focus-visible {
-  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline: 2px solid rgb(56, 189, 248, 55%);
   outline-offset: 2px;
 }
 
@@ -361,8 +361,8 @@
 
 .policy-threshold-option-active {
   border-color: var(--accent-border);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.28);
-  background: rgba(14, 165, 233, 0.08);
+  box-shadow: inset 0 0 0 1px rgb(56, 189, 248, 28%);
+  background: rgb(14, 165, 233, 8%);
 }
 
 .policy-threshold-toggle-label {
@@ -415,14 +415,14 @@
 .policy-field-invalid input,
 .policy-field-invalid select,
 .policy-field-invalid textarea {
-  border-color: rgba(248, 113, 113, 0.9);
-  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.28);
+  border-color: rgb(248, 113, 113, 90%);
+  box-shadow: 0 0 0 1px rgb(248, 113, 113, 28%);
 }
 
 .policy-field-invalid input:focus-visible,
 .policy-field-invalid select:focus-visible,
 .policy-field-invalid textarea:focus-visible {
-  outline: 2px solid rgba(248, 113, 113, 0.32);
+  outline: 2px solid rgb(248, 113, 113, 32%);
   outline-offset: 1px;
 }
 
@@ -477,9 +477,9 @@
 }
 
 .policy-badge-info {
-  background: rgba(14, 165, 233, 0.16);
+  background: rgb(14, 165, 233, 16%);
   color: var(--accent);
-  border-color: rgba(56, 189, 248, 0.3);
+  border-color: rgb(56, 189, 248, 30%);
 }
 
 .policy-badge-warning {
@@ -489,7 +489,7 @@
 }
 
 .policy-badge-muted {
-  background: rgba(148, 163, 184, 0.14);
+  background: rgb(148, 163, 184, 14%);
   color: var(--text-muted);
   border-color: var(--border-soft);
 }
@@ -708,10 +708,8 @@
 
 .policy-diff-row {
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-  font-family:
-    ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New,
-    monospace;
+  border-bottom: 1px solid rgb(148, 163, 184, 8%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   font-size: 0.83rem;
   line-height: 1.55;
 }
@@ -751,7 +749,7 @@
   margin: 0;
   color: var(--text-strong);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .policy-empty-actions {

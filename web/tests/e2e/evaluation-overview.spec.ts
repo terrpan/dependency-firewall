@@ -1,10 +1,4 @@
-import {
-  evaluationOverviewFixtures,
-  expect,
-  installApi,
-  installAuth,
-  test,
-} from './fixtures'
+import { evaluationOverviewFixtures, expect, installApi, installAuth, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await installAuth(page)
@@ -78,5 +72,9 @@ test('empty and failed decision history explain the next step', async ({ page })
   await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByText('No decisions recorded yet', { exact: true })).toBeVisible()
-  await expect(page.getByText('Decisions appear here after this tenant routes package or image requests through Dependency Firewall.')).toBeVisible()
+  await expect(
+    page.getByText(
+      'Decisions appear here after this tenant routes package or image requests through Dependency Firewall.',
+    ),
+  ).toBeVisible()
 })

@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { buildPolicyDraftInput, createPolicyDraftForType, createPolicyDraftFromPolicy } from '../../src/features/policies/draft'
+import {
+  buildPolicyDraftInput,
+  createPolicyDraftForType,
+  createPolicyDraftFromPolicy,
+} from '../../src/features/policies/draft'
 import { installApi, installAuth } from './fixtures'
 
 test('unknown dependency scope round-trips through policy editing', () => {

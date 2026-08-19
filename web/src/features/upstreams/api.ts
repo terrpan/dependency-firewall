@@ -110,19 +110,11 @@ export function createEmptyUpstreamDraft(ecosystem: UpstreamEcosystem = 'npm'): 
   }
 }
 
-export function listUpstreams(
-  api: UpstreamsApi,
-  tenantId: string,
-  signal?: AbortSignal,
-): Promise<Upstream[]> {
+export function listUpstreams(api: UpstreamsApi, tenantId: string, signal?: AbortSignal): Promise<Upstream[]> {
   return api.upstreams.list({ tenantId, signal })
 }
 
-export function createUpstream(
-  api: UpstreamsApi,
-  tenantId: string,
-  body: CreateUpstreamRequest,
-): Promise<Upstream> {
+export function createUpstream(api: UpstreamsApi, tenantId: string, body: CreateUpstreamRequest): Promise<Upstream> {
   return api.upstreams.create(body, { tenantId })
 }
 
@@ -142,10 +134,7 @@ export function upstreamEcosystemSupportsAuth(ecosystem: UpstreamEcosystem): boo
   return getUpstreamAuthTypes(ecosystem).some((authType) => authType !== 'none')
 }
 
-export function upstreamEcosystemSupportsAuthType(
-  ecosystem: UpstreamEcosystem,
-  authType: UpstreamAuthType,
-): boolean {
+export function upstreamEcosystemSupportsAuthType(ecosystem: UpstreamEcosystem, authType: UpstreamAuthType): boolean {
   return getUpstreamAuthTypes(ecosystem).includes(authType)
 }
 
@@ -208,9 +197,7 @@ export function upstreamSupportsPolicyType(
   }
 
   const supportedCapabilities = new Set(normalizeUpstreamCapabilities(upstream.ecosystem, upstream.capabilities))
-  return getDescriptorRequiredCapabilities(descriptor).every((capability) =>
-    supportedCapabilities.has(capability),
-  )
+  return getDescriptorRequiredCapabilities(descriptor).every((capability) => supportedCapabilities.has(capability))
 }
 
 export function validateUpstreamDraft(draft: UpstreamDraft): {
@@ -297,7 +284,6 @@ export function validateUpstreamDraft(draft: UpstreamDraft): {
 
 export function sortUpstreams(upstreams: readonly Upstream[]): Upstream[] {
   return [...upstreams].sort(
-    (left, right) =>
-      left.ecosystem.localeCompare(right.ecosystem) || left.name.localeCompare(right.name),
+    (left, right) => left.ecosystem.localeCompare(right.ecosystem) || left.name.localeCompare(right.name),
   )
 }

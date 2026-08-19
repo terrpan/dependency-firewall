@@ -1,10 +1,15 @@
 import { expect, installApi, installAuth, policyOverviewFixtures, tenantOverviewFixtures, test } from './fixtures'
 
-test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page, { policies: policyOverviewFixtures }) })
+test.beforeEach(async ({ page }) => {
+  await installAuth(page)
+  await installApi(page, { policies: policyOverviewFixtures })
+})
 
 test('renders the light operations shell and attaches bearer auth', async ({ page }, testInfo) => {
   let authorization = ''
-  page.on('request', request => { if (request.url().includes('/api/v1/')) authorization = request.headers().authorization ?? authorization })
+  page.on('request', (request) => {
+    if (request.url().includes('/api/v1/')) authorization = request.headers().authorization ?? authorization
+  })
   await page.goto('/')
   await expect(page.getByRole('complementary', { name: 'Primary' })).toBeVisible()
   await expect(page.getByLabel('Workspace')).toHaveValue('tenant-acme')
@@ -24,7 +29,9 @@ test('switches workspace from the compact navigation control', async ({ page }) 
 
   await expect(workspace).toHaveValue('tenant-platform')
   await expect(page.getByTestId('active-tenant-name')).toHaveText('Platform Engineering')
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('dependency-firewall.tenant-id'))).toBe('tenant-platform')
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('dependency-firewall.tenant-id')))
+    .toBe('tenant-platform')
 })
 
 test('mobile drawer is keyboard-accessible', async ({ page }, testInfo) => {

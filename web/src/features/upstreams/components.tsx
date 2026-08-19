@@ -30,32 +30,38 @@ export function UpstreamsListPanel({
   onSelect,
 }: UpstreamsListPanelProps) {
   return (
-    <section className={upstreamClass("card upstreams-panel")}>
-      <div className={upstreamClass("upstreams-panel-header")}>
+    <section className={upstreamClass('card upstreams-panel')}>
+      <div className={upstreamClass('upstreams-panel-header')}>
         <div>
           <h3>Configured upstreams</h3>
         </div>
-        {isLoading ? <span className={upstreamClass("status-pill")}>Loading</span> : null}
+        {isLoading ? <span className={upstreamClass('status-pill')}>Loading</span> : null}
       </div>
 
       {isError ? (
-        <div className={upstreamClass("upstreams-feedback upstreams-feedback-error")} role="alert">
+        <div className={upstreamClass('upstreams-feedback upstreams-feedback-error')} role="alert">
           <strong>Unable to load upstreams</strong>
           <p>{errorMessage}</p>
-          <button className={upstreamClass("upstreams-secondary-button")} onClick={onRetry} type="button">
+          <button className={upstreamClass('upstreams-secondary-button')} onClick={onRetry} type="button">
             Retry
           </button>
         </div>
       ) : null}
 
       {isSuccess && upstreams.length === 0 ? (
-        <div className={upstreamClass("upstreams-empty-state")}>
+        <div className={upstreamClass('upstreams-empty-state')}>
           <h3>Connect the first package source</h3>
-          <p className={upstreamClass("muted")}>
-            Add the registry your team already uses. You will get tenant-specific npm or Docker setup as soon as it is connected.
+          <p className={upstreamClass('muted')}>
+            Add the registry your team already uses. You will get tenant-specific npm or Docker setup as soon as it is
+            connected.
           </p>
-          <div className={upstreamClass("upstreams-form-actions")}>
-            <button className={upstreamClass("primary-button")} disabled={createDisabled} onClick={onCreate} type="button">
+          <div className={upstreamClass('upstreams-form-actions')}>
+            <button
+              className={upstreamClass('primary-button')}
+              disabled={createDisabled}
+              onClick={onCreate}
+              type="button"
+            >
               Create upstream
             </button>
           </div>
@@ -63,7 +69,7 @@ export function UpstreamsListPanel({
       ) : null}
 
       {upstreams.length > 0 ? (
-        <div className={upstreamClass("upstreams-list")} role="list" aria-label="Configured upstreams">
+        <div className={upstreamClass('upstreams-list')} role="list" aria-label="Configured upstreams">
           {upstreams.map((upstream) => {
             const isActive = upstream.id === selectedUpstreamId
 
@@ -74,13 +80,13 @@ export function UpstreamsListPanel({
                 onClick={() => onSelect(upstream.id)}
                 type="button"
               >
-                <div className={upstreamClass("upstreams-selection-meta")}>
-                  <span className={upstreamClass("upstreams-badge")}>{upstream.ecosystem}</span>
-                  {isActive ? <span className={upstreamClass("status-pill status-pill-neutral")}>Selected</span> : null}
+                <div className={upstreamClass('upstreams-selection-meta')}>
+                  <span className={upstreamClass('upstreams-badge')}>{upstream.ecosystem}</span>
+                  {isActive ? <span className={upstreamClass('status-pill status-pill-neutral')}>Selected</span> : null}
                 </div>
                 <strong>{upstream.name}</strong>
-                <span className={upstreamClass("upstreams-list-host")}>{formatUpstreamHost(upstream)}</span>
-                <span className={upstreamClass("upstreams-list-summary")}>
+                <span className={upstreamClass('upstreams-list-host')}>{formatUpstreamHost(upstream)}</span>
+                <span className={upstreamClass('upstreams-list-summary')}>
                   <span>{formatUpstreamAuth(upstream)}</span>
                   <span>
                     {(upstream.supported_policy_types ?? []).length}{' '}
@@ -120,22 +126,22 @@ export function UpstreamDetailsPanel({
   formatTimestamp,
 }: UpstreamDetailsPanelProps) {
   return (
-    <section className={upstreamClass("card upstreams-panel")}>
-      <div className={upstreamClass("upstreams-panel-header")}>
+    <section className={upstreamClass('card upstreams-panel')}>
+      <div className={upstreamClass('upstreams-panel-header')}>
         <div>
-          <p className={upstreamClass("upstreams-section-label")}>Package source</p>
+          <p className={upstreamClass('upstreams-section-label')}>Package source</p>
           <h3>{upstream?.name ?? 'Upstream details'}</h3>
         </div>
-        {upstream ? <span className={upstreamClass("upstreams-badge")}>{upstream.ecosystem}</span> : null}
+        {upstream ? <span className={upstreamClass('upstreams-badge')}>{upstream.ecosystem}</span> : null}
       </div>
 
       {upstream ? (
-        <div className={upstreamClass("upstreams-detail-content")}>
-          <dl className={upstreamClass("upstreams-detail upstreams-operational-detail")}>
+        <div className={upstreamClass('upstreams-detail-content')}>
+          <dl className={upstreamClass('upstreams-detail upstreams-operational-detail')}>
             <div>
               <dt>Source URL</dt>
               <dd>
-                <a className={upstreamClass("inline-link")} href={upstream.base_url} target="_blank" rel="noreferrer">
+                <a className={upstreamClass('inline-link')} href={upstream.base_url} target="_blank" rel="noreferrer">
                   {upstream.base_url}
                 </a>
               </dd>
@@ -154,43 +160,73 @@ export function UpstreamDetailsPanel({
             </div>
           </dl>
 
-          <details className={upstreamClass("upstreams-metadata-disclosure")}>
+          <details className={upstreamClass('upstreams-metadata-disclosure')}>
             <summary>Technical details</summary>
-            <dl className={upstreamClass("upstreams-detail")}>
-              <div><dt>Identifier</dt><dd><code>{upstream.id}</code></dd></div>
-              <div><dt>Authentication type</dt><dd>{upstream.auth?.type ?? 'none'}</dd></div>
-              <div><dt>Created</dt><dd>{formatTimestamp(upstream.created_at)}</dd></div>
-              <div><dt>Updated</dt><dd>{formatTimestamp(upstream.updated_at)}</dd></div>
+            <dl className={upstreamClass('upstreams-detail')}>
+              <div>
+                <dt>Identifier</dt>
+                <dd>
+                  <code>{upstream.id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Authentication type</dt>
+                <dd>{upstream.auth?.type ?? 'none'}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{formatTimestamp(upstream.created_at)}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{formatTimestamp(upstream.updated_at)}</dd>
+              </div>
             </dl>
           </details>
 
-          <div className={upstreamClass("upstreams-delete-zone")}>
+          <div className={upstreamClass('upstreams-delete-zone')}>
             {isConfirmingDelete ? (
-              <div className={upstreamClass("upstreams-delete-confirmation")} role="alert">
+              <div className={upstreamClass('upstreams-delete-confirmation')} role="alert">
                 <div>
                   <strong>Remove {upstream.name}?</strong>
                   <p>Requests can no longer use this package source. Policies scoped to it may also need attention.</p>
                 </div>
-                <div className={upstreamClass("upstreams-form-actions")}>
-                  <button className={upstreamClass("upstreams-secondary-button")} disabled={isDeleting} onClick={onCancelDelete} type="button">
+                <div className={upstreamClass('upstreams-form-actions')}>
+                  <button
+                    className={upstreamClass('upstreams-secondary-button')}
+                    disabled={isDeleting}
+                    onClick={onCancelDelete}
+                    type="button"
+                  >
                     Cancel
                   </button>
-                  <button className={upstreamClass("upstreams-secondary-button upstreams-danger-button")} disabled={isDeleting} onClick={() => onConfirmDelete(upstream)} type="button">
+                  <button
+                    className={upstreamClass('upstreams-secondary-button upstreams-danger-button')}
+                    disabled={isDeleting}
+                    onClick={() => onConfirmDelete(upstream)}
+                    type="button"
+                  >
                     {isDeleting ? 'Removing...' : 'Remove upstream'}
                   </button>
                 </div>
               </div>
             ) : (
-              <button className={upstreamClass("upstreams-secondary-button upstreams-danger-button")} onClick={() => onRequestDelete(upstream)} type="button">
+              <button
+                className={upstreamClass('upstreams-secondary-button upstreams-danger-button')}
+                onClick={() => onRequestDelete(upstream)}
+                type="button"
+              >
                 Remove upstream
               </button>
             )}
           </div>
         </div>
       ) : (
-        <div className={upstreamClass("upstreams-empty-state")}>
+        <div className={upstreamClass('upstreams-empty-state')}>
           <h3>No detail selected</h3>
-          <p className={upstreamClass("muted")}>Pick an upstream from the list, or create the first one in the modal flow.</p>
+          <p className={upstreamClass('muted')}>
+            Pick an upstream from the list, or create the first one in the modal flow.
+          </p>
         </div>
       )}
     </section>
@@ -213,8 +249,8 @@ export function UpstreamUsagePanel({
   onCopyUsage,
 }: UpstreamUsagePanelProps) {
   return (
-    <section className={upstreamClass("card upstreams-panel")}>
-      <div className={upstreamClass("upstreams-panel-header")}>
+    <section className={upstreamClass('card upstreams-panel')}>
+      <div className={upstreamClass('upstreams-panel-header')}>
         <div>
           <h3>{usage?.title ?? 'Usage instructions'}</h3>
           {usage ? <p>{usage.summary}</p> : null}
@@ -222,49 +258,55 @@ export function UpstreamUsagePanel({
       </div>
 
       {upstream && usage ? (
-        <div className={upstreamClass("upstreams-usage-guide")}>
-          <div className={upstreamClass("upstreams-usage-section")}>
-            <div className={upstreamClass("upstreams-usage-header")}>
-              <span className={upstreamClass("upstreams-usage-label")}>{usage.primaryLabel}</span>
+        <div className={upstreamClass('upstreams-usage-guide')}>
+          <div className={upstreamClass('upstreams-usage-section')}>
+            <div className={upstreamClass('upstreams-usage-header')}>
+              <span className={upstreamClass('upstreams-usage-label')}>{usage.primaryLabel}</span>
               <button
                 aria-label={`Copy ${usage.primaryLabel}`}
-                className={upstreamClass("upstreams-copy-button")}
+                className={upstreamClass('upstreams-copy-button')}
                 onClick={() => onCopyUsage(usage.primaryCode, `${upstream.id}:primary`)}
                 type="button"
               >
                 {copiedUsageKey === `${upstream.id}:primary` ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre aria-label={`${usage.primaryLabel} command`} className={upstreamClass("code-block")} tabIndex={0}>{usage.primaryCode}</pre>
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Scrollable code block needs keyboard focus for horizontal overflow. */}
+            <pre aria-label={`${usage.primaryLabel} command`} className={upstreamClass('code-block')} tabIndex={0}>
+              {usage.primaryCode}
+            </pre>
           </div>
 
-          <div className={upstreamClass("upstreams-usage-section")}>
-            <div className={upstreamClass("upstreams-usage-header")}>
-              <span className={upstreamClass("upstreams-usage-label")}>{usage.secondaryLabel}</span>
+          <div className={upstreamClass('upstreams-usage-section')}>
+            <div className={upstreamClass('upstreams-usage-header')}>
+              <span className={upstreamClass('upstreams-usage-label')}>{usage.secondaryLabel}</span>
               <button
                 aria-label={`Copy ${usage.secondaryLabel}`}
-                className={upstreamClass("upstreams-copy-button")}
+                className={upstreamClass('upstreams-copy-button')}
                 onClick={() => onCopyUsage(usage.secondaryCode, `${upstream.id}:secondary`)}
                 type="button"
               >
                 {copiedUsageKey === `${upstream.id}:secondary` ? 'Copied' : 'Copy'}
               </button>
             </div>
-            <pre aria-label={`${usage.secondaryLabel} command`} className={upstreamClass("code-block")} tabIndex={0}>{usage.secondaryCode}</pre>
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Scrollable code block needs keyboard focus for horizontal overflow. */}
+            <pre aria-label={`${usage.secondaryLabel} command`} className={upstreamClass('code-block')} tabIndex={0}>
+              {usage.secondaryCode}
+            </pre>
           </div>
 
           {copyErrorMessage ? (
-            <div className={upstreamClass("upstreams-feedback upstreams-feedback-error")} role="alert">
+            <div className={upstreamClass('upstreams-feedback upstreams-feedback-error')} role="alert">
               <p>{copyErrorMessage}</p>
             </div>
           ) : null}
 
-          <p className={upstreamClass("muted")}>{usage.note}</p>
+          <p className={upstreamClass('muted')}>{usage.note}</p>
         </div>
       ) : (
-        <div className={upstreamClass("upstreams-empty-state")}>
+        <div className={upstreamClass('upstreams-empty-state')}>
           <h3>No usage instructions yet</h3>
-          <p className={upstreamClass("muted")}>Pick an upstream first so the page can show npm or Docker guidance.</p>
+          <p className={upstreamClass('muted')}>Pick an upstream first so the page can show npm or Docker guidance.</p>
         </div>
       )}
     </section>

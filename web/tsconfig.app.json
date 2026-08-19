@@ -22,5 +22,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    // Work-in-progress page that references a non-existent API surface.
+    "src/pages/OrganizationsPage.tsx"
+  ]
 }

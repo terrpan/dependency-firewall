@@ -31,8 +31,10 @@ export const localAuthAdapter: AuthAdapter = {
         getAccessToken: async () => testAuth.token ?? 'e2e-token',
       }
     }
-    if (testAuth?.state === 'unauthorized') return { status: 'unauthorized', session: null, getAccessToken: async () => null }
-    if (testAuth?.state === 'expired' || testAuth?.state === 'error') return { status: 'error', session: null, getAccessToken: async () => null }
+    if (testAuth?.state === 'unauthorized')
+      return { status: 'unauthorized', session: null, getAccessToken: async () => null }
+    if (testAuth?.state === 'expired' || testAuth?.state === 'error')
+      return { status: 'error', session: null, getAccessToken: async () => null }
     return { status: 'anonymous', session: null, getAccessToken: async () => null }
   },
 }

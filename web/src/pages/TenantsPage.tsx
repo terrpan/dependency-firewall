@@ -75,7 +75,7 @@ export function TenantsPage() {
         eyebrow="Workspace scope"
         title="Tenants"
         summary="Choose which tenant to operate in. Upstreams, policies, decisions, and dependency graphs stay inside that workspace."
-        actions={(
+        actions={
           <>
             <Badge tone={status === 'error' ? 'danger' : 'neutral'}>
               {status === 'loading'
@@ -91,7 +91,7 @@ export function TenantsPage() {
               </Button>
             ) : null}
           </>
-        )}
+        }
       />
 
       <div className={styles.layout}>
@@ -105,11 +105,7 @@ export function TenantsPage() {
 
           {status === 'loading' ? <AsyncState status="loading" /> : null}
           {status === 'error' ? (
-            <AsyncState
-              status="error"
-              error={errorMessage ?? undefined}
-              onRetry={() => void reloadTenants()}
-            />
+            <AsyncState status="error" error={errorMessage ?? undefined} onRetry={() => void reloadTenants()} />
           ) : null}
           {status === 'empty' ? (
             <EmptyState
@@ -142,13 +138,12 @@ export function TenantsPage() {
                       {isActive ? (
                         <>
                           <Badge tone="success">Active workspace</Badge>
-                          <Link className={styles.routeLink} to="/">Open dashboard</Link>
+                          <Link className={styles.routeLink} to="/">
+                            Open dashboard
+                          </Link>
                         </>
                       ) : (
-                        <Button
-                          aria-label={`Switch to ${tenant.name}`}
-                          onClick={() => setTenantId(tenant.id)}
-                        >
+                        <Button aria-label={`Switch to ${tenant.name}`} onClick={() => setTenantId(tenant.id)}>
                           Switch tenant
                         </Button>
                       )}
@@ -159,21 +154,30 @@ export function TenantsPage() {
             </ResourceList>
           ) : null}
         </section>
-
       </div>
 
       <ModalWizard
         currentStep={createStep}
         description="Create an isolated workspace for one team, business unit, or environment."
         dismissible={!isCreating}
-        footer={(
-          <ModalWizardActions leading={<Button disabled={isCreating} onClick={closeCreateWizard}>Cancel</Button>}>
-            {createStep > 0 ? <Button disabled={isCreating} onClick={() => setCreateStep(0)}>Back</Button> : null}
+        footer={
+          <ModalWizardActions
+            leading={
+              <Button disabled={isCreating} onClick={closeCreateWizard}>
+                Cancel
+              </Button>
+            }
+          >
+            {createStep > 0 ? (
+              <Button disabled={isCreating} onClick={() => setCreateStep(0)}>
+                Back
+              </Button>
+            ) : null}
             <Button variant="primary" disabled={isCreating || !name.trim()} form="create-tenant-form" type="submit">
               {createStep === 0 ? 'Review details' : isCreating ? 'Creating…' : 'Create tenant'}
             </Button>
           </ModalWizardActions>
-        )}
+        }
         initialFocusRef={nameInputRef}
         onClose={closeCreateWizard}
         open={isCreateOpen}
@@ -187,7 +191,9 @@ export function TenantsPage() {
           {createStep === 0 ? (
             <div className={styles.wizardSection}>
               <div className={styles.formHeader}>
-                <span className={styles.formIcon} aria-hidden="true"><Building2 size={20} /></span>
+                <span className={styles.formIcon} aria-hidden="true">
+                  <Building2 size={20} />
+                </span>
                 <div>
                   <h3>Name the workspace</h3>
                   <p>Use the name operators already use for this team or environment.</p>
@@ -209,15 +215,23 @@ export function TenantsPage() {
           ) : (
             <div className={styles.wizardSection}>
               <div className={styles.formHeader}>
-                <span className={styles.formIcon} aria-hidden="true"><Building2 size={20} /></span>
+                <span className={styles.formIcon} aria-hidden="true">
+                  <Building2 size={20} />
+                </span>
                 <div>
                   <h3>Review workspace</h3>
                   <p>The new tenant becomes active immediately after creation.</p>
                 </div>
               </div>
               <dl className={styles.reviewCard}>
-                <div><dt>Workspace name</dt><dd>{name.trim()}</dd></div>
-                <div><dt>Scope</dt><dd>Isolated tenant</dd></div>
+                <div>
+                  <dt>Workspace name</dt>
+                  <dd>{name.trim()}</dd>
+                </div>
+                <div>
+                  <dt>Scope</dt>
+                  <dd>Isolated tenant</dd>
+                </div>
               </dl>
             </div>
           )}

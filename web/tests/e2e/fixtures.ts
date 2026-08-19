@@ -11,22 +11,55 @@ export async function installAuth(page: Page, state: AuthState = 'authenticated'
 
 export const policyOverviewFixtures = [
   {
-    id: 'policy-blocklist', tenant_id: 'tenant-acme', upstream_id: 'npm', name: 'Block untrusted namespaces',
-    type: 'blocklist', action: 'deny', schema_version: 1, config: { namespaces: ['untrusted', 'legacy-vendor'] },
+    id: 'policy-blocklist',
+    tenant_id: 'tenant-acme',
+    upstream_id: 'npm',
+    name: 'Block untrusted namespaces',
+    type: 'blocklist',
+    action: 'deny',
+    schema_version: 1,
+    config: { namespaces: ['untrusted', 'legacy-vendor'] },
     target: { dependency_scope: ['direct', 'transitive'], dependency_types: ['prod'], on_unknown: 'warn' },
-    priority: 10, enabled: true, version: 3, created_at: '2026-07-01T10:00:00Z', updated_at: '2026-08-08T10:00:00Z',
+    priority: 10,
+    enabled: true,
+    version: 3,
+    created_at: '2026-07-01T10:00:00Z',
+    updated_at: '2026-08-08T10:00:00Z',
   },
   {
-    id: 'policy-licenses', tenant_id: 'tenant-acme', upstream_id: 'npm', name: 'Approved licenses',
-    type: 'license_allowlist', action: 'deny', schema_version: 2,
-    config: { licenses: ['MIT', 'Apache-2.0', 'BSD-3-Clause'], unlicensed_behavior: 'deny', unavailable_metadata_behavior: 'skip', dry_run: true },
-    priority: 20, enabled: true, version: 2, created_at: '2026-07-03T10:00:00Z', updated_at: '2026-08-07T10:00:00Z',
+    id: 'policy-licenses',
+    tenant_id: 'tenant-acme',
+    upstream_id: 'npm',
+    name: 'Approved licenses',
+    type: 'license_allowlist',
+    action: 'deny',
+    schema_version: 2,
+    config: {
+      licenses: ['MIT', 'Apache-2.0', 'BSD-3-Clause'],
+      unlicensed_behavior: 'deny',
+      unavailable_metadata_behavior: 'skip',
+      dry_run: true,
+    },
+    priority: 20,
+    enabled: true,
+    version: 2,
+    created_at: '2026-07-03T10:00:00Z',
+    updated_at: '2026-08-07T10:00:00Z',
   },
   {
-    id: 'policy-age', tenant_id: 'tenant-acme', upstream_id: 'npm', name: 'Package cooling-off period',
-    type: 'minimum_age', action: 'deny', schema_version: 1,
+    id: 'policy-age',
+    tenant_id: 'tenant-acme',
+    upstream_id: 'npm',
+    name: 'Package cooling-off period',
+    type: 'minimum_age',
+    action: 'deny',
+    schema_version: 1,
     config: { min_age_days: 7, exclude_packages: ['@acme/release-tools'] },
-    priority: 30, enabled: false, version: 1, created_at: '2026-08-01T10:00:00Z', updated_at: '2026-08-06T10:00:00Z',
+    priority: 30,
+    enabled: false,
+    version: 1,
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-06T10:00:00Z',
   },
 ] as const
 
@@ -79,8 +112,20 @@ export const evaluationOverviewFixtures = [
     policy_hash: 'policyhash1234567890',
     reason: 'Namespace matched the tenant blocklist.',
     reasons: [
-      { action: 'deny', category: 'blocklist', message: 'Namespace matched the tenant blocklist.', policy_id: 'policy-blocklist', policy_name: 'Protected namespaces' },
-      { action: 'deny', category: 'license', message: 'License metadata was not approved.', policy_id: 'policy-licenses', policy_name: 'Approved licenses' },
+      {
+        action: 'deny',
+        category: 'blocklist',
+        message: 'Namespace matched the tenant blocklist.',
+        policy_id: 'policy-blocklist',
+        policy_name: 'Protected namespaces',
+      },
+      {
+        action: 'deny',
+        category: 'license',
+        message: 'License metadata was not approved.',
+        policy_id: 'policy-licenses',
+        policy_name: 'Approved licenses',
+      },
     ],
     warnings: [],
     evaluated_at: '2026-08-08T10:00:00Z',
@@ -92,7 +137,15 @@ export const evaluationOverviewFixtures = [
     policy_id: 'policy-age',
     policy_hash: 'agehash1234567890',
     reason: 'All enforced policies allowed this package.',
-    reasons: [{ action: 'allow', category: 'minimum_age', message: 'Package is older than the cooling-off period.', policy_id: 'policy-age', policy_name: 'Package cooling-off period' }],
+    reasons: [
+      {
+        action: 'allow',
+        category: 'minimum_age',
+        message: 'Package is older than the cooling-off period.',
+        policy_id: 'policy-age',
+        policy_name: 'Package cooling-off period',
+      },
+    ],
     warnings: [],
     cached_at: '2026-08-08T10:03:00Z',
     evaluated_at: '2026-08-08T10:04:00Z',
@@ -104,18 +157,39 @@ export const evaluationOverviewFixtures = [
     policy_id: 'policy-age',
     policy_hash: 'agehash1234567890',
     reason: 'Enforced policies allowed this package.',
-    reasons: [{ action: 'allow', category: 'minimum_age', message: 'Package is older than the cooling-off period.', policy_id: 'policy-age', policy_name: 'Package cooling-off period' }],
+    reasons: [
+      {
+        action: 'allow',
+        category: 'minimum_age',
+        message: 'Package is older than the cooling-off period.',
+        policy_id: 'policy-age',
+        policy_name: 'Package cooling-off period',
+      },
+    ],
     warnings: ['[Approved licenses] would deny because license metadata is unavailable.'],
     evaluated_at: '2026-08-08T10:02:00Z',
   },
   {
     id: 'evaluation-nginx',
-    artifact: { ecosystem: 'oci', namespace: 'library', name: 'nginx', digest: 'sha256:1234567890abcdef1234567890abcdef' },
+    artifact: {
+      ecosystem: 'oci',
+      namespace: 'library',
+      name: 'nginx',
+      digest: 'sha256:1234567890abcdef1234567890abcdef',
+    },
     outcome: 'deny',
     policy_id: 'policy-mutable-tag',
     policy_hash: 'mutablehash1234567890',
     reason: 'Mutable image tags are not allowed.',
-    reasons: [{ action: 'deny', category: 'block_mutable_tag', message: 'Mutable image tags are not allowed.', policy_id: 'policy-mutable-tag', policy_name: 'Require immutable images' }],
+    reasons: [
+      {
+        action: 'deny',
+        category: 'block_mutable_tag',
+        message: 'Mutable image tags are not allowed.',
+        policy_id: 'policy-mutable-tag',
+        policy_name: 'Require immutable images',
+      },
+    ],
     warnings: [],
     cached_at: '2026-08-08T10:00:30Z',
     evaluated_at: '2026-08-08T10:01:00Z',
@@ -124,9 +198,16 @@ export const evaluationOverviewFixtures = [
 
 export const dependencyGraphRootFixtures = [
   {
-    id: 'root-react', tenant_id: 'tenant-acme', upstream_id: 'npm', package_name: 'react-app', version: '1.0.0',
-    status: 'complete', graph_hash: 'abc123def456', created_at: '2026-08-08T10:00:00Z',
-    updated_at: '2026-08-08T10:00:00Z', resolved_at: '2026-08-08T10:00:00Z',
+    id: 'root-react',
+    tenant_id: 'tenant-acme',
+    upstream_id: 'npm',
+    package_name: 'react-app',
+    version: '1.0.0',
+    status: 'complete',
+    graph_hash: 'abc123def456',
+    created_at: '2026-08-08T10:00:00Z',
+    updated_at: '2026-08-08T10:00:00Z',
+    resolved_at: '2026-08-08T10:00:00Z',
   },
 ] as const
 
@@ -134,9 +215,24 @@ export const dependencyGraphFixtures: Record<string, Record<string, unknown>> = 
   'root-react': {
     root: dependencyGraphRootFixtures[0],
     nodes: [
-      { id: 'node-root', artifact: { ecosystem: 'npm', name: 'react-app', version: '1.0.0' }, min_depth: 0, dependency_types: ['prod'] },
-      { id: 'node-react', artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' }, min_depth: 1, dependency_types: ['prod'] },
-      { id: 'node-scheduler', artifact: { ecosystem: 'npm', name: 'scheduler', version: '0.27.0' }, min_depth: 2, dependency_types: ['prod'] },
+      {
+        id: 'node-root',
+        artifact: { ecosystem: 'npm', name: 'react-app', version: '1.0.0' },
+        min_depth: 0,
+        dependency_types: ['prod'],
+      },
+      {
+        id: 'node-react',
+        artifact: { ecosystem: 'npm', name: 'react', version: '19.2.0' },
+        min_depth: 1,
+        dependency_types: ['prod'],
+      },
+      {
+        id: 'node-scheduler',
+        artifact: { ecosystem: 'npm', name: 'scheduler', version: '0.27.0' },
+        min_depth: 2,
+        dependency_types: ['prod'],
+      },
     ],
     edges: [
       { id: 'edge-react', parent_node_id: 'node-root', child_node_id: 'node-react', dependency_type: 'prod' },
@@ -159,17 +255,19 @@ type ApiFixtureOptions = {
 }
 
 export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
-  const tenantFixtures: Array<Record<string, unknown>> = (options.tenants ?? tenantOverviewFixtures.slice(0, 1))
-    .map((tenant) => ({ ...tenant }))
-  const upstreamFixtures: Array<Record<string, unknown>> = (options.upstreams ?? upstreamOverviewFixtures.slice(0, 1))
-    .map((upstream) => ({ ...upstream }))
+  const tenantFixtures: Array<Record<string, unknown>> = (options.tenants ?? tenantOverviewFixtures.slice(0, 1)).map(
+    (tenant) => ({ ...tenant }),
+  )
+  const upstreamFixtures: Array<Record<string, unknown>> = (
+    options.upstreams ?? upstreamOverviewFixtures.slice(0, 1)
+  ).map((upstream) => ({ ...upstream }))
   let remainingTenantListFailures = options.tenantListFailures ?? 0
   let remainingUpstreamListFailures = options.upstreamListFailures ?? 0
   let remainingEvaluationListFailures = options.evaluationListFailures ?? 0
   let remainingDependencyGraphListFailures = options.dependencyGraphListFailures ?? 0
 
-  await page.route('**/healthz', route => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
-  await page.route('**/api/v1/**', async route => {
+  await page.route('**/healthz', (route) => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
+  await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/tenants') && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as { name?: string }
@@ -204,7 +302,7 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
     }
     if (path.endsWith('/upstreams') && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as {
-        auth?: { type?: string, username?: string }
+        auth?: { type?: string; username?: string }
         base_url?: string
         capabilities?: string[]
         ecosystem?: string
@@ -217,9 +315,7 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
         ecosystem: body.ecosystem ?? 'npm',
         base_url: body.base_url ?? 'https://npm.example.test',
         capabilities,
-        supported_policy_types: capabilities.includes('publish_time')
-          ? ['blocklist', 'minimum_age']
-          : ['blocklist'],
+        supported_policy_types: capabilities.includes('publish_time') ? ['blocklist', 'minimum_age'] : ['blocklist'],
         auth: {
           configured: Boolean(body.auth?.type && body.auth.type !== 'none'),
           type: body.auth?.type ?? 'none',
@@ -244,7 +340,23 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
       }
       return route.fulfill({ json: upstreamFixtures })
     }
-    if (path.endsWith('/policy-types')) return route.fulfill({ json: [{ type: 'blocklist', summary: 'Block selected namespaces.', description: 'Deny packages from explicitly blocked namespaces.', help: 'Add one namespace per line.', example: 'namespaces: [blocked]', supported_actions: ['deny', 'allow'], supported_schema_versions: [1], current_schema_version: 1, supported_ecosystems: ['npm', 'oci'], required_capabilities: [] }] })
+    if (path.endsWith('/policy-types'))
+      return route.fulfill({
+        json: [
+          {
+            type: 'blocklist',
+            summary: 'Block selected namespaces.',
+            description: 'Deny packages from explicitly blocked namespaces.',
+            help: 'Add one namespace per line.',
+            example: 'namespaces: [blocked]',
+            supported_actions: ['deny', 'allow'],
+            supported_schema_versions: [1],
+            current_schema_version: 1,
+            supported_ecosystems: ['npm', 'oci'],
+            required_capabilities: [],
+          },
+        ],
+      })
     if (path.endsWith('/policies')) return route.fulfill({ json: options.policies ?? [] })
     if (/\/dependency-graphs\/[^/]+$/.test(path)) {
       const rootId = path.split('/').at(-1) ?? ''

@@ -1,0 +1,91 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+}
+.panel {
+  background: var(--df-surface-raised);
+  border: 1px solid var(--df-border);
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+.panelHeader,
+.panelHeader > div,
+.teamRow,
+.resourceSelect,
+.inlineForm {
+  display: flex;
+  align-items: center;
+}
+.panelHeader {
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.panelHeader > div {
+  gap: 0.55rem;
+}
+.panelHeader h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.panelHeader > span,
+.resource small {
+  color: var(--df-text-muted);
+}
+.inlineForm {
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.inlineForm > :first-child {
+  flex: 1;
+}
+.list {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.resource {
+  border: 1px solid var(--df-border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.resource[data-selected] {
+  border-color: var(--df-accent);
+  box-shadow: 0 0 0 1px var(--df-accent);
+}
+.resourceSelect {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  justify-content: space-between;
+  padding: 0.875rem;
+  text-align: left;
+  width: 100%;
+}
+.resourceSelect:hover {
+  background: var(--df-surface-hover);
+}
+.resourceSelect span,
+.teamRow span {
+  display: grid;
+  gap: 0.2rem;
+}
+.teamRow {
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem;
+}
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .inlineForm {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

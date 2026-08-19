@@ -22,10 +22,7 @@ export function EvaluationsPage() {
   const [activeFiltersByTenant, setActiveFiltersByTenant] = useState<Record<string, EvaluationFilter[]>>({})
   const page = pagesByTenant[tenantKey] ?? 0
   const artifactSearch = artifactSearchByTenant[tenantKey] ?? ''
-  const activeFilters = useMemo(
-    () => activeFiltersByTenant[tenantKey] ?? [],
-    [activeFiltersByTenant, tenantKey],
-  )
+  const activeFilters = useMemo(() => activeFiltersByTenant[tenantKey] ?? [], [activeFiltersByTenant, tenantKey])
 
   function updatePage(nextPage: number | ((currentPage: number) => number)) {
     setPagesByTenant((currentPages) => {
@@ -51,16 +48,18 @@ export function EvaluationsPage() {
   const canGoForward = evaluations.length === evaluationsPageSize
   const hasArtifactSearch = artifactSearch.trim().length > 0
   const hasActiveFilters = activeFilters.length > 0
-  const emptyTitle = hasArtifactSearch || hasActiveFilters
-    ? 'No matching decisions'
-    : page === 0
-      ? 'No decisions recorded yet'
-      : 'No more decisions'
-  const emptyMessage = hasArtifactSearch || hasActiveFilters
-    ? 'Adjust the search or clear a filter to see more decision history.'
-    : page === 0
-      ? 'Decisions appear here after this tenant routes package or image requests through Dependency Firewall.'
-      : 'Return to the previous page or refresh to look for newer decisions.'
+  const emptyTitle =
+    hasArtifactSearch || hasActiveFilters
+      ? 'No matching decisions'
+      : page === 0
+        ? 'No decisions recorded yet'
+        : 'No more decisions'
+  const emptyMessage =
+    hasArtifactSearch || hasActiveFilters
+      ? 'Adjust the search or clear a filter to see more decision history.'
+      : page === 0
+        ? 'Decisions appear here after this tenant routes package or image requests through Dependency Firewall.'
+        : 'Return to the previous page or refresh to look for newer decisions.'
   const filterCounts = useMemo(
     () => ({
       allow: evaluations.filter((evaluation) => matchesEvaluationFilter(evaluation, 'allow')).length,
@@ -91,22 +90,29 @@ export function EvaluationsPage() {
       <PageHeader
         eyebrow="Decision history"
         title="Evaluations"
-        summary={<>See what Dependency Firewall decided for {activeTenant?.name ?? 'the selected tenant'}, which policy made the decision, and why.</>}
-        actions={<>
-          {evaluationsQuery.isFetching && !evaluationsQuery.isPending ? (
-            <span className={evaluationClass('status-pill status-pill-neutral')}>Refreshing</span>
-          ) : null}
-          {!evaluationsQuery.isError ? (
-            <button
-              className={evaluationClass('secondary-button')}
-              disabled={evaluationsQuery.isFetching}
-              onClick={() => void evaluationsQuery.refetch()}
-              type="button"
-            >
-              Refresh
-            </button>
-          ) : null}
-        </>}
+        summary={
+          <>
+            See what Dependency Firewall decided for {activeTenant?.name ?? 'the selected tenant'}, which policy made
+            the decision, and why.
+          </>
+        }
+        actions={
+          <>
+            {evaluationsQuery.isFetching && !evaluationsQuery.isPending ? (
+              <span className={evaluationClass('status-pill status-pill-neutral')}>Refreshing</span>
+            ) : null}
+            {!evaluationsQuery.isError ? (
+              <button
+                className={evaluationClass('secondary-button')}
+                disabled={evaluationsQuery.isFetching}
+                onClick={() => void evaluationsQuery.refetch()}
+                type="button"
+              >
+                Refresh
+              </button>
+            ) : null}
+          </>
+        }
       />
 
       {evaluationsQuery.isSuccess && evaluations.length > 0 ? (
@@ -116,8 +122,8 @@ export function EvaluationsPage() {
               <h3 id="evaluation-overview-title">Decision overview</h3>
               <p className={evaluationClass('muted')}>
                 Results {rangeStart}-{rangeEnd} · latest {formatTimestamp(evaluationSummary.latestEvaluatedAt)} ·{' '}
-                {evaluationSummary.uniquePolicies} {evaluationSummary.uniquePolicies === 1 ? 'policy' : 'policies'} represented ·{' '}
-                {evaluationSummary.cachedCount} cached
+                {evaluationSummary.uniquePolicies} {evaluationSummary.uniquePolicies === 1 ? 'policy' : 'policies'}{' '}
+                represented · {evaluationSummary.cachedCount} cached
               </p>
             </div>
             <span className={evaluationClass('status-pill status-pill-neutral')}>Page {page + 1}</span>

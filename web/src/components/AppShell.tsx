@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigationType } from 'react-router-dom'
-import { Activity, Building2, ExternalLink, FileCheck2, GitFork, LayoutDashboard, Menu, Moon, Server, Sun, X, type LucideIcon } from 'lucide-react'
+import {
+  Activity,
+  Building2,
+  ExternalLink,
+  FileCheck2,
+  GitFork,
+  LayoutDashboard,
+  Menu,
+  Moon,
+  Server,
+  Sun,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { useAuth } from '../features/auth/useAuth.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
 import { docsUrl } from '../lib/config.ts'
@@ -18,12 +31,43 @@ type NavigationItem = {
 }
 
 const navigationItems = [
-  { to: '/', label: 'Dashboard', summary: 'Protection status and next actions.', icon: LayoutDashboard, end: true, requiresTenant: true },
+  {
+    to: '/',
+    label: 'Dashboard',
+    summary: 'Protection status and next actions.',
+    icon: LayoutDashboard,
+    end: true,
+    requiresTenant: true,
+  },
   { to: '/tenants', label: 'Tenants', summary: 'Workspace selection and setup.', icon: Building2 },
-  { to: '/upstreams', label: 'Upstreams', summary: 'Package sources and client setup.', icon: Server, requiresTenant: true },
-  { to: '/policies', label: 'Policies', summary: 'Rules, versions, and rollback history.', icon: FileCheck2, requiresTenant: true },
-  { to: '/evaluations', label: 'Evaluations', summary: 'Decisions, reasons, and policy evidence.', icon: Activity, requiresTenant: true },
-  { to: '/dependency-graphs', label: 'Dependency graphs', summary: 'Direct and transitive package relationships.', icon: GitFork, requiresTenant: true },
+  {
+    to: '/upstreams',
+    label: 'Upstreams',
+    summary: 'Package sources and client setup.',
+    icon: Server,
+    requiresTenant: true,
+  },
+  {
+    to: '/policies',
+    label: 'Policies',
+    summary: 'Rules, versions, and rollback history.',
+    icon: FileCheck2,
+    requiresTenant: true,
+  },
+  {
+    to: '/evaluations',
+    label: 'Evaluations',
+    summary: 'Decisions, reasons, and policy evidence.',
+    icon: Activity,
+    requiresTenant: true,
+  },
+  {
+    to: '/dependency-graphs',
+    label: 'Dependency graphs',
+    summary: 'Direct and transitive package relationships.',
+    icon: GitFork,
+    requiresTenant: true,
+  },
 ] satisfies readonly NavigationItem[]
 
 const themeStorageKey = 'dependency-firewall-theme'
@@ -70,7 +114,7 @@ function getNextTheme(theme: ThemeMode): ThemeMode {
 function ThemeIcon({ theme }: { theme: ThemeMode }) {
   if (theme === 'light') {
     return (
-      <svg aria-hidden="true" className={applicationClass("theme-icon")} viewBox="0 0 24 24">
+      <svg aria-hidden="true" className={applicationClass('theme-icon')} viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="4" />
         <path d="M12 2v2.5M12 19.5V22M4.93 4.93 6.7 6.7M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07 6.7 17.3M17.3 6.7l1.77-1.77" />
       </svg>
@@ -79,14 +123,14 @@ function ThemeIcon({ theme }: { theme: ThemeMode }) {
 
   if (theme === 'dark') {
     return (
-      <svg aria-hidden="true" className={applicationClass("theme-icon")} viewBox="0 0 24 24">
+      <svg aria-hidden="true" className={applicationClass('theme-icon')} viewBox="0 0 24 24">
         <path d="M20.2 14.9A7.7 7.7 0 0 1 9.1 3.8 8.8 8.8 0 1 0 20.2 14.9Z" />
       </svg>
     )
   }
 
   return (
-    <svg aria-hidden="true" className={applicationClass("theme-icon")} viewBox="0 0 24 24">
+    <svg aria-hidden="true" className={applicationClass('theme-icon')} viewBox="0 0 24 24">
       <rect x="3" y="4" width="18" height="12" rx="2" />
       <path d="M8 20h8M12 16v4" />
     </svg>
@@ -98,25 +142,39 @@ function TenantShellState() {
 
   if (status === 'loading') {
     return (
-      <section className={applicationClass("page")}>
-        <PageHeader title="Loading tenants" summary="Loading the tenant workspace." actions={<span className={applicationClass("status-pill")}>Loading</span>} />
+      <section className={applicationClass('page')}>
+        <PageHeader
+          title="Loading tenants"
+          summary="Loading the tenant workspace."
+          actions={<span className={applicationClass('status-pill')}>Loading</span>}
+        />
       </section>
     )
   }
 
   if (status === 'error') {
     return (
-      <section className={applicationClass("page")}>
-        <PageHeader title="Unable to load tenants" summary={errorMessage ?? 'The tenant list is unavailable right now.'} actions={<button className={applicationClass("secondary-button")} onClick={() => void reloadTenants()} type="button">
-            Retry
-          </button>} />
+      <section className={applicationClass('page')}>
+        <PageHeader
+          title="Unable to load tenants"
+          summary={errorMessage ?? 'The tenant list is unavailable right now.'}
+          actions={
+            <button className={applicationClass('secondary-button')} onClick={() => void reloadTenants()} type="button">
+              Retry
+            </button>
+          }
+        />
       </section>
     )
   }
 
   return (
-    <section className={applicationClass("page")}>
-      <PageHeader title="No tenants yet" summary="Create a tenant to start using tenant-scoped pages." actions={<span className={applicationClass("status-pill status-pill-neutral")}>Empty</span>} />
+    <section className={applicationClass('page')}>
+      <PageHeader
+        title="No tenants yet"
+        summary="Create a tenant to start using tenant-scoped pages."
+        actions={<span className={applicationClass('status-pill status-pill-neutral')}>Empty</span>}
+      />
     </section>
   )
 }
@@ -127,8 +185,7 @@ export function AppShell() {
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
   const [navigationOpen, setNavigationOpen] = useState(false)
   const { session, status: authStatus } = useAuth()
-  const { activeTenant, hasTenants, isError, isLoading, setTenantId, status, tenantId, tenants } =
-    useTenant()
+  const { activeTenant, hasTenants, isError, isLoading, setTenantId, status, tenantId, tenants } = useTenant()
 
   useEffect(() => {
     window.localStorage.setItem(themeStorageKey, theme)
@@ -174,33 +231,53 @@ export function AppShell() {
   }, [location.pathname, location.search, navigationType, tenantId])
 
   const nextTheme = getNextTheme(theme)
-  const themeLabel =
-    theme === 'system'
-      ? 'Theme: System'
-      : theme === 'light'
-        ? 'Theme: Light'
-        : 'Theme: Dark'
+  const themeLabel = theme === 'system' ? 'Theme: System' : theme === 'light' ? 'Theme: Light' : 'Theme: Dark'
   const accountName = session?.user?.displayName?.trim() || 'Local session'
   const accountMeta =
     authStatus === 'authenticated'
       ? session?.roles.length
         ? session.roles.join(', ')
-        : session?.user?.id ?? 'Authenticated'
+        : (session?.user?.id ?? 'Authenticated')
       : 'Authentication not configured'
 
   return (
-    <div className={applicationClass("app-shell")} data-auth-status={authStatus}>
-      <div className={applicationClass("shell-frame")}>
-        {navigationOpen ? <button className={applicationClass("nav-scrim")} aria-label="Close navigation" onClick={() => setNavigationOpen(false)} type="button" /> : null}
+    <div className={applicationClass('app-shell')} data-auth-status={authStatus}>
+      <div className={applicationClass('shell-frame')}>
+        {navigationOpen ? (
+          <button
+            className={applicationClass('nav-scrim')}
+            aria-label="Close navigation"
+            onClick={() => setNavigationOpen(false)}
+            type="button"
+          />
+        ) : null}
         <aside className={applicationClass('side-nav', navigationOpen && 'open')} aria-label="Primary">
-          <div className={applicationClass("side-nav-top")}>
-            <div className={applicationClass("brand-block")}>
-              <div className={applicationClass("brand-heading")}><span className={applicationClass("brand-mark")} aria-hidden="true">DF</span><div><p className={applicationClass("eyebrow")}>Dependency Firewall</p><h1>Operations</h1></div><button className={applicationClass("mobile-nav-close")} aria-label="Close navigation" onClick={() => setNavigationOpen(false)} type="button"><X size={20}/></button></div>
+          <div className={applicationClass('side-nav-top')}>
+            <div className={applicationClass('brand-block')}>
+              <div className={applicationClass('brand-heading')}>
+                <span className={applicationClass('brand-mark')} aria-hidden="true">
+                  DF
+                </span>
+                <div>
+                  <p className={applicationClass('eyebrow')}>Dependency Firewall</p>
+                  <h1>Operations</h1>
+                </div>
+                <button
+                  className={applicationClass('mobile-nav-close')}
+                  aria-label="Close navigation"
+                  onClick={() => setNavigationOpen(false)}
+                  type="button"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
-            <div className={applicationClass("tenant-switcher")}>
-              <label className={applicationClass("tenant-switcher-label")} htmlFor="tenant-select">Workspace</label>
-              <div className={applicationClass("tenant-switcher-control")}>
+            <div className={applicationClass('tenant-switcher')}>
+              <label className={applicationClass('tenant-switcher-label')} htmlFor="tenant-select">
+                Workspace
+              </label>
+              <div className={applicationClass('tenant-switcher-control')}>
                 <Building2 aria-hidden="true" size={16} />
                 <select
                   id="tenant-select"
@@ -223,13 +300,16 @@ export function AppShell() {
             </div>
           </div>
 
-          <nav className={applicationClass("nav-section")}>
-            <p className={applicationClass("nav-section-label")}>Navigation</p>
+          <nav className={applicationClass('nav-section')}>
+            <p className={applicationClass('nav-section-label')}>Navigation</p>
             <ul>
               {navigationItems.map((item) => (
                 <li key={item.to}>
                   {item.requiresTenant && status !== 'ready' ? (
-                    <span className={applicationClass("nav-link disabled")}><item.icon size={17}/>{item.label}</span>
+                    <span className={applicationClass('nav-link disabled')}>
+                      <item.icon size={17} />
+                      {item.label}
+                    </span>
                   ) : (
                     <NavLink
                       className={({ isActive }) => applicationClass('nav-link', isActive && 'active')}
@@ -237,7 +317,8 @@ export function AppShell() {
                       onClick={() => setNavigationOpen(false)}
                       to={item.to}
                     >
-                      <item.icon size={17}/><span>{item.label}</span>
+                      <item.icon size={17} />
+                      <span>{item.label}</span>
                     </NavLink>
                   )}
                 </li>
@@ -245,42 +326,62 @@ export function AppShell() {
             </ul>
           </nav>
 
-          <div className={applicationClass("shell-utility-actions side-docs-link")}>
-            <a className={applicationClass("shell-action-link")} href={docsUrl} target="_blank" rel="noreferrer">
-              <ExternalLink size={15}/> Docs
+          <div className={applicationClass('shell-utility-actions side-docs-link')}>
+            <a className={applicationClass('shell-action-link')} href={docsUrl} target="_blank" rel="noreferrer">
+              <ExternalLink size={15} /> Docs
             </a>
           </div>
         </aside>
 
-        <div className={applicationClass("shell-main")}>
-          <header className={applicationClass("shell-utility-bar")}>
-            <button className={applicationClass("mobile-nav-trigger")} aria-label="Open navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)} type="button"><Menu size={20}/></button>
-            <div className={applicationClass("utility-context")}><strong data-testid="active-tenant-name">{activeTenant?.name ?? 'Dependency Firewall'}</strong><span>Security operations console</span></div>
-            <div className={applicationClass("account-summary")}>
-              <span className={applicationClass("account-avatar")} aria-hidden="true">
+        <div className={applicationClass('shell-main')}>
+          <header className={applicationClass('shell-utility-bar')}>
+            <button
+              className={applicationClass('mobile-nav-trigger')}
+              aria-label="Open navigation"
+              aria-expanded={navigationOpen}
+              onClick={() => setNavigationOpen(true)}
+              type="button"
+            >
+              <Menu size={20} />
+            </button>
+            <div className={applicationClass('utility-context')}>
+              <strong data-testid="active-tenant-name">{activeTenant?.name ?? 'Dependency Firewall'}</strong>
+              <span>Security operations console</span>
+            </div>
+            <div className={applicationClass('account-summary')}>
+              <span className={applicationClass('account-avatar')} aria-hidden="true">
                 {accountName.slice(0, 1).toUpperCase()}
               </span>
-              <div className={applicationClass("stack-sm")}>
+              <div className={applicationClass('stack-sm')}>
                 <strong>{accountName}</strong>
                 <span>{accountMeta}</span>
               </div>
             </div>
 
-            <div className={applicationClass("shell-utility-actions")}>
+            <div className={applicationClass('shell-utility-actions')}>
               <button
                 aria-label={`${themeLabel}. Switch to ${nextTheme} theme`}
-                className={applicationClass("shell-icon-button shell-theme-toggle")}
+                className={applicationClass('shell-icon-button shell-theme-toggle')}
                 onClick={() => setTheme(nextTheme)}
                 type="button"
                 title={`Switch to ${nextTheme} theme`}
               >
-                {theme === 'dark' ? <Moon size={18}/> : <Sun size={18}/>}<span className={applicationClass("sr-only")}><ThemeIcon theme={theme}/></span>
+                {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+                <span className={applicationClass('sr-only')}>
+                  <ThemeIcon theme={theme} />
+                </span>
               </button>
             </div>
           </header>
 
-          <main className={applicationClass("content")}>
-            {status === 'ready' || location.pathname === '/tenants' ? <Outlet /> : <div className={applicationClass("shell-state")}><TenantShellState /></div>}
+          <main className={applicationClass('content')}>
+            {status === 'ready' || location.pathname === '/tenants' ? (
+              <Outlet />
+            ) : (
+              <div className={applicationClass('shell-state')}>
+                <TenantShellState />
+              </div>
+            )}
           </main>
         </div>
       </div>

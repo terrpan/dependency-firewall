@@ -118,7 +118,7 @@
 .upstreams-list-item small,
 .upstreams-detail dd,
 .upstreams-detail a {
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .upstreams-list-host {
@@ -367,13 +367,13 @@
 
 .upstreams-field-invalid input,
 .upstreams-field-invalid select {
-  border-color: rgba(248, 113, 113, 0.9);
-  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.28);
+  border-color: rgb(248, 113, 113, 90%);
+  box-shadow: 0 0 0 1px rgb(248, 113, 113, 28%);
 }
 
 .upstreams-field-invalid input:focus-visible,
 .upstreams-field-invalid select:focus-visible {
-  outline: 2px solid rgba(248, 113, 113, 0.32);
+  outline: 2px solid rgb(248, 113, 113, 32%);
   outline-offset: 1px;
 }
 

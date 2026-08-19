@@ -2,12 +2,14 @@
 import { ModalWizard, ModalWizardActions } from '../../components/modal/index.ts'
 import { Button } from '../../ui/index.ts'
 import { policyClass } from './styles.ts'
-import type { DependencyScope, DependencyType, PolicyType, PolicyTypeDescriptor, Upstream } from '../../lib/api/index.ts'
-import {
-  getPolicyTypeLabel,
-  getSupportedActions,
-  type PolicyDraftState,
-} from './draft.ts'
+import type {
+  DependencyScope,
+  DependencyType,
+  PolicyType,
+  PolicyTypeDescriptor,
+  Upstream,
+} from '../../lib/api/index.ts'
+import { getPolicyTypeLabel, getSupportedActions, type PolicyDraftState } from './draft.ts'
 import type { DraftDefinition } from './draftDefinitions.ts'
 import { formatUpstreamOptionLabel, getActionTone } from './display.ts'
 import { policyWizardSteps, type PolicyDraftFieldErrorKey, type PreviewFormat } from './policyDraftWizard.ts'
@@ -149,11 +151,11 @@ export function PolicyDraftModal({
   const policyEffectCopy = getPolicyEffectCopy(selectedDescriptor, selectedDefinition)
   const previewAside =
     currentStep >= 2 ? (
-      <div className={policyClass("policy-preview-column")}>
-        <section className={policyClass("policy-preview-card policy-preview-card-compact")}>
-          <div className={policyClass("policy-preview-header")}>
+      <div className={policyClass('policy-preview-column')}>
+        <section className={policyClass('policy-preview-card policy-preview-card-compact')}>
+          <div className={policyClass('policy-preview-header')}>
             <h4>Preview</h4>
-            <div className={policyClass("policy-preview-toggle")} aria-label="Policy preview format">
+            <div className={policyClass('policy-preview-toggle')} aria-label="Policy preview format">
               <button
                 aria-pressed={previewFormat === 'json'}
                 className={policyClass('policy-preview-toggle-button', previewFormat === 'json' && 'active')}
@@ -172,7 +174,9 @@ export function PolicyDraftModal({
               </button>
             </div>
           </div>
-          <pre className={policyClass("code-block policy-preview-block")}>{previewFormat === 'json' ? jsonPreview : yamlPreview}</pre>
+          <pre className={policyClass('code-block policy-preview-block')}>
+            {previewFormat === 'json' ? jsonPreview : yamlPreview}
+          </pre>
         </section>
       </div>
     ) : undefined
@@ -185,35 +189,46 @@ export function PolicyDraftModal({
       description={isEditingPolicy ? 'Edit the selected policy.' : 'Create a tenant-scoped policy.'}
       dismissible={!savePolicyIsPending}
       footer={
-        <ModalWizardActions leading={<><Button disabled={savePolicyIsPending} onClick={onClose}>Cancel</Button><Button disabled={savePolicyIsPending} onClick={onResetDraft}>{isEditingPolicy ? 'Reset changes' : 'Start over'}</Button></>}>
-            {currentStep > 0 ? <Button disabled={savePolicyIsPending} onClick={onBack}>Back</Button> : null}
-            {currentStep === policyWizardSteps.length - 1 ? (
-              <Button
-                variant="primary"
-                disabled={reviewErrors.length > 0 || savePolicyIsPending}
-                onClick={onSavePolicy}
-              >
-                {savePolicyIsPending
-                  ? isEditingPolicy
-                    ? 'Saving changes...'
-                    : 'Creating policy...'
-                  : isEditingPolicy
-                    ? 'Save changes'
-                    : 'Create policy'}
+        <ModalWizardActions
+          leading={
+            <>
+              <Button disabled={savePolicyIsPending} onClick={onClose}>
+                Cancel
               </Button>
-            ) : (
-              <Button variant="primary" disabled={!canAdvanceWizard} onClick={onNext}>
-                Next
+              <Button disabled={savePolicyIsPending} onClick={onResetDraft}>
+                {isEditingPolicy ? 'Reset changes' : 'Start over'}
               </Button>
-            )}
+            </>
+          }
+        >
+          {currentStep > 0 ? (
+            <Button disabled={savePolicyIsPending} onClick={onBack}>
+              Back
+            </Button>
+          ) : null}
+          {currentStep === policyWizardSteps.length - 1 ? (
+            <Button variant="primary" disabled={reviewErrors.length > 0 || savePolicyIsPending} onClick={onSavePolicy}>
+              {savePolicyIsPending
+                ? isEditingPolicy
+                  ? 'Saving changes...'
+                  : 'Creating policy...'
+                : isEditingPolicy
+                  ? 'Save changes'
+                  : 'Create policy'}
+            </Button>
+          ) : (
+            <Button variant="primary" disabled={!canAdvanceWizard} onClick={onNext}>
+              Next
+            </Button>
+          )}
         </ModalWizardActions>
       }
       headerMeta={
         <>
-          {isEditingPolicy ? <span className={policyClass("status-pill status-pill-neutral")}>Editing</span> : null}
-          {draft.type ? <span className={policyClass("policy-badge policy-badge-info")}>{draft.type}</span> : null}
+          {isEditingPolicy ? <span className={policyClass('status-pill status-pill-neutral')}>Editing</span> : null}
+          {draft.type ? <span className={policyClass('policy-badge policy-badge-info')}>{draft.type}</span> : null}
           {policyTypesIsError ? (
-            <span className={policyClass("status-pill status-pill-neutral")}>Fallback metadata</span>
+            <span className={policyClass('status-pill status-pill-neutral')}>Fallback metadata</span>
           ) : null}
         </>
       }
@@ -226,29 +241,29 @@ export function PolicyDraftModal({
       steps={policyWizardSteps}
       title={isEditingPolicy ? 'Edit policy' : hasCreateDraftInProgress ? 'Create policy draft' : 'Create policy'}
     >
-      <div className={policyClass("policy-wizard-main")}>
-        <div className={policyClass("policy-modal-copy")}>
-          <div className={policyClass("policy-section-heading")}>
+      <div className={policyClass('policy-wizard-main')}>
+        <div className={policyClass('policy-modal-copy')}>
+          <div className={policyClass('policy-section-heading')}>
             <div>
               <h3>{currentPolicyWizardStep?.label}</h3>
               {currentPolicyWizardStep?.description ? (
-                <p className={policyClass("muted")}>{currentPolicyWizardStep.description}</p>
+                <p className={policyClass('muted')}>{currentPolicyWizardStep.description}</p>
               ) : null}
             </div>
           </div>
         </div>
 
         {currentStep === 0 ? (
-          <div className={policyClass("policy-form-stack")}>
+          <div className={policyClass('policy-form-stack')}>
             {draftFieldErrors.upstreamId ? (
-              <section className={policyClass("policy-error-panel")}>
+              <section className={policyClass('policy-error-panel')}>
                 <h4>Choose an upstream to continue</h4>
-                <p className={policyClass("muted")}>{draftFieldErrors.upstreamId}</p>
+                <p className={policyClass('muted')}>{draftFieldErrors.upstreamId}</p>
               </section>
             ) : null}
 
             {upstreams.length > 0 ? (
-              <div className={policyClass("policy-type-grid")}>
+              <div className={policyClass('policy-type-grid')}>
                 {upstreams.map((upstream) => {
                   const isSelected = upstream.id === normalizedDraft.upstreamId.trim()
                   const compatibleDescriptorsForUpstream = compatiblePolicyTypesByUpstream.get(upstream.id) ?? []
@@ -260,23 +275,25 @@ export function PolicyDraftModal({
                       onClick={() => onUpstreamSelect(upstream.id)}
                       type="button"
                     >
-                      <div className={policyClass("policy-type-card-header")}>
+                      <div className={policyClass('policy-type-card-header')}>
                         <strong>{upstream.name}</strong>
-                        <span className={policyClass("policy-badge policy-badge-info")}>{upstream.ecosystem.toUpperCase()}</span>
+                        <span className={policyClass('policy-badge policy-badge-info')}>
+                          {upstream.ecosystem.toUpperCase()}
+                        </span>
                       </div>
-                      <p className={policyClass("muted")}>{upstream.base_url}</p>
-                      <div className={policyClass("policy-chip-row")}>
-                        <span className={policyClass("policy-chip")}>
+                      <p className={policyClass('muted')}>{upstream.base_url}</p>
+                      <div className={policyClass('policy-chip-row')}>
+                        <span className={policyClass('policy-chip')}>
                           {compatibleDescriptorsForUpstream.length} policy type
                           {compatibleDescriptorsForUpstream.length === 1 ? '' : 's'}
                         </span>
                         {(upstream.capabilities ?? []).map((capability) => (
-                          <span key={capability} className={policyClass("policy-chip")}>
+                          <span key={capability} className={policyClass('policy-chip')}>
                             {formatUpstreamCapabilityLabel(capability)}
                           </span>
                         ))}
                         {upstream.capabilities?.length ? null : (
-                          <span className={policyClass("policy-chip")}>Base compatibility only</span>
+                          <span className={policyClass('policy-chip')}>Base compatibility only</span>
                         )}
                       </div>
                     </button>
@@ -286,18 +303,18 @@ export function PolicyDraftModal({
             ) : null}
 
             {upstreamsIsError ? (
-              <section className={policyClass("policy-error-panel")}>
+              <section className={policyClass('policy-error-panel')}>
                 <h4>Unable to load upstreams</h4>
-                <p className={policyClass("muted")}>{upstreamsErrorMessage}</p>
+                <p className={policyClass('muted')}>{upstreamsErrorMessage}</p>
               </section>
             ) : null}
 
             {!upstreamsIsPending && upstreams.length === 0 ? (
-              <section className={policyClass("policy-summary-card")}>
+              <section className={policyClass('policy-summary-card')}>
                 <h4>Create an upstream first</h4>
-                <p className={policyClass("muted")}>
-                  Policies are scoped to an upstream in the firewall, so add an npm or OCI upstream before creating
-                  this rule.
+                <p className={policyClass('muted')}>
+                  Policies are scoped to an upstream in the firewall, so add an npm or OCI upstream before creating this
+                  rule.
                 </p>
               </section>
             ) : null}
@@ -305,33 +322,33 @@ export function PolicyDraftModal({
         ) : null}
 
         {currentStep === 1 ? (
-          <div className={policyClass("policy-form-stack")}>
+          <div className={policyClass('policy-form-stack')}>
             {selectedUpstream ? (
-              <section className={policyClass("policy-summary-card policy-summary-card-compact")}>
+              <section className={policyClass('policy-summary-card policy-summary-card-compact')}>
                 <h4>{selectedUpstream.name}</h4>
-                <div className={policyClass("policy-chip-row")}>
-                  <span className={policyClass("policy-chip")}>{selectedUpstream.base_url}</span>
+                <div className={policyClass('policy-chip-row')}>
+                  <span className={policyClass('policy-chip')}>{selectedUpstream.base_url}</span>
                   {(selectedUpstream.capabilities ?? []).map((capability) => (
-                    <span key={capability} className={policyClass("policy-chip")}>
+                    <span key={capability} className={policyClass('policy-chip')}>
                       {formatUpstreamCapabilityLabel(capability)}
                     </span>
                   ))}
                   {selectedUpstream.capabilities?.length ? null : (
-                    <span className={policyClass("policy-chip")}>Base compatibility only</span>
+                    <span className={policyClass('policy-chip')}>Base compatibility only</span>
                   )}
                 </div>
               </section>
             ) : null}
 
             {draftFieldErrors.type ? (
-              <section className={policyClass("policy-error-panel")}>
+              <section className={policyClass('policy-error-panel')}>
                 <h4>Choose a policy type to continue</h4>
-                <p className={policyClass("muted")}>{draftFieldErrors.type}</p>
+                <p className={policyClass('muted')}>{draftFieldErrors.type}</p>
               </section>
             ) : null}
 
             {selectedUpstream && compatiblePolicyTypes.length > 0 ? (
-              <div className={policyClass("policy-type-grid")}>
+              <div className={policyClass('policy-type-grid')}>
                 {compatiblePolicyTypes.map((descriptor) => {
                   const descriptorType = descriptor.type as PolicyType
                   const isSelected = descriptorType === draft.type
@@ -344,24 +361,24 @@ export function PolicyDraftModal({
                       onClick={() => onTypeSelect(descriptorType)}
                       type="button"
                     >
-                      <div className={policyClass("policy-type-card-header")}>
+                      <div className={policyClass('policy-type-card-header')}>
                         <strong>{getPolicyTypeLabel(descriptorType)}</strong>
-                        <span className={policyClass("policy-badge policy-badge-info")}>{descriptor.type}</span>
+                        <span className={policyClass('policy-badge policy-badge-info')}>{descriptor.type}</span>
                       </div>
-                      <p className={policyClass("muted")}>{descriptor.summary}</p>
-                      <div className={policyClass("policy-chip-row")}>
+                      <p className={policyClass('muted')}>{descriptor.summary}</p>
+                      <div className={policyClass('policy-chip-row')}>
                         {supportedActions.map((action) => (
-                          <span key={action} className={policyClass("policy-chip")}>
+                          <span key={action} className={policyClass('policy-chip')}>
                             {action}
                           </span>
                         ))}
                         {getSchemaVersions(descriptor).map((version) => (
-                          <span key={version} className={policyClass("policy-chip")}>
+                          <span key={version} className={policyClass('policy-chip')}>
                             schema v{version}
                           </span>
                         ))}
                         {getRequiredCapabilities(descriptor).map((capability) => (
-                          <span key={capability} className={policyClass("policy-chip")}>
+                          <span key={capability} className={policyClass('policy-chip')}>
                             {formatUpstreamCapabilityLabel(capability)}
                           </span>
                         ))}
@@ -373,10 +390,10 @@ export function PolicyDraftModal({
             ) : null}
 
             {selectedUpstream && compatiblePolicyTypes.length === 0 ? (
-              <section className={policyClass("policy-summary-card")}>
+              <section className={policyClass('policy-summary-card')}>
                 <h4>No compatible policy types yet</h4>
-                <p className={policyClass("muted")}>
-                  Update this upstream's capability profile or choose another upstream before creating a policy.
+                <p className={policyClass('muted')}>
+                  Update this upstream&apos;s capability profile or choose another upstream before creating a policy.
                 </p>
               </section>
             ) : null}
@@ -384,26 +401,28 @@ export function PolicyDraftModal({
         ) : null}
 
         {currentStep === 2 && draft.type && selectedDescriptor && selectedDefinition && selectedUpstream ? (
-          <div className={policyClass("policy-form-grid")}>
+          <div className={policyClass('policy-form-grid')}>
             {policyEffectCopy ? (
-              <section className={policyClass("policy-summary-card policy-effect-card")}>
+              <section className={policyClass('policy-summary-card policy-effect-card')}>
                 <h4>{getPolicyTypeLabel(draft.type)}</h4>
-                <p className={policyClass("muted")}>{policyEffectCopy.summary}</p>
-                {policyEffectCopy.description ? <p className={policyClass("muted")}>{policyEffectCopy.description}</p> : null}
+                <p className={policyClass('muted')}>{policyEffectCopy.summary}</p>
+                {policyEffectCopy.description ? (
+                  <p className={policyClass('muted')}>{policyEffectCopy.description}</p>
+                ) : null}
               </section>
             ) : null}
 
-            <label className={policyClass("policy-field")}>
+            <label className={policyClass('policy-field')}>
               <span>Upstream scope</span>
-              <div className={policyClass("policy-readonly-value")}>
+              <div className={policyClass('policy-readonly-value')}>
                 {formatUpstreamOptionLabel(selectedUpstream)}
                 <code>{selectedUpstream.id}</code>
               </div>
             </label>
 
-            <label className={policyClass("policy-field")}>
+            <label className={policyClass('policy-field')}>
               <span>Policy type</span>
-              <div className={policyClass("policy-readonly-value")}>
+              <div className={policyClass('policy-readonly-value')}>
                 {getPolicyTypeLabel(draft.type)}
                 <code>{draft.type}</code>
               </div>
@@ -418,10 +437,12 @@ export function PolicyDraftModal({
                 type="text"
                 value={draft.name}
               />
-              {draftFieldErrors.name ? <p className={policyClass("policy-field-error")}>{draftFieldErrors.name}</p> : null}
+              {draftFieldErrors.name ? (
+                <p className={policyClass('policy-field-error')}>{draftFieldErrors.name}</p>
+              ) : null}
             </label>
 
-            <label className={policyClass("policy-field")}>
+            <label className={policyClass('policy-field')}>
               <span>Action</span>
               <select
                 disabled={supportedDraftActions.length === 1}
@@ -436,7 +457,9 @@ export function PolicyDraftModal({
               </select>
             </label>
 
-            <label className={policyClass('policy-field', Boolean(draftFieldErrors.priority) && 'policy-field-invalid')}>
+            <label
+              className={policyClass('policy-field', Boolean(draftFieldErrors.priority) && 'policy-field-invalid')}
+            >
               <span>Priority</span>
               <input
                 aria-invalid={Boolean(draftFieldErrors.priority)}
@@ -447,11 +470,13 @@ export function PolicyDraftModal({
                 value={draft.priority}
               />
               {draftFieldErrors.priority ? (
-                <p className={policyClass("policy-field-error")}>{draftFieldErrors.priority}</p>
+                <p className={policyClass('policy-field-error')}>{draftFieldErrors.priority}</p>
               ) : null}
             </label>
 
-            <label className={policyClass('policy-field', Boolean(draftFieldErrors.schemaVersion) && 'policy-field-invalid')}>
+            <label
+              className={policyClass('policy-field', Boolean(draftFieldErrors.schemaVersion) && 'policy-field-invalid')}
+            >
               <span>Schema version</span>
               <select
                 aria-invalid={Boolean(draftFieldErrors.schemaVersion)}
@@ -465,11 +490,11 @@ export function PolicyDraftModal({
                 ))}
               </select>
               {draftFieldErrors.schemaVersion ? (
-                <p className={policyClass("policy-field-error")}>{draftFieldErrors.schemaVersion}</p>
+                <p className={policyClass('policy-field-error')}>{draftFieldErrors.schemaVersion}</p>
               ) : null}
             </label>
 
-            <label className={policyClass("policy-field checkbox-field")}>
+            <label className={policyClass('policy-field checkbox-field')}>
               <input
                 checked={draft.enabled}
                 onChange={(event) => onDraftChange('enabled', event.target.checked)}
@@ -481,17 +506,18 @@ export function PolicyDraftModal({
         ) : null}
 
         {currentStep === 3 && draft.type && selectedUpstream ? (
-          <div className={policyClass("policy-form-stack")}>
-            <section className={policyClass("policy-summary-card policy-effect-card")}>
+          <div className={policyClass('policy-form-stack')}>
+            <section className={policyClass('policy-summary-card policy-effect-card')}>
               <h4>Dependency target</h4>
-              <p className={policyClass("muted")}>
-                Targeting is available for npm policies. When enabled, graph context is resolved asynchronously and unknown context follows the selected fallback.
+              <p className={policyClass('muted')}>
+                Targeting is available for npm policies. When enabled, graph context is resolved asynchronously and
+                unknown context follows the selected fallback.
               </p>
             </section>
 
             {selectedUpstream.ecosystem === 'npm' ? (
               <>
-                <label className={policyClass("policy-field checkbox-field")}>
+                <label className={policyClass('policy-field checkbox-field')}>
                   <input
                     checked={draft.targetEnabled}
                     onChange={(event) => onDraftChange('targetEnabled', event.target.checked)}
@@ -502,11 +528,11 @@ export function PolicyDraftModal({
 
                 {draft.targetEnabled ? (
                   <>
-                    <div className={policyClass("policy-form-grid")}>
-                      <fieldset className={policyClass("policy-field")}>
+                    <div className={policyClass('policy-form-grid')}>
+                      <fieldset className={policyClass('policy-field')}>
                         <span>Dependency scope</span>
                         {dependencyScopeOptions.map((option) => (
-                          <label key={option.value} className={policyClass("checkbox-field")}>
+                          <label key={option.value} className={policyClass('checkbox-field')}>
                             <input
                               checked={draft.targetDependencyScopes.includes(option.value)}
                               onChange={(event) =>
@@ -520,13 +546,16 @@ export function PolicyDraftModal({
                             <span>{option.label}</span>
                           </label>
                         ))}
-                        <small>Leave all unchecked to match any dependency scope. Select unknown context to target unresolved graph evidence explicitly.</small>
+                        <small>
+                          Leave all unchecked to match any dependency scope. Select unknown context to target unresolved
+                          graph evidence explicitly.
+                        </small>
                       </fieldset>
 
-                      <fieldset className={policyClass("policy-field")}>
+                      <fieldset className={policyClass('policy-field')}>
                         <span>Dependency type</span>
                         {dependencyTypeOptions.map((option) => (
-                          <label key={option.value} className={policyClass("checkbox-field")}>
+                          <label key={option.value} className={policyClass('checkbox-field')}>
                             <input
                               checked={draft.targetDependencyTypes.includes(option.value)}
                               onChange={(event) =>
@@ -544,14 +573,11 @@ export function PolicyDraftModal({
                       </fieldset>
                     </div>
 
-                    <label className={policyClass("policy-field")}>
+                    <label className={policyClass('policy-field')}>
                       <span>When graph context is unknown</span>
                       <select
                         onChange={(event) =>
-                          onDraftChange(
-                            'targetOnUnknown',
-                            event.target.value as PolicyDraftState['targetOnUnknown'],
-                          )
+                          onDraftChange('targetOnUnknown', event.target.value as PolicyDraftState['targetOnUnknown'])
                         }
                         value={draft.targetOnUnknown}
                       >
@@ -559,35 +585,42 @@ export function PolicyDraftModal({
                         <option value="deny">Evaluate normally</option>
                         <option value="skip">Skip this policy</option>
                       </select>
-                      <small>Unknown is used before async graph resolution completes or when graph evidence conflicts.</small>
+                      <small>
+                        Unknown is used before async graph resolution completes or when graph evidence conflicts.
+                      </small>
                     </label>
                   </>
                 ) : null}
               </>
             ) : (
-              <section className={policyClass("policy-summary-card")}>
+              <section className={policyClass('policy-summary-card')}>
                 <h4>Not available for this upstream</h4>
-                <p className={policyClass("muted")}>Dependency graph targeting is currently npm-only.</p>
+                <p className={policyClass('muted')}>Dependency graph targeting is currently npm-only.</p>
               </section>
             )}
           </div>
         ) : null}
 
         {currentStep === 4 && draft.type && selectedDescriptor && selectedDefinition ? (
-          <div className={policyClass("policy-form-stack")}>
+          <div className={policyClass('policy-form-stack')}>
             {policyEffectCopy ? (
-              <section className={policyClass("policy-summary-card policy-effect-card")}>
+              <section className={policyClass('policy-summary-card policy-effect-card')}>
                 <h4>{getPolicyTypeLabel(draft.type)}</h4>
-                <p className={policyClass("muted")}>{policyEffectCopy.summary}</p>
+                <p className={policyClass('muted')}>{policyEffectCopy.summary}</p>
               </section>
             ) : null}
 
             {draft.type === 'cvss_threshold' ? (
-              <div className={policyClass("policy-form-grid")}>
+              <div className={policyClass('policy-form-grid')}>
                 <label
-                  className={policyClass('policy-field', 'policy-threshold-option', draft.useCVSSThreshold && 'policy-threshold-option-active', Boolean(draftFieldErrors.numericValue) && 'policy-field-invalid')}
+                  className={policyClass(
+                    'policy-field',
+                    'policy-threshold-option',
+                    draft.useCVSSThreshold && 'policy-threshold-option-active',
+                    Boolean(draftFieldErrors.numericValue) && 'policy-field-invalid',
+                  )}
                 >
-                  <span className={policyClass("policy-threshold-toggle-label")}>
+                  <span className={policyClass('policy-threshold-toggle-label')}>
                     <input
                       checked={draft.useCVSSThreshold}
                       onChange={(event) => {
@@ -617,20 +650,24 @@ export function PolicyDraftModal({
                   />
                   <small>Enable this to deny artifacts at or above the CVSS score threshold.</small>
                   {draftFieldErrors.numericValue ? (
-                    <p className={policyClass("policy-field-error")}>{draftFieldErrors.numericValue}</p>
+                    <p className={policyClass('policy-field-error')}>{draftFieldErrors.numericValue}</p>
                   ) : null}
                 </label>
 
                 <label
-                  className={policyClass('policy-field', 'policy-threshold-option', draft.useMinimumSeverity && 'policy-threshold-option-active', Boolean(draftFieldErrors.minimumSeverity) && 'policy-field-invalid')}
+                  className={policyClass(
+                    'policy-field',
+                    'policy-threshold-option',
+                    draft.useMinimumSeverity && 'policy-threshold-option-active',
+                    Boolean(draftFieldErrors.minimumSeverity) && 'policy-field-invalid',
+                  )}
                 >
-                  <span className={policyClass("policy-threshold-toggle-label")}>
+                  <span className={policyClass('policy-threshold-toggle-label')}>
                     <input
                       checked={draft.useMinimumSeverity}
                       onChange={(event) => {
                         const checked = event.target.checked
-                        const nextMinimumSeverity =
-                          checked && !draft.minimumSeverity ? 'high' : draft.minimumSeverity
+                        const nextMinimumSeverity = checked && !draft.minimumSeverity ? 'high' : draft.minimumSeverity
                         onDraftChange('useMinimumSeverity', checked)
                         onDraftChange('minimumSeverity', nextMinimumSeverity)
                       }}
@@ -642,10 +679,7 @@ export function PolicyDraftModal({
                     aria-invalid={Boolean(draftFieldErrors.minimumSeverity)}
                     disabled={!draft.useMinimumSeverity}
                     onChange={(event) =>
-                      onDraftChange(
-                        'minimumSeverity',
-                        event.target.value as PolicyDraftState['minimumSeverity'],
-                      )
+                      onDraftChange('minimumSeverity', event.target.value as PolicyDraftState['minimumSeverity'])
                     }
                     value={draft.minimumSeverity}
                   >
@@ -658,12 +692,17 @@ export function PolicyDraftModal({
                   </select>
                   <small>Enable this to deny artifacts with vulnerabilities at or above this severity.</small>
                   {draftFieldErrors.minimumSeverity ? (
-                    <p className={policyClass("policy-field-error")}>{draftFieldErrors.minimumSeverity}</p>
+                    <p className={policyClass('policy-field-error')}>{draftFieldErrors.minimumSeverity}</p>
                   ) : null}
                 </label>
               </div>
             ) : selectedDefinition.numberField ? (
-              <label className={policyClass('policy-field', Boolean(draftFieldErrors.numericValue) && 'policy-field-invalid')}>
+              <label
+                className={policyClass(
+                  'policy-field',
+                  Boolean(draftFieldErrors.numericValue) && 'policy-field-invalid',
+                )}
+              >
                 <span>{selectedDefinition.numberLabel}</span>
                 <input
                   aria-invalid={Boolean(draftFieldErrors.numericValue)}
@@ -677,16 +716,21 @@ export function PolicyDraftModal({
                   value={draft.numericValue}
                 />
                 {draft.type === 'scorecard' ? (
-                  <small>Uses the top-level Scorecard <code>score</code>. Leave blank if you only want named check thresholds.</small>
+                  <small>
+                    Uses the top-level Scorecard <code>score</code>. Leave blank if you only want named check
+                    thresholds.
+                  </small>
                 ) : null}
                 {draftFieldErrors.numericValue ? (
-                  <p className={policyClass("policy-field-error")}>{draftFieldErrors.numericValue}</p>
+                  <p className={policyClass('policy-field-error')}>{draftFieldErrors.numericValue}</p>
                 ) : null}
               </label>
             ) : null}
 
             {selectedDefinition.listField ? (
-              <label className={policyClass('policy-field', Boolean(draftFieldErrors.listValue) && 'policy-field-invalid')}>
+              <label
+                className={policyClass('policy-field', Boolean(draftFieldErrors.listValue) && 'policy-field-invalid')}
+              >
                 <span>{selectedDefinition.listLabel}</span>
                 <textarea
                   aria-invalid={Boolean(draftFieldErrors.listValue)}
@@ -701,13 +745,13 @@ export function PolicyDraftModal({
                     : 'Enter one value per line or separate items with commas.'}
                 </small>
                 {draftFieldErrors.listValue ? (
-                  <p className={policyClass("policy-field-error")}>{draftFieldErrors.listValue}</p>
+                  <p className={policyClass('policy-field-error')}>{draftFieldErrors.listValue}</p>
                 ) : null}
               </label>
             ) : null}
 
             {selectedDefinition.supportsExcludePackages ? (
-              <label className={policyClass("policy-field")}>
+              <label className={policyClass('policy-field')}>
                 <span>Exclude packages</span>
                 <textarea
                   onChange={(event) => onDraftChange('excludePackages', event.target.value)}
@@ -720,15 +764,12 @@ export function PolicyDraftModal({
             ) : null}
 
             {supportsLicenseAllowlistMissingBehavior ? (
-              <div className={policyClass("policy-form-grid")}>
-                <label className={policyClass("policy-field")}>
+              <div className={policyClass('policy-form-grid')}>
+                <label className={policyClass('policy-field')}>
                   <span>When no license is declared</span>
                   <select
                     onChange={(event) =>
-                      onDraftChange(
-                        'unlicensedBehavior',
-                        event.target.value as PolicyDraftState['unlicensedBehavior'],
-                      )
+                      onDraftChange('unlicensedBehavior', event.target.value as PolicyDraftState['unlicensedBehavior'])
                     }
                     value={draft.unlicensedBehavior}
                   >
@@ -738,7 +779,7 @@ export function PolicyDraftModal({
                   <small>Use deny to fail closed or skip to ignore artifacts that declare no license.</small>
                 </label>
 
-                <label className={policyClass("policy-field")}>
+                <label className={policyClass('policy-field')}>
                   <span>When license metadata is unavailable</span>
                   <select
                     onChange={(event) =>
@@ -758,8 +799,8 @@ export function PolicyDraftModal({
             ) : null}
 
             {supportsScorecardUnavailableBehavior ? (
-              <div className={policyClass("policy-form-grid")}>
-                <label className={policyClass("policy-field")}>
+              <div className={policyClass('policy-form-grid')}>
+                <label className={policyClass('policy-field')}>
                   <span>When Scorecard data is unavailable</span>
                   <select
                     onChange={(event) =>
@@ -773,12 +814,15 @@ export function PolicyDraftModal({
                     <option value="deny">Deny artifact</option>
                     <option value="skip">Skip this policy</option>
                   </select>
-                  <small>Use skip if missing repository data, unavailable hosted Scorecard data, or checks that report -1 should not deny on their own.</small>
+                  <small>
+                    Use skip if missing repository data, unavailable hosted Scorecard data, or checks that report -1
+                    should not deny on their own.
+                  </small>
                 </label>
               </div>
             ) : null}
 
-            <label className={policyClass("policy-field checkbox-field")}>
+            <label className={policyClass('policy-field checkbox-field')}>
               <input
                 checked={draft.dryRun}
                 onChange={(event) => onDraftChange('dryRun', event.target.checked)}
@@ -786,26 +830,31 @@ export function PolicyDraftModal({
               />
               <span>Record matches as dry-run warnings instead of denying immediately</span>
             </label>
-
           </div>
         ) : null}
 
         {currentStep === 5 ? (
-          <div className={policyClass("policy-review-stack")}>
-            <section className={policyClass("policy-summary-card")}>
+          <div className={policyClass('policy-review-stack')}>
+            <section className={policyClass('policy-summary-card')}>
               <h4>Review before {isEditingPolicy ? 'saving' : 'creating'}</h4>
-              {policyEffectCopy ? <p className={policyClass("muted")}>{policyEffectCopy.summary}</p> : null}
-              <div className={policyClass("policy-chip-row")}>
-                {selectedUpstream ? <span className={policyClass("policy-chip")}>{formatUpstreamOptionLabel(selectedUpstream)}</span> : null}
-                {draft.type ? <span className={policyClass("policy-chip")}>{getPolicyTypeLabel(draft.type)}</span> : null}
-                <span className={policyClass('policy-badge', getActionTone(normalizedDraft.action))}>{normalizedDraft.action}</span>
+              {policyEffectCopy ? <p className={policyClass('muted')}>{policyEffectCopy.summary}</p> : null}
+              <div className={policyClass('policy-chip-row')}>
+                {selectedUpstream ? (
+                  <span className={policyClass('policy-chip')}>{formatUpstreamOptionLabel(selectedUpstream)}</span>
+                ) : null}
+                {draft.type ? (
+                  <span className={policyClass('policy-chip')}>{getPolicyTypeLabel(draft.type)}</span>
+                ) : null}
+                <span className={policyClass('policy-badge', getActionTone(normalizedDraft.action))}>
+                  {normalizedDraft.action}
+                </span>
               </div>
             </section>
 
             {reviewErrors.length > 0 ? (
-              <section className={policyClass("policy-error-panel")}>
+              <section className={policyClass('policy-error-panel')}>
                 <h4>Complete these fields before saving the policy</h4>
-                <ul className={policyClass("list compact-list")}>
+                <ul className={policyClass('list compact-list')}>
                   {reviewErrors.map((error) => (
                     <li key={error}>{error}</li>
                   ))}
@@ -814,9 +863,9 @@ export function PolicyDraftModal({
             ) : null}
 
             {savePolicyIsError ? (
-              <section className={policyClass("policy-error-panel")}>
+              <section className={policyClass('policy-error-panel')}>
                 <h4>Unable to save policy</h4>
-                <p className={policyClass("muted")}>{savePolicyErrorMessage}</p>
+                <p className={policyClass('muted')}>{savePolicyErrorMessage}</p>
               </section>
             ) : null}
           </div>

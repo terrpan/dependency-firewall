@@ -20,9 +20,7 @@ export function formatUpstreamTimestamp(value: string): string {
 }
 
 export function formatUpstreamCapabilities(upstream: Upstream | null): string[] {
-  return upstream
-    ? (upstream.capabilities ?? []).map((capability) => formatUpstreamCapabilityLabel(capability))
-    : []
+  return upstream ? (upstream.capabilities ?? []).map((capability) => formatUpstreamCapabilityLabel(capability)) : []
 }
 
 export function formatUpstreamPolicyTypes(upstream: Upstream | null): string[] {
@@ -42,7 +40,5 @@ export function formatUpstreamAuth(upstream: Upstream): string {
     return 'No credentials'
   }
 
-  return upstream.auth.username
-    ? `Credentials configured for ${upstream.auth.username}`
-    : 'Credentials configured'
+  return upstream.auth.username ? `Credentials configured for ${upstream.auth.username}` : 'Credentials configured'
 }

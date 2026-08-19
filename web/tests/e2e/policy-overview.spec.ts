@@ -12,8 +12,12 @@ test('summarizes policy behavior, scope, state, and evaluation order', async ({ 
   await expect(page.getByText('1 dry run')).toBeVisible()
   await expect(page.getByText('1 disabled')).toBeVisible()
   await expect(page.getByText('Deny packages from blocked namespaces: untrusted, legacy-vendor.')).toBeVisible()
-  await expect(page.getByText('Would deny packages unless every declared license is approved: MIT, Apache-2.0 +1 more.')).toBeVisible()
-  await expect(page.getByText('Would deny packages published less than 7 days ago, except @acme/release-tools.')).toBeVisible()
+  await expect(
+    page.getByText('Would deny packages unless every declared license is approved: MIT, Apache-2.0 +1 more.'),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Would deny packages published less than 7 days ago, except @acme/release-tools.'),
+  ).toBeVisible()
   await expect(page.getByText('Direct + Transitive • Production • Unknown graph: Warn only')).toBeVisible()
 
   const policyNames = await page.locator('article h4').allTextContents()

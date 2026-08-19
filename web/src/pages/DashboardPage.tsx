@@ -1,10 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  QueryStateNotice,
-  SummaryMetrics,
-} from '../features/evaluations/components.tsx'
+import { QueryStateNotice, SummaryMetrics } from '../features/evaluations/components.tsx'
 import { dashboardEvaluationsLimit, useRecentEvaluations } from '../features/evaluations/api.ts'
 import {
   formatArtifact,
@@ -17,11 +14,7 @@ import {
 } from '../features/evaluations/model.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
 import { useTenantControlPlaneApi } from '../features/tenant/useTenantControlPlaneApi.ts'
-import {
-  listUpstreams,
-  sortUpstreams,
-  upstreamsQueryKey,
-} from '../features/upstreams/api.ts'
+import { listUpstreams, sortUpstreams, upstreamsQueryKey } from '../features/upstreams/api.ts'
 import { asTypedPolicy, type Evaluation, type TypedPolicy, type Upstream } from '../lib/api/index.ts'
 import { sortPolicies } from '../features/policies/display.ts'
 import { dashboardClass } from '../features/dashboard/styles.ts'
@@ -130,7 +123,8 @@ function buildAttentionItems(
     items.push({
       key: 'evaluations-error',
       title: 'Decision history unavailable',
-      detail: 'Recent evaluation activity could not be loaded, so the dashboard cannot confirm current protection results.',
+      detail:
+        'Recent evaluation activity could not be loaded, so the dashboard cannot confirm current protection results.',
       tone: 'warning',
       to: '/evaluations',
       actionLabel: 'Review decisions',
@@ -222,7 +216,9 @@ export function DashboardPage() {
   const attentionIsClear = attentionItems.length === 1 && attentionItems[0]?.tone === 'success'
   const attentionTone = attentionIsClear
     ? 'success'
-    : attentionItems.some((item) => item.tone === 'danger') ? 'danger' : 'warning'
+    : attentionItems.some((item) => item.tone === 'danger')
+      ? 'danger'
+      : 'warning'
 
   const summaryMetrics = [
     {
@@ -257,48 +253,61 @@ export function DashboardPage() {
   }
 
   return (
-    <section className={dashboardClass("page")}>
+    <section className={dashboardClass('page')}>
       <PageHeader
         eyebrow="Protection overview"
         title="Dashboard"
-        summary={<>See what is protected, what was blocked, and what needs your attention for {activeTenant?.name ?? 'the selected tenant'}.</>}
-        actions={<>
-          {recentEvaluationsQuery.isFetching || upstreamsQuery.isFetching || policiesQuery.isFetching ? (
-            <span className={dashboardClass("status-pill")}>Refreshing</span>
-          ) : null}
-          <button className={dashboardClass("secondary-button")} onClick={refreshDashboard} type="button">
-            Refresh
-          </button>
-          <Link className={dashboardClass("route-link")} to="/evaluations">
-            Review all decisions
-          </Link>
-        </>}
+        summary={
+          <>
+            See what is protected, what was blocked, and what needs your attention for{' '}
+            {activeTenant?.name ?? 'the selected tenant'}.
+          </>
+        }
+        actions={
+          <>
+            {recentEvaluationsQuery.isFetching || upstreamsQuery.isFetching || policiesQuery.isFetching ? (
+              <span className={dashboardClass('status-pill')}>Refreshing</span>
+            ) : null}
+            <button className={dashboardClass('secondary-button')} onClick={refreshDashboard} type="button">
+              Refresh
+            </button>
+            <Link className={dashboardClass('route-link')} to="/evaluations">
+              Review all decisions
+            </Link>
+          </>
+        }
       />
 
       <SummaryMetrics items={summaryMetrics} />
 
-      <div className={dashboardClass("dashboard-body-grid")}>
-        <div className={dashboardClass("dashboard-primary-stack")}>
-          <section className={dashboardClass("card dashboard-attention-card")}>
-            <div className={dashboardClass("section-header")}>
+      <div className={dashboardClass('dashboard-body-grid')}>
+        <div className={dashboardClass('dashboard-primary-stack')}>
+          <section className={dashboardClass('card dashboard-attention-card')}>
+            <div className={dashboardClass('section-header')}>
               <div>
                 <h3>Needs attention</h3>
-                <p className={dashboardClass("muted")}>Start here. Items are ordered by operational impact.</p>
+                <p className={dashboardClass('muted')}>Start here. Items are ordered by operational impact.</p>
               </div>
               <span className={statusPillClassName(attentionTone)}>
                 {attentionIsClear ? 'Clear' : `${attentionItems.length} to review`}
               </span>
             </div>
 
-            <ul className={dashboardClass("dashboard-attention-list")}>
+            <ul className={dashboardClass('dashboard-attention-list')}>
               {attentionItems.map((item) => (
-                <li key={item.key} className={dashboardClass('dashboard-attention-item', `dashboard-attention-item-${item.tone ?? 'default'}`)}>
+                <li
+                  key={item.key}
+                  className={dashboardClass(
+                    'dashboard-attention-item',
+                    `dashboard-attention-item-${item.tone ?? 'default'}`,
+                  )}
+                >
                   <div>
                     <strong>{item.title}</strong>
-                    <p className={dashboardClass("muted")}>{item.detail}</p>
+                    <p className={dashboardClass('muted')}>{item.detail}</p>
                   </div>
                   {item.to ? (
-                    <Link className={dashboardClass("route-link")} to={item.to}>
+                    <Link className={dashboardClass('route-link')} to={item.to}>
                       {item.actionLabel ?? 'Open'}
                     </Link>
                   ) : null}
@@ -307,13 +316,15 @@ export function DashboardPage() {
             </ul>
           </section>
 
-          <section className={dashboardClass("card")}>
-            <div className={dashboardClass("section-header")}>
+          <section className={dashboardClass('card')}>
+            <div className={dashboardClass('section-header')}>
               <div>
                 <h3>Latest decisions</h3>
-                <p className={dashboardClass("muted")}>The most recent package checks and why they were allowed or blocked.</p>
+                <p className={dashboardClass('muted')}>
+                  The most recent package checks and why they were allowed or blocked.
+                </p>
               </div>
-              <Link className={dashboardClass("route-link")} to="/evaluations">
+              <Link className={dashboardClass('route-link')} to="/evaluations">
                 View all
               </Link>
             </div>
@@ -338,8 +349,8 @@ export function DashboardPage() {
                 message="This tenant does not have any stored evaluation history yet."
               />
             ) : (
-              <div className={dashboardClass("dashboard-activity-table")}>
-                <div className={dashboardClass("dashboard-activity-row dashboard-activity-head")}>
+              <div className={dashboardClass('dashboard-activity-table')}>
+                <div className={dashboardClass('dashboard-activity-row dashboard-activity-head')}>
                   <span>Artifact</span>
                   <span>Outcome</span>
                   <span>Reason</span>
@@ -347,26 +358,34 @@ export function DashboardPage() {
                   <span>Time</span>
                 </div>
                 {recentEvaluations.slice(0, 5).map((evaluation) => (
-                  <div key={evaluation.id} className={dashboardClass("dashboard-activity-row")}>
+                  <div key={evaluation.id} className={dashboardClass('dashboard-activity-row')}>
                     <div>
-                      <span className={dashboardClass("route-label")}>{evaluation.artifact.ecosystem}</span>
+                      <span className={dashboardClass('route-label')}>{evaluation.artifact.ecosystem}</span>
                       <strong>{formatArtifact(evaluation.artifact)}</strong>
                     </div>
                     <div>
-                      <span className={dashboardClass("dashboard-mobile-label")}>Outcome</span>
-                      <div className={dashboardClass("pill-group")}>
+                      <span className={dashboardClass('dashboard-mobile-label')}>Outcome</span>
+                      <div className={dashboardClass('pill-group')}>
                         <span className={statusPillClassName(getOutcomeTone(evaluation.outcome))}>
                           {evaluation.outcome.toUpperCase()}
                         </span>
-                        {evaluation.cached_at ? <span className={dashboardClass("status-pill status-pill-neutral")}>Cached</span> : null}
+                        {evaluation.cached_at ? (
+                          <span className={dashboardClass('status-pill status-pill-neutral')}>Cached</span>
+                        ) : null}
                       </div>
                     </div>
                     <div>
-                      <span className={dashboardClass("dashboard-mobile-label")}>Reason</span>
-                      <p className={dashboardClass("muted")}>{getPrimaryReason(evaluation)}</p>
+                      <span className={dashboardClass('dashboard-mobile-label')}>Reason</span>
+                      <p className={dashboardClass('muted')}>{getPrimaryReason(evaluation)}</p>
                     </div>
-                    <span><span className={dashboardClass("dashboard-mobile-label")}>Policy</span>{formatPolicyReference(evaluation)}</span>
-                    <span className={dashboardClass("muted")}><span className={dashboardClass("dashboard-mobile-label")}>Time</span>{formatRelativeTime(evaluation.evaluated_at)}</span>
+                    <span>
+                      <span className={dashboardClass('dashboard-mobile-label')}>Policy</span>
+                      {formatPolicyReference(evaluation)}
+                    </span>
+                    <span className={dashboardClass('muted')}>
+                      <span className={dashboardClass('dashboard-mobile-label')}>Time</span>
+                      {formatRelativeTime(evaluation.evaluated_at)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -374,53 +393,75 @@ export function DashboardPage() {
           </section>
         </div>
 
-        <div className={dashboardClass("dashboard-side-stack")}>
-          <section className={dashboardClass("card")}>
-            <div className={dashboardClass("section-header")}>
+        <div className={dashboardClass('dashboard-side-stack')}>
+          <section className={dashboardClass('card')}>
+            <div className={dashboardClass('section-header')}>
               <div>
                 <h3>Protection readiness</h3>
-                <p className={dashboardClass("muted")}>The minimum setup required for active enforcement.</p>
+                <p className={dashboardClass('muted')}>The minimum setup required for active enforcement.</p>
               </div>
             </div>
 
-            <ol className={dashboardClass("dashboard-readiness-list")}>
+            <ol className={dashboardClass('dashboard-readiness-list')}>
               <li>
-                <span className={statusPillClassName(tenantId ? 'success' : 'warning')}>{tenantId ? 'Ready' : 'Required'}</span>
+                <span className={statusPillClassName(tenantId ? 'success' : 'warning')}>
+                  {tenantId ? 'Ready' : 'Required'}
+                </span>
                 <div>
                   <strong>Tenant selected</strong>
-                  <p className={dashboardClass("muted")}>{activeTenant?.name ?? 'Choose the tenant to protect.'}</p>
+                  <p className={dashboardClass('muted')}>{activeTenant?.name ?? 'Choose the tenant to protect.'}</p>
                 </div>
-                <Link className={dashboardClass("route-link")} to="/tenants">Manage tenant</Link>
+                <Link className={dashboardClass('route-link')} to="/tenants">
+                  Manage tenant
+                </Link>
               </li>
               <li>
-                <span className={statusPillClassName(upstreams.length > 0 ? 'success' : 'warning')}>{upstreams.length > 0 ? 'Ready' : 'Required'}</span>
+                <span className={statusPillClassName(upstreams.length > 0 ? 'success' : 'warning')}>
+                  {upstreams.length > 0 ? 'Ready' : 'Required'}
+                </span>
                 <div>
                   <strong>Package source connected</strong>
-                  <p className={dashboardClass("muted")}>
-                    {upstreams.length > 0 ? `${upstreams.length} upstream${upstreams.length === 1 ? '' : 's'} configured.` : 'Add the registry packages will be installed through.'}
+                  <p className={dashboardClass('muted')}>
+                    {upstreams.length > 0
+                      ? `${upstreams.length} upstream${upstreams.length === 1 ? '' : 's'} configured.`
+                      : 'Add the registry packages will be installed through.'}
                   </p>
                 </div>
-                <Link className={dashboardClass("route-link")} to="/upstreams">Manage upstreams</Link>
+                <Link className={dashboardClass('route-link')} to="/upstreams">
+                  Manage upstreams
+                </Link>
               </li>
               <li>
-                <span className={statusPillClassName(enforcingPolicies.length > 0 ? 'success' : 'warning')}>{enforcingPolicies.length > 0 ? 'Ready' : 'Required'}</span>
+                <span className={statusPillClassName(enforcingPolicies.length > 0 ? 'success' : 'warning')}>
+                  {enforcingPolicies.length > 0 ? 'Ready' : 'Required'}
+                </span>
                 <div>
                   <strong>Policy enforcement active</strong>
-                  <p className={dashboardClass("muted")}>
-                    {enforcingPolicies.length > 0 ? `${enforcingPolicies.length} polic${enforcingPolicies.length === 1 ? 'y is' : 'ies are'} enforcing.` : 'Enable a reviewed policy outside dry-run mode.'}
+                  <p className={dashboardClass('muted')}>
+                    {enforcingPolicies.length > 0
+                      ? `${enforcingPolicies.length} polic${enforcingPolicies.length === 1 ? 'y is' : 'ies are'} enforcing.`
+                      : 'Enable a reviewed policy outside dry-run mode.'}
                   </p>
                 </div>
-                <Link className={dashboardClass("route-link")} to="/policies">Manage policies</Link>
+                <Link className={dashboardClass('route-link')} to="/policies">
+                  Manage policies
+                </Link>
               </li>
               <li>
-                <span className={statusPillClassName(recentEvaluations.length > 0 ? 'success' : 'warning')}>{recentEvaluations.length > 0 ? 'Active' : 'Waiting'}</span>
+                <span className={statusPillClassName(recentEvaluations.length > 0 ? 'success' : 'warning')}>
+                  {recentEvaluations.length > 0 ? 'Active' : 'Waiting'}
+                </span>
                 <div>
                   <strong>Decision traffic</strong>
-                  <p className={dashboardClass("muted")}>
-                    {recentEvaluations.length > 0 ? `Latest decision ${formatRelativeTime(evaluationSummary.latestEvaluatedAt)}.` : 'Install a package through an upstream to verify the path.'}
+                  <p className={dashboardClass('muted')}>
+                    {recentEvaluations.length > 0
+                      ? `Latest decision ${formatRelativeTime(evaluationSummary.latestEvaluatedAt)}.`
+                      : 'Install a package through an upstream to verify the path.'}
                   </p>
                 </div>
-                <Link className={dashboardClass("route-link")} to="/evaluations">Review decisions</Link>
+                <Link className={dashboardClass('route-link')} to="/evaluations">
+                  Review decisions
+                </Link>
               </li>
             </ol>
           </section>

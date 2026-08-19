@@ -8,7 +8,9 @@ test('summarizes protection and leads with the next operational action', async (
   await installApi(page, { policies: policyOverviewFixtures })
   await page.goto('/')
 
-  await expect(page.getByText('See what is protected, what was blocked, and what needs your attention for Acme Engineering.')).toBeVisible()
+  await expect(
+    page.getByText('See what is protected, what was blocked, and what needs your attention for Acme Engineering.'),
+  ).toBeVisible()
   await expect(page.getByText('Decisions reviewed').locator('..')).toContainText('1')
   await expect(page.getByText('Blocked', { exact: true }).locator('..')).toContainText('1')
   await expect(page.getByText('Enforcing policies').locator('..')).toContainText('1')
