@@ -40,6 +40,9 @@ type Config struct {
 // RuntimeMode identifies which service shape the single binary should run.
 type RuntimeMode string
 
+// The runtime mode selects which halves of the system the process starts: the
+// control plane owns policy and durable state, the proxy serves package traffic,
+// and the dependency-graph worker drains the async npm resolve queue.
 const (
 	RuntimeModeAllInOne              RuntimeMode = "all-in-one"
 	RuntimeModeControlPlane          RuntimeMode = "control-plane"
@@ -441,8 +444,7 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
-	switch c.Runtime.Mode {
-	case RuntimeModeControlPlane:
+	if c.Runtime.Mode == RuntimeModeControlPlane {
 		if strings.TrimSpace(c.Bundle.ListenAddr) == "" {
 			return fmt.Errorf(
 				"invalid config: field %q is required when runtime.mode is %q",

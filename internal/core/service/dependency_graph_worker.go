@@ -171,7 +171,7 @@ func resolveNPMGraph(
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("creating resolver workspace: %w", err)
 	}
-	defer os.RemoveAll(dir) //nolint:errcheck
+	defer os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup of a temp workspace; the OS reclaims it regardless
 
 	packageJSON := []byte(`{"private":true,"name":"dependency-firewall-graph-root","version":"0.0.0"}` + "\n")
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), packageJSON, 0o600); err != nil {
@@ -197,6 +197,7 @@ func resolveNPMGraph(
 		return nil, nil, "", fmt.Errorf("running npm resolver: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
+	//nolint:gosec // fixed filename inside the os.MkdirTemp workspace created above
 	lockData, err := os.ReadFile(filepath.Join(dir, "package-lock.json"))
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("reading resolver package-lock.json: %w", err)

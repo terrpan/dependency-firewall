@@ -25,6 +25,8 @@ func (c *LicensePolicyConfig) DryRunEnabled() bool {
 // artifacts without usable license data.
 type LicenseAllowlistMissingBehavior string
 
+// Deny fails closed, treating an unlicensed artifact or unavailable license metadata as a violation; skip lets the
+// request past this policy so other policies decide. Schema 1 always denies both cases; schema 2 configures each.
 const (
 	LicenseAllowlistMissingBehaviorDeny LicenseAllowlistMissingBehavior = "deny"
 	LicenseAllowlistMissingBehaviorSkip LicenseAllowlistMissingBehavior = "skip"

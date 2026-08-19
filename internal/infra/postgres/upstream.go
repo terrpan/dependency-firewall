@@ -234,7 +234,7 @@ func (r *UpstreamRepository) Update(ctx context.Context, upstream *domain.Upstre
 	if err != nil {
 		return fmt.Errorf("starting upstream update: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	ct, err := tx.Exec(ctx,
 		`UPDATE upstreams SET name = $1, ecosystem = $2, base_url = $3, capabilities = $4, updated_at = now()

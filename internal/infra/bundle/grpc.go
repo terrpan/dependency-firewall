@@ -17,8 +17,9 @@ type GRPCClient struct {
 	conn *grpc.ClientConn
 }
 
-// NewGRPCClient creates a new GRPCClient.
-
+// NewGRPCClient dials the control plane's bundle service and returns a client for fetching tenant bundles. The
+// optional TLS configs supply the mTLS identity the control plane authorizes the proxy by; the connection is lazy, so
+// dialing failures surface on the first fetch rather than here. Callers must Close the returned client.
 func NewGRPCClient(_ context.Context, address string, configs ...config.BundleTLSConfig) (*GRPCClient, error) {
 	conn, err := controlplanegrpc.NewClientConn(address, configs...)
 	if err != nil {

@@ -5,6 +5,8 @@ import "fmt"
 // SeverityLevel represents a CVSS severity level.
 type SeverityLevel string
 
+// Qualitative CVSS severity bands, ordered from most to least severe. The cvss_threshold policy uses them as an
+// alternative to a numeric score so tenants can express a minimum severity that must be present to deny.
 const (
 	SeverityCritical SeverityLevel = "critical"
 	SeverityHigh     SeverityLevel = "high"

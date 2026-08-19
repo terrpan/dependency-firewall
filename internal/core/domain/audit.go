@@ -5,6 +5,9 @@ import "time"
 // AuditEventType classifies a structured audit event in the evaluation flow.
 type AuditEventType string
 
+// Event types emitted along the proxy evaluation pipeline, from receiving a request through normalization, reference
+// resolution, cache lookups, enrichment, policy evaluation, decision persistence and the final allow/deny/forward
+// outcome. Together they form the reconstructable trail for one correlated request.
 const (
 	AuditEventProxyRequestReceived   AuditEventType = "proxy_request_received"
 	AuditEventEvaluationStarted      AuditEventType = "evaluation_started"
@@ -32,6 +35,8 @@ const (
 // AuditFailureMode controls how the system reacts when required audit storage fails.
 type AuditFailureMode string
 
+// Fail-open keeps serving traffic when the audit sink is unavailable, trading auditability for availability;
+// fail-closed rejects the request instead so that no artifact is served without a durable audit record.
 const (
 	AuditFailureModeFailOpen   AuditFailureMode = "fail_open"
 	AuditFailureModeFailClosed AuditFailureMode = "fail_closed"
@@ -40,6 +45,8 @@ const (
 // AuditDetailLevel controls how much enrichment detail is included in audit payloads.
 type AuditDetailLevel string
 
+// Increasing levels of audit payload verbosity: minimal records only identity and outcome, summary adds condensed
+// enrichment and policy evidence, and full retains the complete evidence used to reach the decision.
 const (
 	AuditDetailLevelMinimal AuditDetailLevel = "minimal"
 	AuditDetailLevelSummary AuditDetailLevel = "summary"

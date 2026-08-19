@@ -188,7 +188,7 @@ func (r *DependencyGraphRepository) ClaimNextResolveJob(
 	if err != nil {
 		return nil, fmt.Errorf("beginning dependency graph claim: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	var claimedTenantID, upstreamID, packageName, version, baseURL string
 	err = tx.QueryRow(ctx,
@@ -253,7 +253,7 @@ func (r *DependencyGraphRepository) CompleteResolve(
 	if err != nil {
 		return fmt.Errorf("beginning dependency graph completion: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	rootID, err := dependencyGraphRootID(ctx, tx, req)
 	if err != nil {

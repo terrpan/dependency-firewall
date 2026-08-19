@@ -18,10 +18,14 @@ type DependencyGraphHandler struct {
 	logger     *slog.Logger
 }
 
+// NewDependencyGraphHandler wires the handler to the repository it reads resolved graphs from. The handler is
+// read-only: enqueueing, retrying or invalidating a graph root is not exposed over HTTP.
 func NewDependencyGraphHandler(repository port.DependencyGraphRepository, logger *slog.Logger) *DependencyGraphHandler {
 	return &DependencyGraphHandler{repository: repository, logger: logger}
 }
 
+// RegisterHumaRoutes registers the tenant-scoped graph list and snapshot operations on the control-plane API, including
+// their documented error responses.
 func (h *DependencyGraphHandler) RegisterHumaRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-dependency-graphs",
@@ -64,6 +68,8 @@ type dependencyGraphListOutput struct {
 }
 type dependencyGraphOutput struct{ Body *DependencyGraphResponse }
 
+// DependencyGraphRootResponse is the wire form of one npm root package whose graph was requested, carrying its
+// resolution status plus the graph hash or error message that explains the current state. Timestamps are RFC 3339 UTC.
 type DependencyGraphRootResponse struct {
 	ID          string  `json:"id"`
 	TenantID    string  `json:"tenant_id"`
@@ -78,6 +84,8 @@ type DependencyGraphRootResponse struct {
 	ResolvedAt  *string `json:"resolved_at,omitempty"`
 }
 
+// DependencyGraphNodeResponse is the wire form of one package/version in a resolved graph. MinDepth is the shallowest
+// distance from the root, which is what determines whether the package counts as a direct or transitive dependency.
 type DependencyGraphNodeResponse struct {
 	ID              string                   `json:"id"`
 	Artifact        ArtifactIdentityResponse `json:"artifact"`
@@ -85,6 +93,8 @@ type DependencyGraphNodeResponse struct {
 	DependencyTypes []string                 `json:"dependency_types,omitempty"`
 }
 
+// DependencyGraphEdgeResponse is the wire form of one parent-to-child dependency relationship, referencing nodes by
+// their identifiers so the UI can render the graph without duplicating artifact identity per edge.
 type DependencyGraphEdgeResponse struct {
 	ID             string `json:"id"`
 	ParentNodeID   string `json:"parent_node_id"`
@@ -92,6 +102,8 @@ type DependencyGraphEdgeResponse struct {
 	DependencyType string `json:"dependency_type"`
 }
 
+// DependencyGraphResponse is a complete graph snapshot: the root and its lifecycle state together with every node and
+// edge stored for it. Nodes and edges are empty until resolution completes.
 type DependencyGraphResponse struct {
 	Root  *DependencyGraphRootResponse   `json:"root"`
 	Nodes []*DependencyGraphNodeResponse `json:"nodes"`

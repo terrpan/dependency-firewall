@@ -9,6 +9,8 @@ import (
 // missing repository identity or unavailable Scorecard data.
 type ScorecardUnavailableBehavior string
 
+// Deny fails closed when no source repository can be identified or Scorecard data is missing, negative or absent for a
+// required check; skip leaves the artifact to other policies. Deny is the default when the config omits the field.
 const (
 	ScorecardUnavailableBehaviorDeny ScorecardUnavailableBehavior = "deny"
 	ScorecardUnavailableBehaviorSkip ScorecardUnavailableBehavior = "skip"

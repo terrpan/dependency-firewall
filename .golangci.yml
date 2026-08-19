@@ -70,14 +70,29 @@ linters:
         linters:
           - revive
 
+      # Hand-rolled gRPC method dispatch mirroring protoc-gen-go-grpc output.
+      # The `srv.(service)` and `req.(*Request)` assertions cannot fail: gRPC
+      # only ever invokes a handler with the types registered alongside it.
+      - path: "internal/delivery/(ingest|bundle)grpc/"
+        text: "Error return value is not checked"
+        linters:
+          - errcheck
+
   settings:
     errcheck:
       check-type-assertions: true
-      check-blank: true
+      # `_ = f()` is how a deliberately ignored error is made visible to a
+      # reader. Flagging it leaves no way to distinguish "ignored on purpose"
+      # from "forgotten", which is the distinction that matters.
+      check-blank: false
+      # Closing a handle that was only ever read from cannot lose data, so the
+      # error carries nothing the caller could act on. Write-side closers are
+      # deliberately absent: there, a failed Close can mean unflushed data.
       exclude-functions:
         - (*os.File).Close
         - (*database/sql.Rows).Close
         - (*database/sql.Stmt).Close
+        - (io.ReadCloser).Close
 
     gocyclo:
       min-complexity: 15
@@ -115,6 +130,10 @@ linters:
         # Package comments on every package. This module is an application, not
         # a published library; package-level intent lives in docs/ instead.
         - -ST1000
+        # Rewrites !(a && b) into !a || !b. A guard that reads "not (unversioned
+        # and allowed)" states the rule the way it is written down; the inverted
+        # form does not. This is an editor refactoring hint, not a diagnostic.
+        - -QF1001
 
     gosec:
       severity: medium

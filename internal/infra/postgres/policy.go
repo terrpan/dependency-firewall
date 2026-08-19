@@ -100,7 +100,7 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	err = tx.QueryRow(
 		ctx,
@@ -179,7 +179,7 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	var newVersion int
 	err = tx.QueryRow(ctx,
@@ -257,7 +257,7 @@ func (r *PolicyRepository) forceDelete(ctx context.Context, tenantID, id string)
 	if err != nil {
 		return fmt.Errorf("beginning forced policy delete: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	if _, err := tx.Exec(ctx,
 		`UPDATE evaluations SET policy_id = NULL WHERE tenant_id = $1 AND policy_id = $2`,

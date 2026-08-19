@@ -68,7 +68,7 @@ func (r *PolicyRepository) RollbackToVersion(
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	target, err := scanPolicyVersion(tx.QueryRow(
 		ctx,

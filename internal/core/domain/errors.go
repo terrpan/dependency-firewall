@@ -2,6 +2,9 @@ package domain
 
 import "errors"
 
+// Sentinel errors shared across the core so that delivery adapters can map a failure to a protocol status and
+// infrastructure can signal well-known conditions without leaking driver-specific error types. Compare them with
+// errors.Is; the wrapped messages are safe to surface to callers.
 var (
 	ErrTenantNotFound                 = errors.New("tenant not found")
 	ErrTenantNameConflict             = errors.New("tenant name already exists")

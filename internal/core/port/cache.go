@@ -48,6 +48,8 @@ type DependencyContextCache interface {
 // OCIArtifactKind identifies the OCI artifact type stored in the cache.
 type OCIArtifactKind string
 
+// The two kinds of OCI content the firewall caches. The values match the corresponding path segment in the OCI
+// distribution API, and they keep manifest and blob entries in separate keyspaces for the same digest.
 const (
 	OCIArtifactManifest OCIArtifactKind = "manifests"
 	OCIArtifactBlob     OCIArtifactKind = "blobs"

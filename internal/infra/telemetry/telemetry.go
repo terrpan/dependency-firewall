@@ -57,10 +57,11 @@ func Start(
 		return nil, fmt.Errorf("building telemetry resource: %w", err)
 	}
 
-	options := []sdktrace.TracerProviderOption{
+	options := make([]sdktrace.TracerProviderOption, 0, 2+len(traceOptions))
+	options = append(options,
 		sdktrace.WithResource(resource),
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.SampleRatio))),
-	}
+	)
 	options = append(options, traceOptions...)
 
 	tracerProvider := sdktrace.NewTracerProvider(options...)

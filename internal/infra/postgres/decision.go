@@ -28,7 +28,7 @@ func (r *DecisionRepository) Record(ctx context.Context, decision *domain.Decisi
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	// Ensure the artifact exists and get its ID.
 	var artifactID *string

@@ -65,7 +65,7 @@ func NewDiskCache(opts DiskCacheOptions) (*DiskCache, error) {
 	if root == "" {
 		return nil, fmt.Errorf("disk cache root directory is required")
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, fmt.Errorf("creating cache root: %w", err)
 	}
 
@@ -133,7 +133,7 @@ func (c *DiskCache) StartWrite(
 		return nil, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(finalData), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(finalData), 0o750); err != nil {
 		return nil, fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -142,7 +142,7 @@ func (c *DiskCache) StartWrite(
 		return nil, err
 	}
 	tempDir := filepath.Join(scopeRoot, ".tmp")
-	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+	if err := os.MkdirAll(tempDir, 0o750); err != nil {
 		return nil, fmt.Errorf("creating cache temp directory: %w", err)
 	}
 
@@ -195,7 +195,7 @@ func (s *diskWriteSession) Commit(ctx context.Context) error {
 	}
 
 	tempMeta := s.tempDataPath + ".meta"
-	if err := os.WriteFile(tempMeta, metaBytes, 0o644); err != nil {
+	if err := os.WriteFile(tempMeta, metaBytes, 0o600); err != nil {
 		_ = os.Remove(s.tempDataPath)
 		return fmt.Errorf("writing cache metadata: %w", err)
 	}

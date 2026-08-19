@@ -110,7 +110,8 @@ func decodeAuditBulkPayload(body io.Reader, contentEncoding string) (map[string]
 		if err != nil {
 			return nil, err
 		}
-		defer gzipReader.Close()
+		// Read-side close: the payload is already decoded by the time this runs.
+		defer func() { _ = gzipReader.Close() }()
 		reader = gzipReader
 	}
 	payload := make(map[string][]string)

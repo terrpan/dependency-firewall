@@ -6,6 +6,9 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// DecisionResponse is the wire form of a persisted policy decision. PolicyID and Reason identify the policy that
+// supplied the user-facing outcome, Reasons retains every contributing match, Warnings holds non-enforcing findings
+// from dry-run or unknown-dependency-context policies, and CachedAt is set when the decision was served from cache.
 type DecisionResponse struct {
 	ID          string                     `json:"id"`
 	Artifact    ArtifactIdentityResponse   `json:"artifact"`

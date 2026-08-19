@@ -47,22 +47,32 @@ func (r *PolicyRepository) ListByTenant(ctx context.Context, tenantID string) ([
 	return policies, nil
 }
 
+// ListVersions always fails: a tenant bundle is a flattened snapshot of the current policy set and carries no version
+// history. Policy version history is only available through the control plane's database-backed repository.
 func (r *PolicyRepository) ListVersions(context.Context, string, string, int) ([]domain.PolicyVersion, error) {
 	return nil, fmt.Errorf("bundle policy repository is read-only")
 }
 
+// RollbackToVersion always fails. The proxy runtime consumes bundles read-only; rolling a policy back is a
+// control-plane mutation that must go through the owning service so a new version and revision are recorded.
 func (r *PolicyRepository) RollbackToVersion(context.Context, string, string, int) (*domain.Policy, error) {
 	return nil, fmt.Errorf("bundle policy repository is read-only")
 }
 
+// Create always fails. It exists only to satisfy the policy repository port; the proxy runtime never authors policies,
+// which are created in the control plane and reach the proxy through a refreshed bundle.
 func (r *PolicyRepository) Create(context.Context, *domain.Policy) error {
 	return fmt.Errorf("bundle policy repository is read-only")
 }
 
+// Update always fails, for the same reason as Create: bundle-backed policies are a distributed snapshot and cannot be
+// mutated from the proxy side.
 func (r *PolicyRepository) Update(context.Context, *domain.Policy) error {
 	return fmt.Errorf("bundle policy repository is read-only")
 }
 
+// Delete always fails. Removing a policy is a control-plane operation; the proxy simply stops seeing it once the
+// updated bundle arrives.
 func (r *PolicyRepository) Delete(context.Context, string, string, bool) error {
 	return fmt.Errorf("bundle policy repository is read-only")
 }
@@ -133,14 +143,20 @@ func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) 
 	return upstreams, nil
 }
 
+// Create always fails. Upstreams are registered in the control plane; the proxy only reads the ones its tenant bundle
+// advertises.
 func (r *UpstreamRepository) Create(context.Context, *domain.Upstream) error {
 	return fmt.Errorf("bundle upstream repository is read-only")
 }
 
+// Update always fails. Changing an upstream, including its capability profile and credentials, must happen in the
+// control plane so scoped-policy compatibility can be validated.
 func (r *UpstreamRepository) Update(context.Context, *domain.Upstream) error {
 	return fmt.Errorf("bundle upstream repository is read-only")
 }
 
+// Delete always fails. Removing an upstream is a control-plane operation, and the proxy observes the removal through a
+// refreshed bundle.
 func (r *UpstreamRepository) Delete(context.Context, string, string) error {
 	return fmt.Errorf("bundle upstream repository is read-only")
 }

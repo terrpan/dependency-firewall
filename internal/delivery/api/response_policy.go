@@ -6,6 +6,9 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// PolicyResponse is the wire form of a tenant policy at its current version. UpstreamID is empty for a legacy
+// tenant-wide policy, Target is present only when the policy is restricted by dependency graph context, and Config is
+// the typed configuration for the policy type at the declared schema version.
 type PolicyResponse struct {
 	ID            string               `json:"id"`
 	UpstreamID    string               `json:"upstream_id,omitempty"`
@@ -22,6 +25,8 @@ type PolicyResponse struct {
 	UpdatedAt     time.Time            `json:"updated_at"`
 }
 
+// PolicyVersionResponse is the wire form of one retained policy snapshot. It carries the full state that a rollback
+// would restore, so the UI can diff historical versions; only the most recent snapshots per policy are kept.
 type PolicyVersionResponse struct {
 	Version       int                  `json:"version"`
 	UpstreamID    string               `json:"upstream_id,omitempty"`
@@ -36,6 +41,9 @@ type PolicyVersionResponse struct {
 	CreatedAt     time.Time            `json:"created_at"`
 }
 
+// PolicyTypeResponse is the wire form of one entry in the compiled policy-type catalog. It tells clients which schema
+// versions and actions a type accepts, which ecosystems it applies to, and which upstream enrichment capabilities an
+// upstream must provide before a policy of this type can be scoped to it.
 type PolicyTypeResponse struct {
 	Type                    string   `json:"type"`
 	Summary                 string   `json:"summary"`

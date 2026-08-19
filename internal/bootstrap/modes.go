@@ -71,7 +71,10 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 			if err != nil {
 				return fmt.Errorf("listening for bundle grpc: %w", err)
 			}
-			defer listener.Close()
+			// grpc.Server.Serve closes the listener on return, so this is a
+			// backstop for the error paths above it and normally reports
+			// "use of closed network connection".
+			defer func() { _ = listener.Close() }()
 
 			logger.Info("starting control plane",
 				"http_addr", httpServer.Addr,
@@ -109,13 +112,15 @@ func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info
 			if err != nil {
 				return err
 			}
-			defer grpcClient.Close()
+			// Runs as the process is shutting down; a close failure changes nothing.
+			defer func() { _ = grpcClient.Close() }()
 
 			ingestClient, err := ingestinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr, cfg.Bundle.TLS)
 			if err != nil {
 				return err
 			}
-			defer ingestClient.Close()
+			// Runs as the process is shutting down; a close failure changes nothing.
+			defer func() { _ = ingestClient.Close() }()
 
 			deps.decisionRepo = ingestinfra.NewDecisionRepository(ingestClient)
 			deps.dependencyGraphQueue = ingestinfra.NewDependencyGraphQueue(ingestClient)
@@ -198,7 +203,8 @@ func RunDependencyGraphWorker(ctx context.Context, cfg *config.Config, logger *s
 	if err != nil {
 		return err
 	}
-	defer ingestClient.Close()
+	// Runs as the process is shutting down; a close failure changes nothing.
+	defer func() { _ = ingestClient.Close() }()
 
 	runtimeLogger.Info("starting dependency graph worker",
 		"control_plane_addr", cfg.Bundle.ControlPlaneAddr,

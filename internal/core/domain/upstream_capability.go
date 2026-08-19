@@ -9,6 +9,9 @@ import (
 // rely on for one upstream.
 type UpstreamCapability string
 
+// The capability vocabulary. An upstream advertises which of these it can supply, and a policy scoped to that upstream
+// is only accepted if the upstream still provides every capability the policy type requires. npm upstreams may offer
+// publish time, licenses, vulnerability and Scorecard lookups; OCI upstreams offer manifest digest resolution.
 const (
 	UpstreamCapabilityPublishTime          UpstreamCapability = "publish_time"
 	UpstreamCapabilityLicenses             UpstreamCapability = "licenses"

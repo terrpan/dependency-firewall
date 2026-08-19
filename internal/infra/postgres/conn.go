@@ -4,12 +4,27 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
 )
+
+// boundedPoolSize narrows an operator-supplied pool size to pgx's int32 field.
+// Without the bound, a value above math.MaxInt32 wraps to a negative pool size,
+// which pgx rejects far away from the config that caused it.
+func boundedPoolSize(size int) int32 {
+	switch {
+	case size < 0:
+		return 0
+	case size > math.MaxInt32:
+		return math.MaxInt32
+	default:
+		return int32(size)
+	}
+}
 
 // Connect creates a new PostgreSQL connection pool from the given configuration.
 func Connect(ctx context.Context, cfg config.DatabaseConfig, traceCfg config.SQLTracingConfig) (*pgxpool.Pool, error) {
@@ -26,8 +41,8 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig, traceCfg config.SQL
 		tracingOptions = append(tracingOptions, otelpgx.WithDisableSQLStatementInAttributes())
 	}
 
-	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
-	poolCfg.MinConns = int32(cfg.MaxIdleConns)
+	poolCfg.MaxConns = boundedPoolSize(cfg.MaxOpenConns)
+	poolCfg.MinConns = boundedPoolSize(cfg.MaxIdleConns)
 	poolCfg.MaxConnLifetime = cfg.ConnMaxLifetime
 	poolCfg.ConnConfig.Tracer = otelpgx.NewTracer(tracingOptions...)
 
