@@ -79,6 +79,39 @@ func TestDiskCacheAbortLeavesNoEntry(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrCacheMiss)
 }
 
+func TestDiskCacheRejectsMalformedDigest(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskCache(DiskCacheOptions{RootDir: dir})
+	require.NoError(t, err)
+
+	malformedDigests := []string{
+		"sha256:../../../../etc/passwd",
+		"sha256:abc/def",
+		"../sha256:abc123",
+		"sha256:",
+		":abc123",
+		"sha256",
+	}
+	for _, digest := range malformedDigests {
+		t.Run(digest, func(t *testing.T) {
+			_, err := cache.Get(context.Background(), "tenant-a", "upstream-a", port.OCIArtifactBlob, digest)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid OCI digest")
+
+			_, err = cache.StartWrite(
+				context.Background(),
+				"tenant-a",
+				"upstream-a",
+				port.OCIArtifactBlob,
+				digest,
+				port.OCIArtifactDescriptor{},
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid OCI digest")
+		})
+	}
+}
+
 func TestDiskCacheRejectsIncompleteScope(t *testing.T) {
 	dir := t.TempDir()
 	cache, err := NewDiskCache(DiskCacheOptions{RootDir: dir})
