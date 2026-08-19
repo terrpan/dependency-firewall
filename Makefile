@@ -1,6 +1,7 @@
 .PHONY: help build build-worker push mtls-certs up down restart logs logs-control-plane logs-proxy logs-dependency-graph-worker ps clean status test test-integration test-all test-coverage fmt lint lint-fix lefthook hooks-install vet tidy all
 
 LEFTHOOK_VERSION ?= v1.13.6
+COMMITLINT_VERSION ?= v0.12.0
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -83,7 +84,10 @@ lint-fix: ## Apply safe automatic fixes, then report remaining lint findings
 lefthook: ## Ensure the lefthook binary is installed
 	@command -v lefthook >/dev/null 2>&1 || go install github.com/evilmartians/lefthook@$(LEFTHOOK_VERSION)
 
-hooks-install: lefthook ## Install lefthook git hooks
+commitlint: ## Ensure the commitlint binary is installed
+	@command -v commitlint >/dev/null 2>&1 || go install github.com/conventionalcommit/commitlint@$(COMMITLINT_VERSION)
+
+hooks-install: lefthook commitlint ## Install lefthook git hooks
 	@lefthook install
 
 vet: ## Run go vet

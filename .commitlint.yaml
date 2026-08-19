@@ -1,0 +1,23 @@
+rules:
+  - type-enum
+  - type-case
+  - scope-case
+  - description-case
+
+settings:
+  type-enum:
+    argument:
+      - feat
+      - fix
+      - docs
+      - refactor
+      - test
+      - build
+      - ci
+      - chore
+  type-case:
+    argument: lower-case
+  scope-case:
+    argument: lower-case
+  description-case:
+    argument: lower-case

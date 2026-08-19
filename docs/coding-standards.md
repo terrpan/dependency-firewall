@@ -13,7 +13,18 @@
 
 `.golangci.yml` is the source of truth for Go formatters, linters, and their thresholds. Run `make fmt` before `make lint`; use `make lint-fix` for safe automatic fixes. A lint suppression must name the linter and explain why the finding is not actionable. Do not use blanket `//nolint` directives.
 
-The Go lint job runs for every pull request that changes the Go module or lint configuration. To install the same checks as local git hooks, run `make hooks-install` once per clone. This bootstraps [`lefthook`](https://github.com/evilmartians/lefthook) via `go install`, then installs the hooks. The hooks use the locally installed `golangci-lint`; CI pins the project version so upgrades are explicit and reviewable.
+The Go lint job runs for every pull request that changes the Go module or lint configuration. To install the same checks as local git hooks, run `make hooks-install` once per clone. This bootstraps [`lefthook`](https://github.com/evilmartians/lefthook) and the Go-based [`commitlint`](https://github.com/conventionalcommit/commitlint) via `go install`, then installs the hooks. The hooks use the locally installed `golangci-lint`; CI pins the project version so upgrades are explicit and reviewable.
+
+The `commit-msg` hook validates that every commit message follows Conventional Commits with one of the allowed types from `.commitlint.yaml` (`feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, or `chore`). The `type`, `scope`, and `description` must be lower-case.
+
+Example:
+
+```text
+feat(proxy): add npm package vulnerability lookup
+
+- Resolve package name to latest version
+- Query upstream scorecard API for vulnerabilities
+```
 
 ### Web linting and formatting
 

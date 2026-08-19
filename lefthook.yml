@@ -12,3 +12,8 @@ pre-commit:
     web-lint:
       run: npm --prefix web run lint
       glob: "web/**"
+
+commit-msg:
+  commands:
+    commitlint:
+      run: commitlint lint --message={1}
