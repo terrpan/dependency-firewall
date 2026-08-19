@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func (s *AccessService) normalizeAccessRequest(
@@ -236,37 +237,12 @@ func (s *AccessService) lookupCachedDecision(
 	}
 
 	cacheCtx, cacheSpan := serviceTracer().Start(ctx, "access.decision_cache_lookup")
-	dependencyContextHash := ""
-	if req.DependencyContext != nil {
-		dependencyContextHash = req.DependencyContext.Normalize().ContextHash
-	}
+	dependencyContextHash := dependencyContextCacheHash(req.DependencyContext)
 	cached, err := s.decisionCache.Get(cacheCtx, req.TenantID, req.Artifact, dependencyContextHash)
 	if err == nil {
 		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
 		cacheSpan.End()
-		now := time.Now()
-		cached.CachedAt = &now
-		if auditErr := s.recordAudit(ctx, domain.AuditEvent{
-			TenantID:      req.TenantID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventDecisionCacheHit,
-			Source:        "core/access",
-			UpstreamID:    req.Upstream.ID,
-			Artifact:      req.Artifact,
-			Outcome:       cached.Outcome,
-			PolicyID:      cached.PolicyID,
-			Message:       "decision cache hit",
-			Payload: map[string]any{
-				"dependency_context": dependencyContextSummary(req.DependencyContext),
-			},
-		}); auditErr != nil {
-			return nil, false, auditErr
-		}
-		s.logger.Debug("decision cache hit",
-			"tenant_id", req.TenantID,
-			"artifact", req.Artifact.CacheKey(),
-		)
-		return cached, true, nil
+		return s.useCachedDecision(ctx, req, cached)
 	}
 
 	cacheSpan.SetAttributes(attribute.Bool("cache.hit", false))
@@ -276,27 +252,78 @@ func (s *AccessService) lookupCachedDecision(
 	}
 	cacheSpan.End()
 	if !errors.Is(err, domain.ErrCacheMiss) {
-		_ = s.recordAudit(ctx, domain.AuditEvent{
-			TenantID:      req.TenantID,
-			CorrelationID: req.RequestID,
-			EventType:     domain.AuditEventError,
-			Source:        "core/access",
-			UpstreamID:    req.Upstream.ID,
-			Artifact:      req.Artifact,
-			Message:       "decision cache lookup failed",
-			Payload: map[string]any{
-				"stage": "decision_cache_lookup",
-				"error": err.Error(),
-			},
-		})
-		s.logger.Warn("decision cache error, proceeding without cache",
-			"error", err,
-			"tenant_id", req.TenantID,
-		)
+		s.recordDecisionCacheLookupFailure(ctx, req, err)
 		return nil, false, nil
 	}
+	if err := s.recordDecisionCacheMiss(ctx, req); err != nil {
+		return nil, false, err
+	}
+	return nil, false, nil
+}
 
+func dependencyContextCacheHash(dependencyContext *domain.DependencyContext) string {
+	if dependencyContext == nil {
+		return ""
+	}
+	return dependencyContext.Normalize().ContextHash
+}
+
+func (s *AccessService) useCachedDecision(
+	ctx context.Context,
+	req domain.AccessRequest,
+	cached *domain.Decision,
+) (*domain.Decision, bool, error) {
+	now := time.Now()
+	cached.CachedAt = &now
 	if auditErr := s.recordAudit(ctx, domain.AuditEvent{
+		TenantID:      req.TenantID,
+		CorrelationID: req.RequestID,
+		EventType:     domain.AuditEventDecisionCacheHit,
+		Source:        "core/access",
+		UpstreamID:    req.Upstream.ID,
+		Artifact:      req.Artifact,
+		Outcome:       cached.Outcome,
+		PolicyID:      cached.PolicyID,
+		Message:       "decision cache hit",
+		Payload: map[string]any{
+			"dependency_context": dependencyContextSummary(req.DependencyContext),
+		},
+	}); auditErr != nil {
+		return nil, false, auditErr
+	}
+	s.logger.Debug("decision cache hit",
+		"tenant_id", req.TenantID,
+		"artifact", req.Artifact.CacheKey(),
+	)
+	return cached, true, nil
+}
+
+func (s *AccessService) recordDecisionCacheLookupFailure(
+	ctx context.Context,
+	req domain.AccessRequest,
+	err error,
+) {
+	_ = s.recordAudit(ctx, domain.AuditEvent{
+		TenantID:      req.TenantID,
+		CorrelationID: req.RequestID,
+		EventType:     domain.AuditEventError,
+		Source:        "core/access",
+		UpstreamID:    req.Upstream.ID,
+		Artifact:      req.Artifact,
+		Message:       "decision cache lookup failed",
+		Payload: map[string]any{
+			"stage": "decision_cache_lookup",
+			"error": err.Error(),
+		},
+	})
+	s.logger.Warn("decision cache error, proceeding without cache",
+		"error", err,
+		"tenant_id", req.TenantID,
+	)
+}
+
+func (s *AccessService) recordDecisionCacheMiss(ctx context.Context, req domain.AccessRequest) error {
+	return s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
 		CorrelationID: req.RequestID,
 		EventType:     domain.AuditEventDecisionCacheMiss,
@@ -307,9 +334,5 @@ func (s *AccessService) lookupCachedDecision(
 		Payload: map[string]any{
 			"dependency_context": dependencyContextSummary(req.DependencyContext),
 		},
-	}); auditErr != nil {
-		return nil, false, auditErr
-	}
-
-	return nil, false, nil
+	})
 }

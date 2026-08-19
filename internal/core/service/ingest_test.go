@@ -23,7 +23,11 @@ func (r *ingestDecisionRepository) Record(_ context.Context, decision *domain.De
 	return nil
 }
 
-func (r *ingestDecisionRepository) GetByArtifact(context.Context, string, domain.ArtifactIdentity) (*domain.Decision, error) {
+func (r *ingestDecisionRepository) GetByArtifact(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	return r.decision, nil
 }
 
@@ -34,7 +38,13 @@ func (r *ingestDecisionRepository) ListByTenant(context.Context, string, int, in
 	return []domain.Decision{*r.decision}, nil
 }
 
-func (r *ingestDecisionRepository) HasRecentAllow(context.Context, string, domain.EcosystemType, string, string) (bool, error) {
+func (r *ingestDecisionRepository) HasRecentAllow(
+	context.Context,
+	string,
+	domain.EcosystemType,
+	string,
+	string,
+) (bool, error) {
 	return true, nil
 }
 
@@ -56,7 +66,10 @@ func (s *ingestGraphStore) EnqueueResolve(context.Context, domain.DependencyGrap
 	return true, nil
 }
 
-func (s *ingestGraphStore) LookupContext(context.Context, domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (s *ingestGraphStore) LookupContext(
+	context.Context,
+	domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	if s.dependencyContext == nil {
 		return nil, domain.ErrArtifactNotFound
 	}
@@ -84,7 +97,10 @@ func TestProxyIngestService_LookupDependencyGraphContext_Unavailable(t *testing.
 	t.Parallel()
 
 	svc := NewProxyIngestService(nil, nil, nil, nil)
-	_, err := svc.LookupDependencyGraphContext(context.Background(), domain.DependencyContextSummaryKey{TenantID: "tenant-1"})
+	_, err := svc.LookupDependencyGraphContext(
+		context.Background(),
+		domain.DependencyContextSummaryKey{TenantID: "tenant-1"},
+	)
 	require.Error(t, err)
 }
 

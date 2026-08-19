@@ -7,9 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -73,6 +74,26 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	}
 	defer span.End()
 
+	cached, found, err := s.lookupCachedMetadata(ctx, tenantID, correlationID, artifact)
+	if err != nil || found {
+		return cached, err
+	}
+
+	metadata, err := s.queryEnrichmentSources(ctx, tenantID, correlationID, artifact)
+	if err != nil {
+		return nil, err
+	}
+	if metadata != nil {
+		s.storeCachedMetadata(ctx, tenantID, artifact, metadata)
+	}
+	return metadata, nil
+}
+
+func (s *EnrichmentService) lookupCachedMetadata(
+	ctx context.Context,
+	tenantID, correlationID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, bool, error) {
 	cacheCtx, cacheSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_lookup")
 	cached, err := s.metadataCache.Get(cacheCtx, tenantID, artifact)
 	if err != nil {
@@ -84,82 +105,99 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	if err == nil && cached != nil {
 		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
 		cacheSpan.End()
-		if auditErr := s.recordAudit(ctx, domain.AuditEvent{
-			TenantID:      tenantID,
-			CorrelationID: correlationID,
-			EventType:     domain.AuditEventMetadataCacheHit,
-			Source:        "core/enrichment",
-			Artifact:      artifact,
-			Message:       "metadata cache hit",
-		}); auditErr != nil {
-			return nil, auditErr
+		if auditErr := s.recordAudit(ctx, metadataCacheAuditEvent(
+			tenantID, correlationID, artifact, domain.AuditEventMetadataCacheHit, "metadata cache hit",
+		)); auditErr != nil {
+			return nil, false, auditErr
 		}
 		s.logger.DebugContext(ctx, "metadata cache hit",
 			slog.String("tenant_id", tenantID),
 			slog.String("name", artifact.Name),
 		)
-		return cached, nil
+		return cached, true, nil
 	}
+
 	cacheSpan.SetAttributes(attribute.Bool("cache.hit", false))
 	cacheSpan.End()
+	if auditErr := s.recordAudit(ctx, metadataCacheAuditEvent(
+		tenantID, correlationID, artifact, domain.AuditEventMetadataCacheMiss, "metadata cache miss",
+	)); auditErr != nil {
+		return nil, false, auditErr
+	}
+	return nil, false, nil
+}
+
+func metadataCacheAuditEvent(
+	tenantID, correlationID string,
+	artifact domain.ArtifactIdentity,
+	eventType domain.AuditEventType,
+	message string,
+) domain.AuditEvent {
+	return domain.AuditEvent{
+		TenantID:      tenantID,
+		CorrelationID: correlationID,
+		EventType:     eventType,
+		Source:        "core/enrichment",
+		Artifact:      artifact,
+		Message:       message,
+	}
+}
+
+func (s *EnrichmentService) queryEnrichmentSources(
+	ctx context.Context,
+	tenantID, correlationID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
+	enrichCtx, enrichSpan := serviceTracer().Start(ctx, "enrichment.query_sources")
+	metadata, err := s.enricher.Enrich(enrichCtx, artifact)
+	if err == nil {
+		enrichSpan.SetAttributes(attribute.Bool("metadata.available", metadata != nil))
+		enrichSpan.End()
+		return metadata, nil
+	}
+
+	recordSpanError(enrichSpan, err)
+	enrichSpan.AddEvent("enrichment.failed_open")
+	enrichSpan.End()
 	if auditErr := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      tenantID,
 		CorrelationID: correlationID,
-		EventType:     domain.AuditEventMetadataCacheMiss,
+		EventType:     domain.AuditEventEnrichmentFailed,
 		Source:        "core/enrichment",
 		Artifact:      artifact,
-		Message:       "metadata cache miss",
+		Message:       "artifact enrichment failed",
+		Payload: map[string]any{
+			"error": err.Error(),
+		},
 	}); auditErr != nil {
 		return nil, auditErr
 	}
+	s.logger.WarnContext(ctx, "enrichment failed, proceeding without metadata",
+		slog.String("tenant_id", tenantID),
+		slog.String("name", artifact.Name),
+		slog.String("error", err.Error()),
+	)
+	return nil, nil
+}
 
-	enrichCtx, enrichSpan := serviceTracer().Start(ctx, "enrichment.query_sources")
-	metadata, err := s.enricher.Enrich(enrichCtx, artifact)
-	if err != nil {
-		recordSpanError(enrichSpan, err)
-	}
-	if err != nil {
-		enrichSpan.AddEvent("enrichment.failed_open")
-		enrichSpan.End()
-		if auditErr := s.recordAudit(ctx, domain.AuditEvent{
-			TenantID:      tenantID,
-			CorrelationID: correlationID,
-			EventType:     domain.AuditEventEnrichmentFailed,
-			Source:        "core/enrichment",
-			Artifact:      artifact,
-			Message:       "artifact enrichment failed",
-			Payload: map[string]any{
-				"error": err.Error(),
-			},
-		}); auditErr != nil {
-			return nil, auditErr
-		}
-		s.logger.WarnContext(ctx, "enrichment failed, proceeding without metadata",
+func (s *EnrichmentService) storeCachedMetadata(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+	metadata *domain.ArtifactMetadata,
+) {
+	ttl := s.cacheTTL(artifact)
+	writeCtx, writeSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_store")
+	if cacheErr := s.metadataCache.Set(writeCtx, tenantID, artifact, metadata, ttl); cacheErr != nil {
+		recordSpanError(writeSpan, cacheErr)
+		s.logger.WarnContext(ctx, "failed to cache metadata",
 			slog.String("tenant_id", tenantID),
 			slog.String("name", artifact.Name),
-			slog.String("error", err.Error()),
+			slog.String("error", cacheErr.Error()),
 		)
-		return nil, nil
 	}
-	enrichSpan.SetAttributes(attribute.Bool("metadata.available", metadata != nil))
-	enrichSpan.End()
-
-	ttl := s.cacheTTL(artifact)
-	if metadata != nil {
-		writeCtx, writeSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_store")
-		if cacheErr := s.metadataCache.Set(writeCtx, tenantID, artifact, metadata, ttl); cacheErr != nil {
-			recordSpanError(writeSpan, cacheErr)
-			s.logger.WarnContext(ctx, "failed to cache metadata",
-				slog.String("tenant_id", tenantID),
-				slog.String("name", artifact.Name),
-				slog.String("error", cacheErr.Error()),
-			)
-		}
-		writeSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
-		writeSpan.End()
-	}
-
-	return metadata, nil
+	writeSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
+	writeSpan.End()
 }
 
 func (s *EnrichmentService) recordAudit(ctx context.Context, event domain.AuditEvent) error {

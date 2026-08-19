@@ -13,7 +13,11 @@ type claimRecordingResolver struct {
 	claims chan string
 }
 
-func (r *claimRecordingResolver) ClaimNextResolveJob(_ context.Context, tenantID string, _ time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (r *claimRecordingResolver) ClaimNextResolveJob(
+	_ context.Context,
+	tenantID string,
+	_ time.Time,
+) (*domain.DependencyGraphResolveRequest, error) {
 	select {
 	case r.claims <- tenantID:
 	default:
@@ -21,11 +25,22 @@ func (r *claimRecordingResolver) ClaimNextResolveJob(_ context.Context, tenantID
 	return nil, nil
 }
 
-func (r *claimRecordingResolver) CompleteResolve(context.Context, domain.DependencyGraphResolveRequest, []domain.DependencyGraphNode, []domain.DependencyGraphEdge, string) error {
+func (r *claimRecordingResolver) CompleteResolve(
+	context.Context,
+	domain.DependencyGraphResolveRequest,
+	[]domain.DependencyGraphNode,
+	[]domain.DependencyGraphEdge,
+	string,
+) error {
 	return nil
 }
 
-func (r *claimRecordingResolver) FailResolve(context.Context, domain.DependencyGraphResolveRequest, string, time.Time) error {
+func (r *claimRecordingResolver) FailResolve(
+	context.Context,
+	domain.DependencyGraphResolveRequest,
+	string,
+	time.Time,
+) error {
 	return nil
 }
 

@@ -54,7 +54,11 @@ func WithTenantAuthorizationDeniedRecorder(recorder TenantAuthorizationDeniedRec
 }
 
 // TenantAuthorizationInterceptor authorizes mTLS client identities for tenant-scoped control-plane RPCs.
-func TenantAuthorizationInterceptor(clients []config.BundleTLSAuthorizedClient, extractTenantID TenantIDExtractor, options ...TenantAuthorizationOption) grpc.UnaryServerInterceptor {
+func TenantAuthorizationInterceptor(
+	clients []config.BundleTLSAuthorizedClient,
+	extractTenantID TenantIDExtractor,
+	options ...TenantAuthorizationOption,
+) grpc.UnaryServerInterceptor {
 	authorizer := newTenantAuthorizer(clients)
 	cfg := tenantAuthorizationConfig{}
 	for _, option := range options {
@@ -76,7 +80,11 @@ func TenantAuthorizationInterceptor(clients []config.BundleTLSAuthorizedClient, 
 
 // TenantAuthorizationStreamInterceptor authorizes mTLS client identities for
 // tenant-scoped streaming control-plane RPCs after decoding the first request.
-func TenantAuthorizationStreamInterceptor(clients []config.BundleTLSAuthorizedClient, extractTenantID TenantIDExtractor, options ...TenantAuthorizationOption) grpc.StreamServerInterceptor {
+func TenantAuthorizationStreamInterceptor(
+	clients []config.BundleTLSAuthorizedClient,
+	extractTenantID TenantIDExtractor,
+	options ...TenantAuthorizationOption,
+) grpc.StreamServerInterceptor {
 	authorizer := newTenantAuthorizer(clients)
 	cfg := tenantAuthorizationConfig{}
 	for _, option := range options {
@@ -166,7 +174,11 @@ func (s *tenantAuthorizingServerStream) RecvMsg(message any) error {
 	return nil
 }
 
-func (cfg tenantAuthorizationConfig) deny(ctx context.Context, event TenantAuthorizationDeniedEvent, code codes.Code) (any, error) {
+func (cfg tenantAuthorizationConfig) deny(
+	ctx context.Context,
+	event TenantAuthorizationDeniedEvent,
+	code codes.Code,
+) (any, error) {
 	event.TenantID = strings.TrimSpace(event.TenantID)
 	event.FullMethod = strings.TrimSpace(event.FullMethod)
 	event.Reason = strings.TrimSpace(event.Reason)

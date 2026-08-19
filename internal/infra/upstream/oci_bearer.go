@@ -15,6 +15,12 @@ import (
 
 var bearerChallengeParamRE = regexp.MustCompile(`([A-Za-z]+)="([^"]*)"`)
 
+type bearerTokenResponse struct {
+	Token       string `json:"token"`
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+}
+
 func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*http.Response, error) {
 	cacheKey, canUseCachedBearer := bearerTokenCacheKey(req, upstream)
 	if canUseCachedBearer {
@@ -29,6 +35,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 		}
 	}
 
+	//nolint:gosec // G704: req targets the operator/tenant-configured upstream registry; forwarding to it is this proxy's purpose, not attacker-directed SSRF
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -52,6 +59,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 	retry.Header = req.Header.Clone()
 	retry.Header.Set("Authorization", "Bearer "+token)
 
+	//nolint:gosec // G704: retry is req.Clone with only the Authorization header changed; same configured-upstream destination as above
 	retryResp, err := c.httpClient.Do(retry)
 	if err != nil {
 		return nil, err
@@ -62,20 +70,35 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 	return retryResp, nil
 }
 
-func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth *domain.UpstreamAuth) (string, time.Duration, bool, error) {
+func (c *OCIClient) fetchBearerToken(
+	ctx context.Context,
+	challenge string,
+	auth *domain.UpstreamAuth,
+) (string, time.Duration, bool, error) {
 	params, ok := parseBearerChallenge(challenge)
 	if !ok {
 		return "", 0, false, nil
 	}
 
+	payload, err := c.requestBearerToken(ctx, params, auth)
+	if err != nil {
+		return "", 0, false, err
+	}
+	return bearerTokenValue(payload)
+}
+
+func (c *OCIClient) requestBearerToken(
+	ctx context.Context,
+	params map[string]string,
+	auth *domain.UpstreamAuth,
+) (bearerTokenResponse, error) {
 	realm, ok := params["realm"]
 	if !ok || realm == "" {
-		return "", 0, false, fmt.Errorf("bearer challenge missing realm")
+		return bearerTokenResponse{}, fmt.Errorf("bearer challenge missing realm")
 	}
-
 	tokenURL, err := url.Parse(realm)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("parsing bearer token realm: %w", err)
+		return bearerTokenResponse{}, fmt.Errorf("parsing bearer token realm: %w", err)
 	}
 
 	query := tokenURL.Query()
@@ -89,35 +112,33 @@ func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL.String(), nil)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("creating bearer token request: %w", err)
+		return bearerTokenResponse{}, fmt.Errorf("creating bearer token request: %w", err)
 	}
 	if auth != nil && auth.Type == domain.UpstreamAuthBasic {
 		secret, err := c.resolveAuthSecret(auth)
 		if err != nil {
-			return "", 0, false, err
+			return bearerTokenResponse{}, err
 		}
 		req.SetBasicAuth(auth.Username, string(secret))
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", 0, false, err
+		return bearerTokenResponse{}, err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		return "", 0, false, fmt.Errorf("unexpected bearer token status: %d", resp.StatusCode)
+		return bearerTokenResponse{}, fmt.Errorf("unexpected bearer token status: %d", resp.StatusCode)
 	}
 
-	var payload struct {
-		Token       string `json:"token"`
-		AccessToken string `json:"access_token"`
-		ExpiresIn   int64  `json:"expires_in"`
-	}
+	var payload bearerTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", 0, false, fmt.Errorf("decoding bearer token response: %w", err)
+		return bearerTokenResponse{}, fmt.Errorf("decoding bearer token response: %w", err)
 	}
+	return payload, nil
+}
 
+func bearerTokenValue(payload bearerTokenResponse) (string, time.Duration, bool, error) {
 	ttl := defaultBearerTokenTTL
 	if payload.ExpiresIn > 0 {
 		ttl = time.Duration(payload.ExpiresIn) * time.Second
@@ -128,7 +149,6 @@ func (c *OCIClient) fetchBearerToken(ctx context.Context, challenge string, auth
 	if payload.AccessToken != "" {
 		return payload.AccessToken, ttl, true, nil
 	}
-
 	return "", 0, false, fmt.Errorf("bearer token response missing token")
 }
 

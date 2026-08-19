@@ -55,6 +55,20 @@ func normalizeNPM(a ArtifactIdentity) (ArtifactIdentity, error) {
 		return a, fmt.Errorf("%w: npm package name is required", ErrInvalidArtifactRef)
 	}
 
+	// No registry has ever produced a name or version starting with "-"; the
+	// only way one reaches here is a crafted request. This identity is later
+	// concatenated into a single "name@version" argv token and handed to the
+	// npm CLI (see resolveNPMGraph), whose nopt-based parser resolves leading
+	// "-"/"--" tokens as options rather than the package spec they claim to
+	// be, which would let a request redirect that invocation (e.g. to an
+	// attacker registry via "--registry=...").
+	if strings.HasPrefix(a.Name, "-") {
+		return a, fmt.Errorf("%w: npm package name %q must not start with \"-\"", ErrInvalidArtifactRef, a.Name)
+	}
+	if strings.HasPrefix(a.Version, "-") {
+		return a, fmt.Errorf("%w: npm package version %q must not start with \"-\"", ErrInvalidArtifactRef, a.Version)
+	}
+
 	return a, nil
 }
 

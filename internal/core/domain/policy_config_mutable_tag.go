@@ -4,7 +4,7 @@ import "fmt"
 
 // BlockMutableTagPolicyConfig configures the block_mutable_tag policy type.
 type BlockMutableTagPolicyConfig struct {
-	Tags   []string `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Tags   []string `json:"tags,omitempty"    yaml:"tags,omitempty"`
 	DryRun bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
 }
 

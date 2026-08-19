@@ -28,7 +28,12 @@ type tenantGetter interface {
 }
 
 // NewBundleService creates a new BundleService.
-func NewBundleService(tenants tenantGetter, policies port.PolicyRepository, upstreams port.UpstreamRepository, options ...BundleServiceOption) (*BundleService, error) {
+func NewBundleService(
+	tenants tenantGetter,
+	policies port.PolicyRepository,
+	upstreams port.UpstreamRepository,
+	options ...BundleServiceOption,
+) (*BundleService, error) {
 	s := &BundleService{
 		tenants:             tenants,
 		policies:            policies,
@@ -84,7 +89,10 @@ func (s *BundleService) GetTenantBundle(ctx context.Context, tenantID string) (*
 	if !s.includeUpstreamAuth {
 		for i := range upstreams {
 			if upstreams[i].UpstreamAuthConfigured() {
-				return nil, fmt.Errorf("%w: authenticated upstreams cannot be bundled over insecure transport", domain.ErrUpstreamAuthTransportInsecure)
+				return nil, fmt.Errorf(
+					"%w: authenticated upstreams cannot be bundled over insecure transport",
+					domain.ErrUpstreamAuthTransportInsecure,
+				)
 			}
 		}
 	}
@@ -187,20 +195,34 @@ func (p *CachedBundleProvider) CheckStatus(context.Context) ComponentStatus {
 	case p.lastFailureAt.After(p.lastSuccessAt):
 		if cachedCount > 0 {
 			return ComponentStatus{
-				Status:    "stale",
-				Message:   fmt.Sprintf("serving last-known-good bundle cache (%d cached); last refresh failed for tenant %q: %s", cachedCount, p.lastFailureTenant, p.lastFailureErr),
+				Status: "stale",
+				Message: fmt.Sprintf(
+					"serving last-known-good bundle cache (%d cached); last refresh failed for tenant %q: %s",
+					cachedCount,
+					p.lastFailureTenant,
+					p.lastFailureErr,
+				),
 				Timestamp: p.lastFailureAt,
 			}
 		}
 		return ComponentStatus{
-			Status:    "unavailable",
-			Message:   fmt.Sprintf("no cached bundle available; last refresh failed for tenant %q: %s", p.lastFailureTenant, p.lastFailureErr),
+			Status: "unavailable",
+			Message: fmt.Sprintf(
+				"no cached bundle available; last refresh failed for tenant %q: %s",
+				p.lastFailureTenant,
+				p.lastFailureErr,
+			),
 			Timestamp: p.lastFailureAt,
 		}
 	case !p.lastSuccessAt.IsZero():
 		return ComponentStatus{
-			Status:    "ready",
-			Message:   fmt.Sprintf("%d cached bundle(s); last refresh succeeded for tenant %q at revision %s", cachedCount, p.lastSuccessTenant, shortRevision(p.lastSuccessRev)),
+			Status: "ready",
+			Message: fmt.Sprintf(
+				"%d cached bundle(s); last refresh succeeded for tenant %q at revision %s",
+				cachedCount,
+				p.lastSuccessTenant,
+				shortRevision(p.lastSuccessRev),
+			),
 			Timestamp: p.lastSuccessAt,
 		}
 	default:

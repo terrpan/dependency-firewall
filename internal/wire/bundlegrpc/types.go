@@ -89,7 +89,11 @@ func TenantIDFromRequest(req any) string {
 }
 
 // FetchTenantBundleResponse invokes the remote bundle service and returns the wire DTO.
-func FetchTenantBundleResponse(ctx context.Context, conn grpc.ClientConnInterface, tenantID string) (*GetTenantBundleResponse, error) {
+func FetchTenantBundleResponse(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	tenantID string,
+) (*GetTenantBundleResponse, error) {
 	response := &GetTenantBundleResponse{}
 	err := conn.Invoke(
 		ctx,

@@ -10,9 +10,10 @@ import (
 
 	"log/slog"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func TestClient_Enrich(t *testing.T) {
@@ -60,7 +61,10 @@ func TestClient_Enrich(t *testing.T) {
 							ID:      "GHSA-5678",
 							Summary: "Medium vulnerability",
 							Severity: []osvSeverity{
-								{Type: "CVSS_V4", Score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P"},
+								{
+									Type:  "CVSS_V4",
+									Score: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P",
+								},
 							},
 						},
 					},
@@ -207,7 +211,11 @@ func TestParseCVSSScore(t *testing.T) {
 		{name: "plain numeric score", input: "9.8", want: 9.8},
 		{name: "cvss 3.0 vector", input: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", want: 9.8},
 		{name: "cvss 3.1 vector", input: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", want: 9.8},
-		{name: "cvss 4.0 vector", input: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P", want: 6.9},
+		{
+			name:  "cvss 4.0 vector",
+			input: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:L/SC:H/SI:H/SA:H/E:P",
+			want:  6.9,
+		},
 		{name: "invalid vector", input: "CVSS:3.1/not-a-vector", want: 0},
 		{name: "empty", input: "", want: 0},
 	}

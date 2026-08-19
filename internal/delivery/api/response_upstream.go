@@ -7,6 +7,9 @@ import (
 	corepolicy "github.com/danielterry/dependency-firewall/internal/core/policy"
 )
 
+// UpstreamResponse is the wire form of a configured upstream registry. Capabilities is the effective profile after
+// legacy defaults are upgraded, and SupportedPolicyTypes is derived from it so clients can tell which policy types may
+// be scoped to this upstream without reimplementing the compatibility rules.
 type UpstreamResponse struct {
 	ID                   string               `json:"id"`
 	Name                 string               `json:"name"`
@@ -19,6 +22,8 @@ type UpstreamResponse struct {
 	UpdatedAt            time.Time            `json:"updated_at"`
 }
 
+// UpstreamAuthResponse describes an upstream's outbound authentication without ever exposing the stored credential:
+// only the mode, whether a usable secret is present, the basic-auth username, and when it was last changed.
 type UpstreamAuthResponse struct {
 	Type       string     `json:"type"`
 	Configured bool       `json:"configured"`

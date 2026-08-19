@@ -23,7 +23,11 @@ func (r *localDecisionRepository) Record(_ context.Context, decision *domain.Dec
 	return nil
 }
 
-func (r *localDecisionRepository) GetByArtifact(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (r *localDecisionRepository) GetByArtifact(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	if r.decision.TenantID != tenantID || r.decision.Artifact != artifact {
 		return nil, domain.ErrArtifactNotFound
 	}
@@ -35,7 +39,12 @@ func (r *localDecisionRepository) ListByTenant(context.Context, string, int, int
 	return []domain.Decision{r.decision}, nil
 }
 
-func (r *localDecisionRepository) HasRecentAllow(_ context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func (r *localDecisionRepository) HasRecentAllow(
+	_ context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	return r.decision.TenantID == tenantID &&
 		r.decision.Artifact.Ecosystem == ecosystem &&
 		r.decision.Artifact.Namespace == namespace &&

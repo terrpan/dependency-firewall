@@ -23,16 +23,16 @@ func defaultOCICacheRootDir() string {
 
 // Config holds all application configuration sections.
 type Config struct {
-	Runtime         RuntimeConfig         `mapstructure:"runtime" validate:"required"`
-	Server          ServerConfig          `mapstructure:"server" validate:"required"`
+	Runtime         RuntimeConfig         `mapstructure:"runtime"          validate:"required"`
+	Server          ServerConfig          `mapstructure:"server"           validate:"required"`
 	OCICache        OCICacheConfig        `mapstructure:"oci_cache"`
 	Database        DatabaseConfig        `mapstructure:"database"`
-	Valkey          ValkeyConfig          `mapstructure:"valkey" validate:"required"`
-	Log             LogConfig             `mapstructure:"log" validate:"required"`
+	Valkey          ValkeyConfig          `mapstructure:"valkey"           validate:"required"`
+	Log             LogConfig             `mapstructure:"log"              validate:"required"`
 	Telemetry       TelemetryConfig       `mapstructure:"telemetry"`
-	Audit           AuditConfig           `mapstructure:"audit" validate:"required"`
+	Audit           AuditConfig           `mapstructure:"audit"            validate:"required"`
 	Health          HealthConfig          `mapstructure:"health"`
-	Bundle          BundleConfig          `mapstructure:"bundle" validate:"required"`
+	Bundle          BundleConfig          `mapstructure:"bundle"           validate:"required"`
 	Secrets         SecretsConfig         `mapstructure:"secrets"`
 	DependencyGraph DependencyGraphConfig `mapstructure:"dependency_graph"`
 }
@@ -40,6 +40,9 @@ type Config struct {
 // RuntimeMode identifies which service shape the single binary should run.
 type RuntimeMode string
 
+// The runtime mode selects which halves of the system the process starts: the
+// control plane owns policy and durable state, the proxy serves package traffic,
+// and the dependency-graph worker drains the async npm resolve queue.
 const (
 	RuntimeModeAllInOne              RuntimeMode = "all-in-one"
 	RuntimeModeControlPlane          RuntimeMode = "control-plane"
@@ -54,19 +57,19 @@ type RuntimeConfig struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port         int           `mapstructure:"port" validate:"gte=1,lte=65535"`
-	ReadTimeout  time.Duration `mapstructure:"read_timeout" validate:"gt=0"`
+	Port         int           `mapstructure:"port"          validate:"gte=1,lte=65535"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout"  validate:"gt=0"`
 	WriteTimeout time.Duration `mapstructure:"write_timeout" validate:"gte=0"`
-	IdleTimeout  time.Duration `mapstructure:"idle_timeout" validate:"gt=0"`
+	IdleTimeout  time.Duration `mapstructure:"idle_timeout"  validate:"gt=0"`
 }
 
 // OCICacheConfig holds OCI artifact cache settings.
 type OCICacheConfig struct {
 	Enabled    bool              `mapstructure:"enabled"`
-	Backend    string            `mapstructure:"backend" validate:"omitempty,oneof=disk s3 gcs"`
+	Backend    string            `mapstructure:"backend"     validate:"omitempty,oneof=disk s3 gcs"`
 	RootDir    string            `mapstructure:"root_dir"`
-	MaxBytes   int64             `mapstructure:"max_bytes" validate:"gte=0"`
-	MaxAge     time.Duration     `mapstructure:"max_age" validate:"gte=0"`
+	MaxBytes   int64             `mapstructure:"max_bytes"   validate:"gte=0"`
+	MaxAge     time.Duration     `mapstructure:"max_age"     validate:"gte=0"`
 	MaxEntries int               `mapstructure:"max_entries" validate:"gte=0"`
 	S3         OCICacheS3Config  `mapstructure:"s3"`
 	GCS        OCICacheGCSConfig `mapstructure:"gcs"`
@@ -96,14 +99,14 @@ type DatabaseConfig struct {
 
 // ValkeyConfig holds Valkey connection settings.
 type ValkeyConfig struct {
-	Addr     string `mapstructure:"addr" validate:"notblank"`
+	Addr     string `mapstructure:"addr"     validate:"notblank"`
 	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db" validate:"gte=0"`
+	DB       int    `mapstructure:"db"       validate:"gte=0"`
 }
 
 // LogConfig holds structured logging settings.
 type LogConfig struct {
-	Level  string `mapstructure:"level" validate:"oneof=debug info warn error"`
+	Level  string `mapstructure:"level"  validate:"oneof=debug info warn error"`
 	Format string `mapstructure:"format" validate:"oneof=json text"`
 }
 
@@ -111,7 +114,7 @@ type LogConfig struct {
 type TelemetryConfig struct {
 	Enabled     bool              `mapstructure:"enabled"`
 	Endpoint    string            `mapstructure:"endpoint"`
-	Protocol    string            `mapstructure:"protocol" validate:"omitempty,oneof=grpc http/protobuf"`
+	Protocol    string            `mapstructure:"protocol"     validate:"omitempty,oneof=grpc http/protobuf"`
 	Insecure    bool              `mapstructure:"insecure"`
 	SampleRatio float64           `mapstructure:"sample_ratio" validate:"gte=0,lte=1"`
 	Stdout      bool              `mapstructure:"stdout"`
@@ -143,13 +146,13 @@ type HealthConfig struct {
 type BundleConfig struct {
 	ListenAddr       string          `mapstructure:"listen_addr"`
 	ControlPlaneAddr string          `mapstructure:"control_plane_addr"`
-	RefreshInterval  time.Duration   `mapstructure:"refresh_interval" validate:"gte=0"`
+	RefreshInterval  time.Duration   `mapstructure:"refresh_interval"   validate:"gte=0"`
 	TLS              BundleTLSConfig `mapstructure:"tls"`
 }
 
 // BundleTLSConfig holds control-plane gRPC transport security settings.
 type BundleTLSConfig struct {
-	Mode                      string                      `mapstructure:"mode" validate:"oneof=insecure mtls"`
+	Mode                      string                      `mapstructure:"mode"                         validate:"oneof=insecure mtls"`
 	CAFile                    string                      `mapstructure:"ca_file"`
 	CertFile                  string                      `mapstructure:"cert_file"`
 	KeyFile                   string                      `mapstructure:"key_file"`
@@ -194,70 +197,7 @@ func Load() (*Config, error) {
 // LoadWithOptions reads configuration with optional loader overrides.
 func LoadWithOptions(options LoadOptions) (*Config, error) {
 	v := viper.New()
-
-	v.SetDefault("runtime.mode", string(RuntimeModeAllInOne))
-	v.SetDefault("server.port", 8080)
-	v.SetDefault("server.read_timeout", 5*time.Second)
-	v.SetDefault("server.write_timeout", 0)
-	v.SetDefault("server.idle_timeout", 120*time.Second)
-
-	v.SetDefault("oci_cache.enabled", false)
-	v.SetDefault("oci_cache.backend", "disk")
-	v.SetDefault("oci_cache.root_dir", defaultOCICacheRootDir())
-	v.SetDefault("oci_cache.max_bytes", int64(0))
-	v.SetDefault("oci_cache.max_age", 0)
-	v.SetDefault("oci_cache.max_entries", 0)
-	v.SetDefault("oci_cache.s3.bucket", "")
-	v.SetDefault("oci_cache.s3.prefix", "")
-	v.SetDefault("oci_cache.s3.region", "")
-	v.SetDefault("oci_cache.s3.endpoint", "")
-	v.SetDefault("oci_cache.gcs.bucket", "")
-	v.SetDefault("oci_cache.gcs.prefix", "")
-
-	v.SetDefault("database.dsn", "postgres://localhost:5432/firewall?sslmode=disable")
-	v.SetDefault("database.max_open_conns", 25)
-	v.SetDefault("database.max_idle_conns", 5)
-	v.SetDefault("database.conn_max_lifetime", 5*time.Minute)
-
-	v.SetDefault("valkey.addr", "localhost:6379")
-	v.SetDefault("valkey.password", "")
-	v.SetDefault("valkey.db", 0)
-
-	v.SetDefault("log.level", "info")
-	v.SetDefault("log.format", "json")
-	v.SetDefault("telemetry.enabled", false)
-	v.SetDefault("telemetry.endpoint", "http://localhost:4317")
-	v.SetDefault("telemetry.protocol", "grpc")
-	v.SetDefault("telemetry.insecure", true)
-	v.SetDefault("telemetry.sample_ratio", 1.0)
-	v.SetDefault("telemetry.stdout", false)
-	v.SetDefault("telemetry.headers", map[string]string{})
-	v.SetDefault("telemetry.sql_tracing.trim_sql_in_span_name", true)
-	v.SetDefault("telemetry.sql_tracing.disable_sql_statement_in_attributes", true)
-	v.SetDefault("audit.enabled", true)
-	v.SetDefault("audit.slog", true)
-	v.SetDefault("audit.postgres", true)
-	v.SetDefault("audit.failure_mode", "fail_closed")
-	v.SetDefault("audit.detail_level", "summary")
-	v.SetDefault("health.proxy_url", "")
-	v.SetDefault("bundle.listen_addr", ":9090")
-	v.SetDefault("bundle.control_plane_addr", "127.0.0.1:9090")
-	v.SetDefault("bundle.refresh_interval", 30*time.Second)
-	v.SetDefault("bundle.tls.mode", "insecure")
-	v.SetDefault("bundle.tls.ca_file", "")
-	v.SetDefault("bundle.tls.cert_file", "")
-	v.SetDefault("bundle.tls.key_file", "")
-	v.SetDefault("bundle.tls.server_name_override", "")
-	v.SetDefault("bundle.tls.allow_insecure_control_plane", false)
-	v.SetDefault("bundle.tls.authorized_clients", []BundleTLSAuthorizedClient{})
-	v.SetDefault("secrets.upstream_auth_key", "")
-	v.SetDefault("dependency_graph.enabled", true)
-	v.SetDefault("dependency_graph.run_in_process", false)
-	v.SetDefault("dependency_graph.tenant_id", "*")
-	v.SetDefault("dependency_graph.poll_interval", 5*time.Second)
-	v.SetDefault("dependency_graph.timeout", 2*time.Minute)
-	v.SetDefault("dependency_graph.concurrency", 2)
-	v.SetDefault("dependency_graph.retry_delay", 5*time.Minute)
+	setDefaults(v)
 
 	if strings.TrimSpace(options.ConfigPath) != "" {
 		v.SetConfigFile(options.ConfigPath)
@@ -293,6 +233,92 @@ func LoadWithOptions(options LoadOptions) (*Config, error) {
 	return &cfg, nil
 }
 
+func setDefaults(v *viper.Viper) {
+	setRuntimeServerDefaults(v)
+	setOCICacheDefaults(v)
+	setStorageDefaults(v)
+	setObservabilityDefaults(v)
+	setBundleDefaults(v)
+	v.SetDefault("secrets.upstream_auth_key", "")
+	setDependencyGraphDefaults(v)
+}
+
+func setRuntimeServerDefaults(v *viper.Viper) {
+	v.SetDefault("runtime.mode", string(RuntimeModeAllInOne))
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.read_timeout", 5*time.Second)
+	v.SetDefault("server.write_timeout", 0)
+	v.SetDefault("server.idle_timeout", 120*time.Second)
+}
+
+func setOCICacheDefaults(v *viper.Viper) {
+	v.SetDefault("oci_cache.enabled", false)
+	v.SetDefault("oci_cache.backend", "disk")
+	v.SetDefault("oci_cache.root_dir", defaultOCICacheRootDir())
+	v.SetDefault("oci_cache.max_bytes", int64(0))
+	v.SetDefault("oci_cache.max_age", 0)
+	v.SetDefault("oci_cache.max_entries", 0)
+	v.SetDefault("oci_cache.s3.bucket", "")
+	v.SetDefault("oci_cache.s3.prefix", "")
+	v.SetDefault("oci_cache.s3.region", "")
+	v.SetDefault("oci_cache.s3.endpoint", "")
+	v.SetDefault("oci_cache.gcs.bucket", "")
+	v.SetDefault("oci_cache.gcs.prefix", "")
+}
+
+func setStorageDefaults(v *viper.Viper) {
+	v.SetDefault("database.dsn", "postgres://localhost:5432/firewall?sslmode=disable")
+	v.SetDefault("database.max_open_conns", 25)
+	v.SetDefault("database.max_idle_conns", 5)
+	v.SetDefault("database.conn_max_lifetime", 5*time.Minute)
+	v.SetDefault("valkey.addr", "localhost:6379")
+	v.SetDefault("valkey.password", "")
+	v.SetDefault("valkey.db", 0)
+}
+
+func setObservabilityDefaults(v *viper.Viper) {
+	v.SetDefault("log.level", "info")
+	v.SetDefault("log.format", "json")
+	v.SetDefault("telemetry.enabled", false)
+	v.SetDefault("telemetry.endpoint", "http://localhost:4317")
+	v.SetDefault("telemetry.protocol", "grpc")
+	v.SetDefault("telemetry.insecure", true)
+	v.SetDefault("telemetry.sample_ratio", 1.0)
+	v.SetDefault("telemetry.stdout", false)
+	v.SetDefault("telemetry.headers", map[string]string{})
+	v.SetDefault("telemetry.sql_tracing.trim_sql_in_span_name", true)
+	v.SetDefault("telemetry.sql_tracing.disable_sql_statement_in_attributes", true)
+	v.SetDefault("audit.enabled", true)
+	v.SetDefault("audit.slog", true)
+	v.SetDefault("audit.postgres", true)
+	v.SetDefault("audit.failure_mode", "fail_closed")
+	v.SetDefault("audit.detail_level", "summary")
+	v.SetDefault("health.proxy_url", "")
+}
+
+func setBundleDefaults(v *viper.Viper) {
+	v.SetDefault("bundle.listen_addr", ":9090")
+	v.SetDefault("bundle.control_plane_addr", "127.0.0.1:9090")
+	v.SetDefault("bundle.refresh_interval", 30*time.Second)
+	v.SetDefault("bundle.tls.mode", "insecure")
+	v.SetDefault("bundle.tls.ca_file", "")
+	v.SetDefault("bundle.tls.cert_file", "")
+	v.SetDefault("bundle.tls.key_file", "")
+	v.SetDefault("bundle.tls.server_name_override", "")
+	v.SetDefault("bundle.tls.allow_insecure_control_plane", false)
+	v.SetDefault("bundle.tls.authorized_clients", []BundleTLSAuthorizedClient{})
+}
+
+func setDependencyGraphDefaults(v *viper.Viper) {
+	v.SetDefault("dependency_graph.enabled", true)
+	v.SetDefault("dependency_graph.run_in_process", false)
+	v.SetDefault("dependency_graph.tenant_id", "*")
+	v.SetDefault("dependency_graph.poll_interval", 5*time.Second)
+	v.SetDefault("dependency_graph.timeout", 2*time.Minute)
+	v.SetDefault("dependency_graph.concurrency", 2)
+	v.SetDefault("dependency_graph.retry_delay", 5*time.Minute)
+}
+
 func bindEnvKeys(v *viper.Viper) error {
 	for _, key := range v.AllKeys() {
 		if err := v.BindEnv(key); err != nil {
@@ -307,14 +333,44 @@ func (c *Config) Validate() error {
 	if c == nil {
 		return fmt.Errorf("invalid config: config is required")
 	}
-
 	if err := configValidator.Struct(c); err != nil {
 		return fmt.Errorf("invalid config: %s", validation.ErrorMessage(err))
 	}
+	if err := c.validateDatabase(); err != nil {
+		return err
+	}
+	if err := c.validateDependencyGraph(); err != nil {
+		return err
+	}
+	if err := c.validateOCICache(); err != nil {
+		return err
+	}
+	if err := c.validateHealth(); err != nil {
+		return err
+	}
+	if err := c.validateTelemetry(); err != nil {
+		return err
+	}
+	if err := c.validateSecrets(); err != nil {
+		return err
+	}
+	if err := c.validateBundleTLS(); err != nil {
+		return err
+	}
+	if err := c.validateControlPlaneBundle(); err != nil {
+		return err
+	}
+	return c.validateBundleClient()
+}
 
+func (c *Config) validateDatabase() error {
 	if c.Runtime.Mode != RuntimeModeProxy && c.Runtime.Mode != RuntimeModeDependencyGraphWorker {
 		if strings.TrimSpace(c.Database.DSN) == "" {
-			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "database.dsn", c.Runtime.Mode)
+			return fmt.Errorf(
+				"invalid config: field %q is required when runtime.mode is %q",
+				"database.dsn",
+				c.Runtime.Mode,
+			)
 		}
 		if c.Database.MaxOpenConns <= 0 {
 			return fmt.Errorf("invalid config: field %q must be greater than 0", "database.max_open_conns")
@@ -327,85 +383,196 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.Database.MaxIdleConns > c.Database.MaxOpenConns && c.Database.MaxOpenConns > 0 {
-		return fmt.Errorf("invalid config: field %q must be less than or equal to %q", "database.max_idle_conns", "database.max_open_conns")
+		return fmt.Errorf(
+			"invalid config: field %q must be less than or equal to %q",
+			"database.max_idle_conns",
+			"database.max_open_conns",
+		)
 	}
+	return nil
+}
+
+func (c *Config) validateDependencyGraph() error {
 	if c.DependencyGraph.Enabled && strings.TrimSpace(c.DependencyGraph.TenantID) == "" {
-		return fmt.Errorf("invalid config: field %q is required when dependency graph resolution is enabled", "dependency_graph.tenant_id")
+		return fmt.Errorf(
+			"invalid config: field %q is required when dependency graph resolution is enabled",
+			"dependency_graph.tenant_id",
+		)
 	}
-	if c.OCICache.Enabled && strings.EqualFold(c.OCICache.Backend, "disk") && strings.TrimSpace(c.OCICache.RootDir) == "" {
-		return fmt.Errorf("invalid config: field %q is required when OCI cache backend is %q", "oci_cache.root_dir", "disk")
+	return nil
+}
+
+func (c *Config) validateOCICache() error {
+	if c.OCICache.Enabled && strings.EqualFold(c.OCICache.Backend, "disk") &&
+		strings.TrimSpace(c.OCICache.RootDir) == "" {
+		return fmt.Errorf(
+			"invalid config: field %q is required when OCI cache backend is %q",
+			"oci_cache.root_dir",
+			"disk",
+		)
 	}
-	if proxyURL := strings.TrimSpace(c.Health.ProxyURL); proxyURL != "" {
-		parsed, err := url.Parse(proxyURL)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			return fmt.Errorf("invalid config: field %q must be a valid absolute URL", "health.proxy_url")
+	return nil
+}
+
+func (c *Config) validateHealth() error {
+	proxyURL := strings.TrimSpace(c.Health.ProxyURL)
+	if proxyURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(proxyURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("invalid config: field %q must be a valid absolute URL", "health.proxy_url")
+	}
+	return nil
+}
+
+func (c *Config) validateTelemetry() error {
+	if !c.Telemetry.Enabled {
+		return nil
+	}
+	endpoint := strings.TrimSpace(c.Telemetry.Endpoint)
+	if endpoint == "" && !c.Telemetry.Stdout {
+		return fmt.Errorf(
+			"invalid config: either %q must be set or %q must be true when telemetry is enabled",
+			"telemetry.endpoint",
+			"telemetry.stdout",
+		)
+	}
+	if endpoint == "" {
+		return nil
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf(
+			"invalid config: field %q must be a valid absolute URL without query or fragment",
+			"telemetry.endpoint",
+		)
+	}
+	return nil
+}
+
+func (c *Config) validateSecrets() error {
+	key := strings.TrimSpace(c.Secrets.UpstreamAuthKey)
+	if key == "" {
+		return nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(key)
+	if err != nil || len(decoded) != 32 {
+		return fmt.Errorf(
+			"invalid config: field %q must be a base64 encoded 32-byte key",
+			"secrets.upstream_auth_key",
+		)
+	}
+	return nil
+}
+
+func (c *Config) validateBundleTLS() error {
+	if !strings.EqualFold(c.Bundle.TLS.Mode, "mtls") {
+		return nil
+	}
+	if strings.TrimSpace(c.Bundle.TLS.CAFile) == "" {
+		return fmt.Errorf(
+			"invalid config: field %q is required when bundle.tls.mode is %q",
+			"bundle.tls.ca_file",
+			c.Bundle.TLS.Mode,
+		)
+	}
+	if strings.TrimSpace(c.Bundle.TLS.CertFile) == "" {
+		return fmt.Errorf(
+			"invalid config: field %q is required when bundle.tls.mode is %q",
+			"bundle.tls.cert_file",
+			c.Bundle.TLS.Mode,
+		)
+	}
+	if strings.TrimSpace(c.Bundle.TLS.KeyFile) == "" {
+		return fmt.Errorf(
+			"invalid config: field %q is required when bundle.tls.mode is %q",
+			"bundle.tls.key_file",
+			c.Bundle.TLS.Mode,
+		)
+	}
+	if c.Runtime.Mode == RuntimeModeControlPlane {
+		return c.validateAuthorizedClients()
+	}
+	return nil
+}
+
+func (c *Config) validateAuthorizedClients() error {
+	if len(c.Bundle.TLS.AuthorizedClients) == 0 {
+		return fmt.Errorf(
+			"invalid config: field %q is required when runtime.mode is %q and bundle.tls.mode is %q",
+			"bundle.tls.authorized_clients",
+			c.Runtime.Mode,
+			c.Bundle.TLS.Mode,
+		)
+	}
+	for i, client := range c.Bundle.TLS.AuthorizedClients {
+		if strings.TrimSpace(client.Identity) == "" {
+			return fmt.Errorf(
+				"invalid config: field %q is required",
+				fmt.Sprintf("bundle.tls.authorized_clients[%d].identity", i),
+			)
 		}
-	}
-	if c.Telemetry.Enabled {
-		endpoint := strings.TrimSpace(c.Telemetry.Endpoint)
-		if endpoint == "" && !c.Telemetry.Stdout {
-			return fmt.Errorf("invalid config: either %q must be set or %q must be true when telemetry is enabled", "telemetry.endpoint", "telemetry.stdout")
+		if len(client.TenantIDs) == 0 {
+			return fmt.Errorf(
+				"invalid config: field %q must include at least one tenant id",
+				fmt.Sprintf("bundle.tls.authorized_clients[%d].tenant_ids", i),
+			)
 		}
-		if endpoint != "" {
-			parsed, err := url.Parse(endpoint)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-				return fmt.Errorf("invalid config: field %q must be a valid absolute URL without query or fragment", "telemetry.endpoint")
+		for j, tenantID := range client.TenantIDs {
+			if strings.TrimSpace(tenantID) == "" {
+				return fmt.Errorf(
+					"invalid config: field %q must not be blank",
+					fmt.Sprintf("bundle.tls.authorized_clients[%d].tenant_ids[%d]", i, j),
+				)
 			}
 		}
 	}
-	if key := strings.TrimSpace(c.Secrets.UpstreamAuthKey); key != "" {
-		decoded, err := base64.StdEncoding.DecodeString(key)
-		if err != nil || len(decoded) != 32 {
-			return fmt.Errorf("invalid config: field %q must be a base64 encoded 32-byte key", "secrets.upstream_auth_key")
-		}
+	return nil
+}
+
+func (c *Config) validateControlPlaneBundle() error {
+	if c.Runtime.Mode != RuntimeModeControlPlane {
+		return nil
 	}
-	if strings.EqualFold(c.Bundle.TLS.Mode, "mtls") {
-		if strings.TrimSpace(c.Bundle.TLS.CAFile) == "" {
-			return fmt.Errorf("invalid config: field %q is required when bundle.tls.mode is %q", "bundle.tls.ca_file", c.Bundle.TLS.Mode)
-		}
-		if strings.TrimSpace(c.Bundle.TLS.CertFile) == "" {
-			return fmt.Errorf("invalid config: field %q is required when bundle.tls.mode is %q", "bundle.tls.cert_file", c.Bundle.TLS.Mode)
-		}
-		if strings.TrimSpace(c.Bundle.TLS.KeyFile) == "" {
-			return fmt.Errorf("invalid config: field %q is required when bundle.tls.mode is %q", "bundle.tls.key_file", c.Bundle.TLS.Mode)
-		}
-		if c.Runtime.Mode == RuntimeModeControlPlane {
-			if len(c.Bundle.TLS.AuthorizedClients) == 0 {
-				return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q and bundle.tls.mode is %q", "bundle.tls.authorized_clients", c.Runtime.Mode, c.Bundle.TLS.Mode)
-			}
-			for i, client := range c.Bundle.TLS.AuthorizedClients {
-				if strings.TrimSpace(client.Identity) == "" {
-					return fmt.Errorf("invalid config: field %q is required", fmt.Sprintf("bundle.tls.authorized_clients[%d].identity", i))
-				}
-				if len(client.TenantIDs) == 0 {
-					return fmt.Errorf("invalid config: field %q must include at least one tenant id", fmt.Sprintf("bundle.tls.authorized_clients[%d].tenant_ids", i))
-				}
-				for j, tenantID := range client.TenantIDs {
-					if strings.TrimSpace(tenantID) == "" {
-						return fmt.Errorf("invalid config: field %q must not be blank", fmt.Sprintf("bundle.tls.authorized_clients[%d].tenant_ids[%d]", i, j))
-					}
-				}
-			}
-		}
+	if strings.TrimSpace(c.Bundle.ListenAddr) == "" {
+		return fmt.Errorf(
+			"invalid config: field %q is required when runtime.mode is %q",
+			"bundle.listen_addr",
+			c.Runtime.Mode,
+		)
 	}
-	switch c.Runtime.Mode {
-	case RuntimeModeControlPlane:
-		if strings.TrimSpace(c.Bundle.ListenAddr) == "" {
-			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.listen_addr", c.Runtime.Mode)
-		}
-		if c.Bundle.TLS.Mode != "mtls" && !c.Bundle.TLS.AllowInsecureControlPlane {
-			return fmt.Errorf("invalid config: field %q must be %q when runtime.mode is %q unless %q is true", "bundle.tls.mode", "mtls", c.Runtime.Mode, "bundle.tls.allow_insecure_control_plane")
-		}
+	if c.Bundle.TLS.Mode != "mtls" && !c.Bundle.TLS.AllowInsecureControlPlane {
+		return fmt.Errorf(
+			"invalid config: field %q must be %q when runtime.mode is %q unless %q is true",
+			"bundle.tls.mode",
+			"mtls",
+			c.Runtime.Mode,
+			"bundle.tls.allow_insecure_control_plane",
+		)
 	}
+	return nil
+}
+
+func (c *Config) validateBundleClient() error {
 	switch c.Runtime.Mode {
 	case RuntimeModeAllInOne, RuntimeModeProxy, RuntimeModeDependencyGraphWorker:
 		if strings.TrimSpace(c.Bundle.ControlPlaneAddr) == "" {
-			return fmt.Errorf("invalid config: field %q is required when runtime.mode is %q", "bundle.control_plane_addr", c.Runtime.Mode)
+			return fmt.Errorf(
+				"invalid config: field %q is required when runtime.mode is %q",
+				"bundle.control_plane_addr",
+				c.Runtime.Mode,
+			)
 		}
-		if (c.Runtime.Mode == RuntimeModeProxy || c.Runtime.Mode == RuntimeModeDependencyGraphWorker) && c.Bundle.TLS.Mode != "mtls" {
-			return fmt.Errorf("invalid config: field %q must be %q when runtime.mode is %q", "bundle.tls.mode", "mtls", c.Runtime.Mode)
+		if (c.Runtime.Mode == RuntimeModeProxy || c.Runtime.Mode == RuntimeModeDependencyGraphWorker) &&
+			c.Bundle.TLS.Mode != "mtls" {
+			return fmt.Errorf(
+				"invalid config: field %q must be %q when runtime.mode is %q",
+				"bundle.tls.mode",
+				"mtls",
+				c.Runtime.Mode,
+			)
 		}
 	}
-
 	return nil
 }

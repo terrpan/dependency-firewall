@@ -26,7 +26,10 @@ func NewCompositeEnricher(logger *slog.Logger, enrichers ...port.Enricher) *Comp
 // Enrich runs all enrichers and merges their metadata results.
 // If an enricher fails, it logs the error and continues with the next enricher (fail-soft).
 // Returns merged metadata from all successful enrichers.
-func (c *CompositeEnricher) Enrich(ctx context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (c *CompositeEnricher) Enrich(
+	ctx context.Context,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	c.logger.InfoContext(ctx, "composite enricher called",
 		"artifact", artifact.CacheKey(),
 		"enricher_count", len(c.enrichers),

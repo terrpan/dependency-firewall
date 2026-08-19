@@ -56,81 +56,116 @@ type dependencies struct {
 	npmClient         port.UpstreamClient
 }
 
-func openDependencies(ctx context.Context, cfg *config.Config, logger *slog.Logger, openDatabase, runMigrations bool) (*dependencies, error) {
+func openDependencies(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	openDatabase, runMigrations bool,
+) (*dependencies, error) {
 	if openDatabase && runMigrations {
 		if err := migrateDatabase(cfg); err != nil {
 			return nil, err
 		}
 	}
 
-	var (
-		err  error
-		pool *pgxpool.Pool
-	)
+	pool, valkeyClient, err := openBackingStores(ctx, cfg, openDatabase)
+	if err != nil {
+		return nil, err
+	}
+	deps := newCacheDependencies(pool, valkeyClient)
+	if err := deps.installDatabaseRepositories(cfg); err != nil {
+		deps.close()
+		return nil, err
+	}
+
+	deps.installEnricher(logger)
+	if err := deps.installUpstreamClients(cfg, logger); err != nil {
+		deps.close()
+		return nil, err
+	}
+	return deps, nil
+}
+
+func openBackingStores(
+	ctx context.Context,
+	cfg *config.Config,
+	openDatabase bool,
+) (*pgxpool.Pool, valkeygo.Client, error) {
+	var pool *pgxpool.Pool
 	if openDatabase {
+		var err error
 		pool, err = postgres.Connect(ctx, cfg.Database, cfg.Telemetry.SQLTracing)
 		if err != nil {
-			return nil, fmt.Errorf("connecting to database: %w", err)
+			return nil, nil, fmt.Errorf("connecting to database: %w", err)
 		}
 	}
+
 	valkeyClient, err := valkeyinfra.Connect(ctx, cfg.Valkey)
 	if err != nil {
 		if pool != nil {
 			pool.Close()
 		}
-		return nil, fmt.Errorf("connecting to valkey: %w", err)
+		return nil, nil, fmt.Errorf("connecting to valkey: %w", err)
 	}
+	return pool, valkeyClient, nil
+}
 
-	deps := &dependencies{
+func newCacheDependencies(pool *pgxpool.Pool, valkeyClient valkeygo.Client) *dependencies {
+	return &dependencies{
 		pool:                   pool,
 		valkeyClient:           valkeyClient,
 		decisionCache:          valkeyinfra.NewDecisionCache(valkeyClient),
 		metadataCache:          valkeyinfra.NewMetadataCache(valkeyClient),
 		dependencyContextCache: valkeyinfra.NewDependencyContextCache(valkeyClient),
 	}
-	if pool != nil {
-		secretCodec, err := upstreamSecretCodec(cfg)
-		if err != nil {
-			deps.close()
-			return nil, err
-		}
-		deps.tenantRepo = postgres.NewTenantRepository(pool)
-		deps.policyRepo = postgres.NewPolicyRepository(pool)
-		deps.policyRevisionRepo = postgres.NewPolicyRevisionRepository(pool)
-		deps.decisionRepo = postgres.NewDecisionRepository(pool)
-		deps.dependencyGraphRepo = postgres.NewDependencyGraphRepository(pool)
-		deps.dependencyGraphQueue = deps.dependencyGraphRepo
-		deps.dependencyGraphContexts = deps.dependencyGraphRepo
-		deps.auditRepo = postgres.NewAuditEventRepository(pool)
-		upstreamRepo := postgres.NewUpstreamRepository(pool, secretCodec)
-		deps.upstreamRepo = upstreamRepo
-		deps.bundleUpstreamRepo = upstreamRepo
-		deps.authSecretRewrapper = upstreamRepo
-	}
+}
 
+func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
+	if d.pool == nil {
+		return nil
+	}
+	secretCodec, err := upstreamSecretCodec(cfg)
+	if err != nil {
+		return err
+	}
+	d.tenantRepo = postgres.NewTenantRepository(d.pool)
+	d.policyRepo = postgres.NewPolicyRepository(d.pool)
+	d.policyRevisionRepo = postgres.NewPolicyRevisionRepository(d.pool)
+	d.decisionRepo = postgres.NewDecisionRepository(d.pool)
+	d.dependencyGraphRepo = postgres.NewDependencyGraphRepository(d.pool)
+	d.dependencyGraphQueue = d.dependencyGraphRepo
+	d.dependencyGraphContexts = d.dependencyGraphRepo
+	d.auditRepo = postgres.NewAuditEventRepository(d.pool)
+	upstreamRepo := postgres.NewUpstreamRepository(d.pool, secretCodec)
+	d.upstreamRepo = upstreamRepo
+	d.bundleUpstreamRepo = upstreamRepo
+	d.authSecretRewrapper = upstreamRepo
+	return nil
+}
+
+func (d *dependencies) installEnricher(logger *slog.Logger) {
 	osvEnricher := osv.NewClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger)
 	scorecardClient := scorecard.NewClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger)
 	npmEnricher := npm.NewMetadataEnricher(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), logger, scorecardClient)
-	deps.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
+	d.enricher = enrichment.NewCompositeEnricher(logger, osvEnricher, npmEnricher)
+}
 
+func (d *dependencies) installUpstreamClients(cfg *config.Config, logger *slog.Logger) error {
 	ociOptions, err := ociClientOptions(cfg)
 	if err != nil {
-		deps.close()
-		return nil, err
+		return err
 	}
 	baseOCIClient := upstream.NewOCIClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(0)), ociOptions...)
-	deps.ociClient = baseOCIClient
+	d.ociClient = baseOCIClient
 	if cfg.OCICache.Enabled {
 		artifactCache, err := newOCIArtifactCache(cfg.OCICache)
 		if err != nil {
-			deps.close()
-			return nil, fmt.Errorf("creating OCI cache: %w", err)
+			return fmt.Errorf("creating OCI cache: %w", err)
 		}
-		deps.ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
+		d.ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
 	}
-	deps.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(30 * time.Second)))
-
-	return deps, nil
+	d.npmClient = upstream.NewNPMClient(telemetry.WrapHTTPClient(newOutboundHTTPClient(30 * time.Second)))
+	return nil
 }
 
 func ociClientOptions(cfg *config.Config) ([]upstream.OCIClientOption, error) {

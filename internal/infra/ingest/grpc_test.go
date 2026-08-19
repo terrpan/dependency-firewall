@@ -27,7 +27,11 @@ func (r *grpcDecisionRepository) Record(_ context.Context, decision *domain.Deci
 	return nil
 }
 
-func (r *grpcDecisionRepository) GetByArtifact(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (r *grpcDecisionRepository) GetByArtifact(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	if r.decision.TenantID != tenantID || r.decision.Artifact.Name != artifact.Name {
 		return nil, domain.ErrArtifactNotFound
 	}
@@ -39,8 +43,16 @@ func (r *grpcDecisionRepository) ListByTenant(context.Context, string, int, int,
 	return []domain.Decision{r.decision}, nil
 }
 
-func (r *grpcDecisionRepository) HasRecentAllow(_ context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
-	return r.decision.TenantID == tenantID && r.decision.Artifact.Ecosystem == ecosystem && r.decision.Artifact.Namespace == namespace && r.decision.Artifact.Name == name && r.decision.Outcome == domain.DecisionAllow, nil
+func (r *grpcDecisionRepository) HasRecentAllow(
+	_ context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
+	return r.decision.TenantID == tenantID && r.decision.Artifact.Ecosystem == ecosystem &&
+		r.decision.Artifact.Namespace == namespace &&
+		r.decision.Artifact.Name == name &&
+		r.decision.Outcome == domain.DecisionAllow, nil
 }
 
 type grpcAuditRecorder struct {
@@ -87,9 +99,14 @@ func TestGRPCClient_DecisionRepositoryAndAuditRecorder(t *testing.T) {
 
 	decision := &domain.Decision{
 		TenantID: "tenant-1",
-		Artifact: domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Digest: "sha256:abc"},
-		Outcome:  domain.DecisionAllow,
-		Reason:   "ok",
+		Artifact: domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemOCI,
+			Namespace: "acme",
+			Name:      "app",
+			Digest:    "sha256:abc",
+		},
+		Outcome: domain.DecisionAllow,
+		Reason:  "ok",
 		Reasons: []domain.EvaluationReason{{
 			PolicyID:   "policy-1",
 			PolicyName: "allow app",
@@ -160,7 +177,11 @@ func TestGRPCClient_MapsArtifactNotFound(t *testing.T) {
 	defer conn.Close()
 
 	client := &GRPCClient{conn: conn}
-	_, err = client.GetDecisionByArtifact(context.Background(), "tenant-1", domain.ArtifactIdentity{Ecosystem: domain.EcosystemNPM, Name: "missing"})
+	_, err = client.GetDecisionByArtifact(
+		context.Background(),
+		"tenant-1",
+		domain.ArtifactIdentity{Ecosystem: domain.EcosystemNPM, Name: "missing"},
+	)
 	require.ErrorIs(t, err, domain.ErrArtifactNotFound)
 }
 
@@ -169,7 +190,11 @@ type testIngestServer struct {
 	auditRecorder *grpcAuditRecorder
 }
 
-func registerTestIngestServer(registrar grpc.ServiceRegistrar, decisionRepo *grpcDecisionRepository, auditRecorder *grpcAuditRecorder) {
+func registerTestIngestServer(
+	registrar grpc.ServiceRegistrar,
+	decisionRepo *grpcDecisionRepository,
+	auditRecorder *grpcAuditRecorder,
+) {
 	server := &testIngestServer{
 		decisionRepo:  decisionRepo,
 		auditRecorder: auditRecorder,
@@ -189,13 +214,22 @@ func registerTestIngestServer(registrar grpc.ServiceRegistrar, decisionRepo *grp
 
 type testIngestGRPCService interface {
 	RecordDecision(context.Context, *ingestwire.RecordDecisionRequest) (*ingestwire.RecordDecisionResponse, error)
-	GetDecisionByArtifact(context.Context, *ingestwire.GetDecisionByArtifactRequest) (*ingestwire.GetDecisionByArtifactResponse, error)
-	ListDecisionsByTenant(context.Context, *ingestwire.ListDecisionsByTenantRequest) (*ingestwire.ListDecisionsByTenantResponse, error)
+	GetDecisionByArtifact(
+		context.Context,
+		*ingestwire.GetDecisionByArtifactRequest,
+	) (*ingestwire.GetDecisionByArtifactResponse, error)
+	ListDecisionsByTenant(
+		context.Context,
+		*ingestwire.ListDecisionsByTenantRequest,
+	) (*ingestwire.ListDecisionsByTenantResponse, error)
 	HasRecentAllow(context.Context, *ingestwire.HasRecentAllowRequest) (*ingestwire.HasRecentAllowResponse, error)
 	RecordAuditEvent(context.Context, *ingestwire.RecordAuditEventRequest) (*ingestwire.RecordAuditEventResponse, error)
 }
 
-func (s *testIngestServer) RecordDecision(ctx context.Context, req *ingestwire.RecordDecisionRequest) (*ingestwire.RecordDecisionResponse, error) {
+func (s *testIngestServer) RecordDecision(
+	ctx context.Context,
+	req *ingestwire.RecordDecisionRequest,
+) (*ingestwire.RecordDecisionResponse, error) {
 	decision, err := req.Decision.ToDomain()
 	if err != nil {
 		return nil, err
@@ -206,7 +240,10 @@ func (s *testIngestServer) RecordDecision(ctx context.Context, req *ingestwire.R
 	return &ingestwire.RecordDecisionResponse{Decision: ingestwire.FromDomainDecision(decision)}, nil
 }
 
-func (s *testIngestServer) GetDecisionByArtifact(ctx context.Context, req *ingestwire.GetDecisionByArtifactRequest) (*ingestwire.GetDecisionByArtifactResponse, error) {
+func (s *testIngestServer) GetDecisionByArtifact(
+	ctx context.Context,
+	req *ingestwire.GetDecisionByArtifactRequest,
+) (*ingestwire.GetDecisionByArtifactResponse, error) {
 	decision, err := s.decisionRepo.GetByArtifact(ctx, req.TenantID, req.Artifact.ToDomain())
 	if err != nil {
 		return nil, ingestwire.ToStatusError(err)
@@ -214,7 +251,10 @@ func (s *testIngestServer) GetDecisionByArtifact(ctx context.Context, req *inges
 	return &ingestwire.GetDecisionByArtifactResponse{Decision: ingestwire.FromDomainDecision(decision)}, nil
 }
 
-func (s *testIngestServer) ListDecisionsByTenant(ctx context.Context, req *ingestwire.ListDecisionsByTenantRequest) (*ingestwire.ListDecisionsByTenantResponse, error) {
+func (s *testIngestServer) ListDecisionsByTenant(
+	ctx context.Context,
+	req *ingestwire.ListDecisionsByTenantRequest,
+) (*ingestwire.ListDecisionsByTenantResponse, error) {
 	decisions, err := s.decisionRepo.ListByTenant(ctx, req.TenantID, req.Limit, req.Offset, req.Search)
 	if err != nil {
 		return nil, ingestwire.ToStatusError(err)
@@ -226,7 +266,10 @@ func (s *testIngestServer) ListDecisionsByTenant(ctx context.Context, req *inges
 	return response, nil
 }
 
-func (s *testIngestServer) HasRecentAllow(ctx context.Context, req *ingestwire.HasRecentAllowRequest) (*ingestwire.HasRecentAllowResponse, error) {
+func (s *testIngestServer) HasRecentAllow(
+	ctx context.Context,
+	req *ingestwire.HasRecentAllowRequest,
+) (*ingestwire.HasRecentAllowResponse, error) {
 	allowed, err := s.decisionRepo.HasRecentAllow(ctx, req.TenantID, req.Ecosystem, req.Namespace, req.Name)
 	if err != nil {
 		return nil, ingestwire.ToStatusError(err)
@@ -234,7 +277,10 @@ func (s *testIngestServer) HasRecentAllow(ctx context.Context, req *ingestwire.H
 	return &ingestwire.HasRecentAllowResponse{Allowed: allowed}, nil
 }
 
-func (s *testIngestServer) RecordAuditEvent(ctx context.Context, req *ingestwire.RecordAuditEventRequest) (*ingestwire.RecordAuditEventResponse, error) {
+func (s *testIngestServer) RecordAuditEvent(
+	ctx context.Context,
+	req *ingestwire.RecordAuditEventRequest,
+) (*ingestwire.RecordAuditEventResponse, error) {
 	event, err := req.Event.ToDomain()
 	if err != nil {
 		return nil, err
@@ -245,7 +291,12 @@ func (s *testIngestServer) RecordAuditEvent(ctx context.Context, req *ingestwire
 	return &ingestwire.RecordAuditEventResponse{Event: ingestwire.FromDomainAuditEvent(event)}, nil
 }
 
-func testRecordDecisionHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func testRecordDecisionHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ingestwire.RecordDecisionRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -259,7 +310,12 @@ func testRecordDecisionHandler(srv any, ctx context.Context, dec func(any) error
 	})
 }
 
-func testGetDecisionByArtifactHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func testGetDecisionByArtifactHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ingestwire.GetDecisionByArtifactRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -273,7 +329,12 @@ func testGetDecisionByArtifactHandler(srv any, ctx context.Context, dec func(any
 	})
 }
 
-func testListDecisionsByTenantHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func testListDecisionsByTenantHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ingestwire.ListDecisionsByTenantRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -287,7 +348,12 @@ func testListDecisionsByTenantHandler(srv any, ctx context.Context, dec func(any
 	})
 }
 
-func testHasRecentAllowHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func testHasRecentAllowHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ingestwire.HasRecentAllowRequest{}
 	if err := dec(req); err != nil {
 		return nil, err
@@ -301,7 +367,12 @@ func testHasRecentAllowHandler(srv any, ctx context.Context, dec func(any) error
 	})
 }
 
-func testRecordAuditEventHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+func testRecordAuditEventHandler(
+	srv any,
+	ctx context.Context,
+	dec func(any) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (any, error) {
 	req := &ingestwire.RecordAuditEventRequest{}
 	if err := dec(req); err != nil {
 		return nil, err

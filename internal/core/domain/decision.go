@@ -5,6 +5,8 @@ import "time"
 // DecisionOutcome is the result of policy evaluation.
 type DecisionOutcome string
 
+// Evaluation is deny-wins: any matching deny policy produces DecisionDeny, an allow match never overrides it, and an
+// artifact that matches no applicable policy defaults to DecisionAllow.
 const (
 	DecisionAllow DecisionOutcome = "allow"
 	DecisionDeny  DecisionOutcome = "deny"
@@ -13,6 +15,9 @@ const (
 // ReasonCategory classifies why a decision was made.
 type ReasonCategory string
 
+// Reason categories distinguish an enforced policy match from a non-enforcing warning (dry-run or unknown dependency
+// context), the default allow when nothing matched, enrichment that could not be obtained, a decision replayed from
+// cache, and a fail-closed error raised while loading or evaluating policies.
 const (
 	ReasonPolicyMatch             ReasonCategory = "policy_match"
 	ReasonPolicyWarning           ReasonCategory = "policy_warning"

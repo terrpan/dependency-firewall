@@ -9,14 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
-	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
+	"github.com/danielterry/dependency-firewall/internal/core/policy"
 )
 
 type staticMetadataCache struct {
@@ -27,7 +28,13 @@ func (s staticMetadataCache) Get(context.Context, string, domain.ArtifactIdentit
 	return nil, s.getErr
 }
 
-func (s staticMetadataCache) Set(context.Context, string, domain.ArtifactIdentity, *domain.ArtifactMetadata, time.Duration) error {
+func (s staticMetadataCache) Set(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+	*domain.ArtifactMetadata,
+	time.Duration,
+) error {
 	return nil
 }
 

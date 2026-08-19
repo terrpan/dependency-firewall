@@ -20,7 +20,11 @@ type DependencyGraphRepository struct {
 }
 
 // ListRoots returns the most recently updated graph roots for a tenant.
-func (r *DependencyGraphRepository) ListRoots(ctx context.Context, tenantID string, limit int) ([]domain.DependencyGraphRoot, error) {
+func (r *DependencyGraphRepository) ListRoots(
+	ctx context.Context,
+	tenantID string,
+	limit int,
+) ([]domain.DependencyGraphRoot, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
@@ -39,8 +43,19 @@ func (r *DependencyGraphRepository) ListRoots(ctx context.Context, tenantID stri
 	var roots []domain.DependencyGraphRoot
 	for rows.Next() {
 		var root domain.DependencyGraphRoot
-		if err := rows.Scan(&root.ID, &root.TenantID, &root.UpstreamID, &root.PackageName, &root.Version,
-			&root.Status, &root.GraphHash, &root.Error, &root.CreatedAt, &root.UpdatedAt, &root.ResolvedAt); err != nil {
+		if err := rows.Scan(
+			&root.ID,
+			&root.TenantID,
+			&root.UpstreamID,
+			&root.PackageName,
+			&root.Version,
+			&root.Status,
+			&root.GraphHash,
+			&root.Error,
+			&root.CreatedAt,
+			&root.UpdatedAt,
+			&root.ResolvedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning dependency graph root: %w", err)
 		}
 		roots = append(roots, root)
@@ -52,7 +67,10 @@ func (r *DependencyGraphRepository) ListRoots(ctx context.Context, tenantID stri
 }
 
 // GetSnapshot returns one tenant-owned graph root and its resolved nodes and edges.
-func (r *DependencyGraphRepository) GetSnapshot(ctx context.Context, tenantID, rootID string) (*domain.DependencyGraphSnapshot, error) {
+func (r *DependencyGraphRepository) GetSnapshot(
+	ctx context.Context,
+	tenantID, rootID string,
+) (*domain.DependencyGraphSnapshot, error) {
 	var snapshot domain.DependencyGraphSnapshot
 	if err := r.pool.QueryRow(ctx,
 		`SELECT id, tenant_id, upstream_id, package_name, version, status, COALESCE(graph_hash, ''),
@@ -107,7 +125,13 @@ func (r *DependencyGraphRepository) GetSnapshot(ctx context.Context, tenantID, r
 	for edgeRows.Next() {
 		var edge domain.DependencyGraphEdge
 		var dependencyType string
-		if err := edgeRows.Scan(&edge.ID, &edge.RootID, &edge.ParentNodeID, &edge.ChildNodeID, &dependencyType); err != nil {
+		if err := edgeRows.Scan(
+			&edge.ID,
+			&edge.RootID,
+			&edge.ParentNodeID,
+			&edge.ChildNodeID,
+			&dependencyType,
+		); err != nil {
 			return nil, fmt.Errorf("scanning dependency graph edge: %w", err)
 		}
 		edge.DependencyType = domain.DependencyType(dependencyType)
@@ -126,7 +150,10 @@ func NewDependencyGraphRepository(pool *pgxpool.Pool) *DependencyGraphRepository
 }
 
 // EnqueueResolve inserts one idempotent async graph resolve request.
-func (r *DependencyGraphRepository) EnqueueResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (r *DependencyGraphRepository) EnqueueResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	rootPackage := req.Root.FullName()
 	if rootPackage == "" || req.Root.Version == "" {
 		return false, fmt.Errorf("enqueueing dependency graph resolve: root package and version are required")
@@ -144,7 +171,11 @@ func (r *DependencyGraphRepository) EnqueueResolve(ctx context.Context, req doma
 }
 
 // ClaimNextResolveJob claims one pending or retryable failed job.
-func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (r *DependencyGraphRepository) ClaimNextResolveJob(
+	ctx context.Context,
+	tenantID string,
+	now time.Time,
+) (*domain.DependencyGraphResolveRequest, error) {
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
 		return nil, fmt.Errorf("claiming dependency graph resolve: tenant_id is required")
@@ -157,7 +188,7 @@ func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, ten
 	if err != nil {
 		return nil, fmt.Errorf("beginning dependency graph claim: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	var claimedTenantID, upstreamID, packageName, version, baseURL string
 	err = tx.QueryRow(ctx,
@@ -211,32 +242,67 @@ func (r *DependencyGraphRepository) ClaimNextResolveJob(ctx context.Context, ten
 }
 
 // CompleteResolve transactionally replaces the graph and context summaries for one root.
-func (r *DependencyGraphRepository) CompleteResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error {
+func (r *DependencyGraphRepository) CompleteResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+	nodes []domain.DependencyGraphNode,
+	edges []domain.DependencyGraphEdge,
+	graphHash string,
+) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning dependency graph completion: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
 	rootID, err := dependencyGraphRootID(ctx, tx, req)
 	if err != nil {
 		return err
 	}
+	if err := clearDependencyGraph(ctx, tx, rootID); err != nil {
+		return err
+	}
+	nodeIDs, err := insertDependencyGraphNodes(ctx, tx, req, rootID, nodes)
+	if err != nil {
+		return err
+	}
+	if err := insertDependencyGraphEdges(ctx, tx, rootID, nodeIDs, edges); err != nil {
+		return err
+	}
+	if err := markDependencyGraphComplete(ctx, tx, rootID, graphHash); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing dependency graph completion: %w", err)
+	}
+	return nil
+}
 
+func clearDependencyGraph(ctx context.Context, tx pgx.Tx, rootID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM dependency_context_summaries WHERE root_id = $1`, rootID); err != nil {
 		return fmt.Errorf("clearing dependency context summaries: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM dependency_graph_nodes WHERE root_id = $1`, rootID); err != nil {
 		return fmt.Errorf("clearing dependency graph nodes: %w", err)
 	}
+	return nil
+}
 
+func insertDependencyGraphNodes(
+	ctx context.Context,
+	tx pgx.Tx,
+	req domain.DependencyGraphResolveRequest,
+	rootID string,
+	nodes []domain.DependencyGraphNode,
+) (map[string]string, error) {
 	nodeIDs := make(map[string]string, len(nodes))
 	for i := range nodes {
 		node := nodes[i]
 		node.RootID = rootID
 		depTypes := dependencyTypeStrings(node.DependencyTypes)
 		var nodeID string
-		err := tx.QueryRow(ctx,
+		err := tx.QueryRow(
+			ctx,
 			`INSERT INTO dependency_graph_nodes (root_id, ecosystem, namespace, name, version, digest, min_depth, dependency_types)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			 RETURNING id`,
@@ -250,7 +316,7 @@ func (r *DependencyGraphRepository) CompleteResolve(ctx context.Context, req dom
 			depTypes,
 		).Scan(&nodeID)
 		if err != nil {
-			return fmt.Errorf("inserting dependency graph node: %w", err)
+			return nil, fmt.Errorf("inserting dependency graph node: %w", err)
 		}
 		key := node.ID
 		if key == "" {
@@ -260,10 +326,19 @@ func (r *DependencyGraphRepository) CompleteResolve(ctx context.Context, req dom
 
 		dependencyContext := dependencyContextForNode(rootID, node).Normalize()
 		if err := insertDependencyContextSummary(ctx, tx, req, rootID, node.Artifact, dependencyContext); err != nil {
-			return err
+			return nil, err
 		}
 	}
+	return nodeIDs, nil
+}
 
+func insertDependencyGraphEdges(
+	ctx context.Context,
+	tx pgx.Tx,
+	rootID string,
+	nodeIDs map[string]string,
+	edges []domain.DependencyGraphEdge,
+) error {
 	for i := range edges {
 		edge := edges[i]
 		parentID, ok := nodeIDs[edge.ParentNodeID]
@@ -283,7 +358,10 @@ func (r *DependencyGraphRepository) CompleteResolve(ctx context.Context, req dom
 			return fmt.Errorf("inserting dependency graph edge: %w", err)
 		}
 	}
+	return nil
+}
 
+func markDependencyGraphComplete(ctx context.Context, tx pgx.Tx, rootID, graphHash string) error {
 	if _, err := tx.Exec(ctx,
 		`UPDATE dependency_graph_roots
 		 SET status = 'complete', graph_hash = $1, error = NULL, updated_at = now(), resolved_at = now()
@@ -292,15 +370,16 @@ func (r *DependencyGraphRepository) CompleteResolve(ctx context.Context, req dom
 	); err != nil {
 		return fmt.Errorf("marking dependency graph complete: %w", err)
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing dependency graph completion: %w", err)
-	}
 	return nil
 }
 
 // FailResolve records a resolver failure and retry window.
-func (r *DependencyGraphRepository) FailResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error {
+func (r *DependencyGraphRepository) FailResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+	message string,
+	retryAfter time.Time,
+) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE dependency_graph_roots
 		 SET status = 'failed', error = $1, updated_at = $2
@@ -319,7 +398,10 @@ func (r *DependencyGraphRepository) FailResolve(ctx context.Context, req domain.
 }
 
 // LookupContext returns graph context for an artifact, classifying conflicting evidence as unknown.
-func (r *DependencyGraphRepository) LookupContext(ctx context.Context, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (r *DependencyGraphRepository) LookupContext(
+	ctx context.Context,
+	key domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT context
 		 FROM dependency_context_summaries
@@ -381,12 +463,20 @@ func dependencyGraphRootID(ctx context.Context, tx pgx.Tx, req domain.Dependency
 	return rootID, nil
 }
 
-func insertDependencyContextSummary(ctx context.Context, tx pgx.Tx, req domain.DependencyGraphResolveRequest, rootID string, artifact domain.ArtifactIdentity, dependencyContext domain.DependencyContext) error {
+func insertDependencyContextSummary(
+	ctx context.Context,
+	tx pgx.Tx,
+	req domain.DependencyGraphResolveRequest,
+	rootID string,
+	artifact domain.ArtifactIdentity,
+	dependencyContext domain.DependencyContext,
+) error {
 	data, err := json.Marshal(dependencyContext.Normalize())
 	if err != nil {
 		return fmt.Errorf("marshalling dependency context summary: %w", err)
 	}
-	if _, err := tx.Exec(ctx,
+	if _, err := tx.Exec(
+		ctx,
 		`INSERT INTO dependency_context_summaries (root_id, tenant_id, upstream_id, ecosystem, namespace, name, version, digest, context)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		rootID,

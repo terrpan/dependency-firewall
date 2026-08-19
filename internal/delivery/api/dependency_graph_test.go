@@ -25,10 +25,39 @@ func TestToDependencyGraphResponse(t *testing.T) {
 			ResolvedAt:  &resolvedAt,
 		},
 		Nodes: []domain.DependencyGraphNode{
-			{ID: "node-root", RootID: "root-1", Artifact: domain.ArtifactIdentity{Ecosystem: domain.EcosystemNPM, Namespace: "acme", Name: "app", Version: "1.2.3"}, MinDepth: 0, DependencyTypes: []domain.DependencyType{domain.DependencyTypeProd}},
-			{ID: "node-child", RootID: "root-1", Artifact: domain.ArtifactIdentity{Ecosystem: domain.EcosystemNPM, Name: "kleur", Version: "4.1.5"}, MinDepth: 1, DependencyTypes: []domain.DependencyType{domain.DependencyTypeOptional}},
+			{
+				ID:     "node-root",
+				RootID: "root-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Namespace: "acme",
+					Name:      "app",
+					Version:   "1.2.3",
+				},
+				MinDepth:        0,
+				DependencyTypes: []domain.DependencyType{domain.DependencyTypeProd},
+			},
+			{
+				ID:     "node-child",
+				RootID: "root-1",
+				Artifact: domain.ArtifactIdentity{
+					Ecosystem: domain.EcosystemNPM,
+					Name:      "kleur",
+					Version:   "4.1.5",
+				},
+				MinDepth:        1,
+				DependencyTypes: []domain.DependencyType{domain.DependencyTypeOptional},
+			},
 		},
-		Edges: []domain.DependencyGraphEdge{{ID: "edge-1", RootID: "root-1", ParentNodeID: "node-root", ChildNodeID: "node-child", DependencyType: domain.DependencyTypeOptional}},
+		Edges: []domain.DependencyGraphEdge{
+			{
+				ID:             "edge-1",
+				RootID:         "root-1",
+				ParentNodeID:   "node-root",
+				ChildNodeID:    "node-child",
+				DependencyType: domain.DependencyTypeOptional,
+			},
+		},
 	}
 
 	response := toDependencyGraphResponse(snapshot)
@@ -43,7 +72,9 @@ func TestToDependencyGraphResponse(t *testing.T) {
 }
 
 func TestToDependencyGraphRootResponseOmitsUnresolvedTimestamp(t *testing.T) {
-	response := toDependencyGraphRootResponse(domain.DependencyGraphRoot{ID: "root-1", Status: domain.DependencyGraphPending})
+	response := toDependencyGraphRootResponse(
+		domain.DependencyGraphRoot{ID: "root-1", Status: domain.DependencyGraphPending},
+	)
 
 	assert.Nil(t, response.ResolvedAt)
 	assert.Equal(t, "pending", response.Status)

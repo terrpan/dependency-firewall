@@ -26,7 +26,10 @@ func dependencyContextKey(key domain.DependencyContextSummaryKey) string {
 }
 
 // Get retrieves a cached dependency context. Returns domain.ErrCacheMiss if not found.
-func (c *DependencyContextCache) Get(ctx context.Context, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (c *DependencyContextCache) Get(
+	ctx context.Context,
+	key domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	data, err := c.client.Do(ctx, c.client.B().Get().Key(dependencyContextKey(key)).Build()).AsBytes()
 	if err != nil {
 		if valkeygo.IsValkeyNil(err) {
@@ -44,7 +47,12 @@ func (c *DependencyContextCache) Get(ctx context.Context, key domain.DependencyC
 }
 
 // Set stores a dependency context in the cache with the given TTL.
-func (c *DependencyContextCache) Set(ctx context.Context, key domain.DependencyContextSummaryKey, dependencyContext domain.DependencyContext, ttl time.Duration) error {
+func (c *DependencyContextCache) Set(
+	ctx context.Context,
+	key domain.DependencyContextSummaryKey,
+	dependencyContext domain.DependencyContext,
+	ttl time.Duration,
+) error {
 	dependencyContext = dependencyContext.Normalize()
 	data, err := json.Marshal(dependencyContext)
 	if err != nil {

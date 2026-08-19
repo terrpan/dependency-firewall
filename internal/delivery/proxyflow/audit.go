@@ -7,10 +7,15 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// AuditRecorder is the narrow sink the proxy adapters need to append one audit event. It keeps this package independent
+// of how audit records are stored and of the configured audit failure mode, which the implementation owns.
 type AuditRecorder interface {
 	Record(ctx context.Context, event domain.AuditEvent) error
 }
 
+// AuditContext carries the per-request facts that every audit event emitted for a proxy request repeats: the owning
+// tenant, the correlation ID shared by those events, the emitting component, the resolved upstream, the artifact under
+// evaluation, and the protocol operation recorded in the event payload.
 type AuditContext struct {
 	TenantID      string
 	CorrelationID string
@@ -20,7 +25,16 @@ type AuditContext struct {
 	Operation     string
 }
 
-func RecordRequestReceived(ctx context.Context, recorder AuditRecorder, audit AuditContext, r *http.Request, message string, extraPayload map[string]any) error {
+// RecordRequestReceived emits the first event of a proxy request, capturing the HTTP method, path and remote address
+// alongside any protocol-specific detail in extraPayload. It is recorded before evaluation, so no outcome is known yet.
+func RecordRequestReceived(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	r *http.Request,
+	message string,
+	extraPayload map[string]any,
+) error {
 	payload := basePayload(audit.Operation)
 	payload["method"] = r.Method
 	payload["path"] = r.URL.Path
@@ -38,7 +52,15 @@ func RecordRequestReceived(ctx context.Context, recorder AuditRecorder, audit Au
 	})
 }
 
-func RecordRequestDenied(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, message string) error {
+// RecordRequestDenied records that a request was blocked, linking the event to the persisted decision and retaining
+// both the user-facing reason and the full set of contributing policy matches as evidence for the denial.
+func RecordRequestDenied(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	decision *domain.Decision,
+	message string,
+) error {
 	return record(ctx, recorder, requestAuditEvent(
 		audit,
 		domain.AuditEventRequestDenied,
@@ -51,7 +73,15 @@ func RecordRequestDenied(ctx context.Context, recorder AuditRecorder, audit Audi
 	))
 }
 
-func RecordRequestAllowed(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, message string) error {
+// RecordRequestAllowed records that evaluation permitted the request, retaining the contributing matches and any
+// warnings raised by dry-run or unknown-dependency-context policies that did not change the outcome.
+func RecordRequestAllowed(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	decision *domain.Decision,
+	message string,
+) error {
 	return record(ctx, recorder, requestAuditEvent(
 		audit,
 		domain.AuditEventRequestAllowed,
@@ -64,7 +94,16 @@ func RecordRequestAllowed(ctx context.Context, recorder AuditRecorder, audit Aud
 	))
 }
 
-func RecordRequestForwarded(ctx context.Context, recorder AuditRecorder, audit AuditContext, decision *domain.Decision, reason, message string) error {
+// RecordRequestForwarded records that a request was passed through to the upstream, with reason explaining why
+// forwarding was chosen. The decision is optional because forwarding can happen without a fresh evaluation; when one is
+// supplied its evaluation outcome and evidence are attached and its artifact identity takes precedence.
+func RecordRequestForwarded(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	decision *domain.Decision,
+	reason, message string,
+) error {
 	payload := map[string]any{"reason": reason}
 	if decision != nil {
 		payload["evaluation_outcome"] = decision.Outcome
@@ -78,11 +117,20 @@ func RecordRequestForwarded(ctx context.Context, recorder AuditRecorder, audit A
 	return record(ctx, recorder, event)
 }
 
+// RecordSimpleRequestAllowed records an allow for a request that produced no persisted decision, such as a protocol
+// endpoint that is not subject to policy evaluation. Only the audit context and message are retained.
 func RecordSimpleRequestAllowed(ctx context.Context, recorder AuditRecorder, audit AuditContext, message string) error {
 	return record(ctx, recorder, requestAuditEvent(audit, domain.AuditEventRequestAllowed, message, nil, nil))
 }
 
-func RecordSimpleRequestDenied(ctx context.Context, recorder AuditRecorder, audit AuditContext, reason, message string) error {
+// RecordSimpleRequestDenied records a denial that did not come from policy evaluation, such as a malformed reference or
+// an OCI blob without a recent allowing manifest decision. The reason string is the only evidence retained.
+func RecordSimpleRequestDenied(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	reason, message string,
+) error {
 	return record(ctx, recorder, requestAuditEvent(
 		audit,
 		domain.AuditEventRequestDenied,
@@ -92,6 +140,8 @@ func RecordSimpleRequestDenied(ctx context.Context, recorder AuditRecorder, audi
 	))
 }
 
+// RecordUpstreamFetchStarted marks the point where the firewall begins an outbound call to the upstream registry,
+// separating time spent in evaluation from time spent waiting on the upstream.
 func RecordUpstreamFetchStarted(ctx context.Context, recorder AuditRecorder, audit AuditContext, message string) error {
 	return record(ctx, recorder, domain.AuditEvent{
 		TenantID:      audit.TenantID,
@@ -105,7 +155,15 @@ func RecordUpstreamFetchStarted(ctx context.Context, recorder AuditRecorder, aud
 	})
 }
 
-func RecordUpstreamFetchFailed(ctx context.Context, recorder AuditRecorder, audit AuditContext, message string, err error) error {
+// RecordUpstreamFetchFailed records that an outbound upstream call failed, storing the error text so an operator can
+// distinguish an upstream availability problem from a policy denial. It does not itself decide how the request ends.
+func RecordUpstreamFetchFailed(
+	ctx context.Context,
+	recorder AuditRecorder,
+	audit AuditContext,
+	message string,
+	err error,
+) error {
 	return record(ctx, recorder, domain.AuditEvent{
 		TenantID:      audit.TenantID,
 		CorrelationID: audit.CorrelationID,

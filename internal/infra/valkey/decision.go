@@ -26,21 +26,35 @@ func decisionGenerationKey(tenantID string) string {
 	return "decision-generation:" + tenantID
 }
 
-func decisionKey(tenantID string, generation int64, artifact domain.ArtifactIdentity, dependencyContextHash string) string {
+func decisionKey(
+	tenantID string,
+	generation int64,
+	artifact domain.ArtifactIdentity,
+	dependencyContextHash string,
+) string {
 	if dependencyContextHash == "" {
 		dependencyContextHash = "none"
 	}
-	return "decision:" + tenantID + ":" + strconv.FormatInt(generation, 10) + ":" + dependencyContextHash + ":" + artifact.CacheKey()
+	return "decision:" + tenantID + ":" + strconv.FormatInt(
+		generation,
+		10,
+	) + ":" + dependencyContextHash + ":" + artifact.CacheKey()
 }
 
 // Get retrieves a cached decision. Returns domain.ErrCacheMiss if not found.
-func (c *DecisionCache) Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, dependencyContextHash string) (*domain.Decision, error) {
+func (c *DecisionCache) Get(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+	dependencyContextHash string,
+) (*domain.Decision, error) {
 	generation, err := c.currentGeneration(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := c.client.Do(ctx, c.client.B().Get().Key(decisionKey(tenantID, generation, artifact, dependencyContextHash)).Build()).AsBytes()
+	data, err := c.client.Do(ctx, c.client.B().Get().Key(decisionKey(tenantID, generation, artifact, dependencyContextHash)).Build()).
+		AsBytes()
 	if err != nil {
 		if valkeygo.IsValkeyNil(err) {
 			return nil, domain.ErrCacheMiss
@@ -92,7 +106,8 @@ func (c *DecisionCache) Invalidate(ctx context.Context, tenantID string, artifac
 		return err
 	}
 
-	if err := c.client.Do(ctx, c.client.B().Del().Key(decisionKey(tenantID, generation, artifact, "")).Build()).Error(); err != nil {
+	if err := c.client.Do(ctx, c.client.B().Del().Key(decisionKey(tenantID, generation, artifact, "")).Build()).
+		Error(); err != nil {
 		return fmt.Errorf("invalidating cached decision: %w", err)
 	}
 	return nil
@@ -108,16 +123,24 @@ func (c *DecisionCache) InvalidateTenant(ctx context.Context, tenantID string) e
 }
 
 func (c *DecisionCache) currentGeneration(ctx context.Context, tenantID string) (int64, error) {
-	value, err := c.client.Do(ctx, c.client.B().Get().Key(decisionGenerationKey(tenantID)).Build()).ToString()
+	return currentCacheGeneration(ctx, c.client, decisionGenerationKey(tenantID), "decision")
+}
+
+func currentCacheGeneration(
+	ctx context.Context,
+	client valkeygo.Client,
+	generationKey, cacheName string,
+) (int64, error) {
+	value, err := client.Do(ctx, client.B().Get().Key(generationKey).Build()).ToString()
 	if err == nil {
 		generation, parseErr := strconv.ParseInt(value, 10, 64)
 		if parseErr != nil {
-			return 0, fmt.Errorf("parsing decision cache generation: %w", parseErr)
+			return 0, fmt.Errorf("parsing %s cache generation: %w", cacheName, parseErr)
 		}
 		return generation, nil
 	}
 	if valkeygo.IsValkeyNil(err) {
 		return 0, nil
 	}
-	return 0, fmt.Errorf("getting decision cache generation: %w", err)
+	return 0, fmt.Errorf("getting %s cache generation: %w", cacheName, err)
 }

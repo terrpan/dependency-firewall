@@ -22,7 +22,12 @@ type spyCacheMetadataCache struct {
 	invalidateTenantErr error
 }
 
-func (s *spyCacheDecisionCache) Get(context.Context, string, domain.ArtifactIdentity, string) (*domain.Decision, error) {
+func (s *spyCacheDecisionCache) Get(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+	string,
+) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 
@@ -42,11 +47,21 @@ func (s *spyCacheDecisionCache) InvalidateTenant(_ context.Context, tenantID str
 	return nil
 }
 
-func (s *spyCacheMetadataCache) Get(context.Context, string, domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (s *spyCacheMetadataCache) Get(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	return nil, domain.ErrCacheMiss
 }
 
-func (s *spyCacheMetadataCache) Set(context.Context, string, domain.ArtifactIdentity, *domain.ArtifactMetadata, time.Duration) error {
+func (s *spyCacheMetadataCache) Set(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+	*domain.ArtifactMetadata,
+	time.Duration,
+) error {
 	return nil
 }
 

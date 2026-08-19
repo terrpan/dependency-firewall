@@ -362,10 +362,19 @@ func TestPolicyMigration_TranslateEnforceToDryRun(t *testing.T) {
 	).Scan(&policyID)
 	require.NoError(t, err)
 
-	_, err = pool.Exec(ctx,
+	_, err = pool.Exec(
+		ctx,
 		`INSERT INTO policy_versions (policy_id, version, name, type, action, schema_version, config, priority, enabled)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
-		policyID, 1, "legacy-policy", string(domain.PolicyTypeMaximumAge), string(domain.PolicyActionDeny), 1, `{"max_age_days":730,"enforce":"warn"}`, 1, true,
+		policyID,
+		1,
+		"legacy-policy",
+		string(domain.PolicyTypeMaximumAge),
+		string(domain.PolicyActionDeny),
+		1,
+		`{"max_age_days":730,"enforce":"warn"}`,
+		1,
+		true,
 	)
 	require.NoError(t, err)
 
@@ -720,7 +729,10 @@ func TestUpstreamRepository_StoresEncryptedAuth(t *testing.T) {
 	require.False(t, upstream.Auth.UpdatedAt.IsZero())
 
 	var storedSecret string
-	require.NoError(t, pool.QueryRow(ctx, `SELECT auth_secret::text FROM upstreams WHERE id = $1`, upstream.ID).Scan(&storedSecret))
+	require.NoError(
+		t,
+		pool.QueryRow(ctx, `SELECT auth_secret::text FROM upstreams WHERE id = $1`, upstream.ID).Scan(&storedSecret),
+	)
 	assert.NotContains(t, storedSecret, "registry-pat")
 
 	got, err := repo.GetByID(ctx, tenant.ID, upstream.ID)
@@ -751,9 +763,27 @@ func TestUpstreamRepository_GetByEcosystem(t *testing.T) {
 	tenant := createTestTenant(t, ctx, pool, "eco-tenant")
 	repo := postgres.NewUpstreamRepository(pool)
 
-	npm := &domain.Upstream{TenantID: tenant.ID, Name: "npm", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org", Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM)}
-	npmSecondary := &domain.Upstream{TenantID: tenant.ID, Name: "npm-secondary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.company.example", Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM)}
-	oci := &domain.Upstream{TenantID: tenant.ID, Name: "oci", Ecosystem: domain.EcosystemOCI, BaseURL: "https://ghcr.io", Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemOCI)}
+	npm := &domain.Upstream{
+		TenantID:     tenant.ID,
+		Name:         "npm",
+		Ecosystem:    domain.EcosystemNPM,
+		BaseURL:      "https://registry.npmjs.org",
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
+	}
+	npmSecondary := &domain.Upstream{
+		TenantID:     tenant.ID,
+		Name:         "npm-secondary",
+		Ecosystem:    domain.EcosystemNPM,
+		BaseURL:      "https://registry.company.example",
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemNPM),
+	}
+	oci := &domain.Upstream{
+		TenantID:     tenant.ID,
+		Name:         "oci",
+		Ecosystem:    domain.EcosystemOCI,
+		BaseURL:      "https://ghcr.io",
+		Capabilities: domain.DefaultUpstreamCapabilities(domain.EcosystemOCI),
+	}
 	require.NoError(t, repo.Create(ctx, npm))
 	require.NoError(t, repo.Create(ctx, npmSecondary))
 	require.NoError(t, repo.Create(ctx, oci))
@@ -779,7 +809,12 @@ func TestUpstreamRepository_TenantIsolation(t *testing.T) {
 	tenantB := createTestTenant(t, ctx, pool, "iso-b")
 	repo := postgres.NewUpstreamRepository(pool)
 
-	upstream := &domain.Upstream{TenantID: tenantA.ID, Name: "npm", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
+	upstream := &domain.Upstream{
+		TenantID:  tenantA.ID,
+		Name:      "npm",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
 	require.NoError(t, repo.Create(ctx, upstream))
 
 	_, err := repo.GetByID(ctx, tenantB.ID, upstream.ID)
@@ -796,10 +831,20 @@ func TestUpstreamRepository_AllowsMultipleSameEcosystem(t *testing.T) {
 	tenant := createTestTenant(t, ctx, pool, "multi-eco-tenant")
 	repo := postgres.NewUpstreamRepository(pool)
 
-	u1 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-primary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
+	u1 := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npm-primary",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
 	require.NoError(t, repo.Create(ctx, u1))
 
-	u2 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-secondary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://other.npmjs.org"}
+	u2 := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npm-secondary",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://other.npmjs.org",
+	}
 	require.NoError(t, repo.Create(ctx, u2))
 
 	list, err := repo.ListByTenant(ctx, tenant.ID)
@@ -813,10 +858,20 @@ func TestUpstreamRepository_UniqueRegistry(t *testing.T) {
 	tenant := createTestTenant(t, ctx, pool, "unique-registry-tenant")
 	repo := postgres.NewUpstreamRepository(pool)
 
-	u1 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-primary", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
+	u1 := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npm-primary",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
 	require.NoError(t, repo.Create(ctx, u1))
 
-	u2 := &domain.Upstream{TenantID: tenant.ID, Name: "npm-mirror", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}
+	u2 := &domain.Upstream{
+		TenantID:  tenant.ID,
+		Name:      "npm-mirror",
+		Ecosystem: domain.EcosystemNPM,
+		BaseURL:   "https://registry.npmjs.org",
+	}
 	err := repo.Create(ctx, u2)
 	require.ErrorIs(t, err, domain.ErrUpstreamRegistryConflict)
 }
@@ -828,9 +883,42 @@ func TestUpstreamRepository_ListByTenant(t *testing.T) {
 	other := createTestTenant(t, ctx, pool, "other-upstream-tenant")
 	repo := postgres.NewUpstreamRepository(pool)
 
-	require.NoError(t, repo.Create(ctx, &domain.Upstream{TenantID: tenant.ID, Name: "npm", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}))
-	require.NoError(t, repo.Create(ctx, &domain.Upstream{TenantID: tenant.ID, Name: "oci", Ecosystem: domain.EcosystemOCI, BaseURL: "https://ghcr.io"}))
-	require.NoError(t, repo.Create(ctx, &domain.Upstream{TenantID: other.ID, Name: "npm", Ecosystem: domain.EcosystemNPM, BaseURL: "https://registry.npmjs.org"}))
+	require.NoError(
+		t,
+		repo.Create(
+			ctx,
+			&domain.Upstream{
+				TenantID:  tenant.ID,
+				Name:      "npm",
+				Ecosystem: domain.EcosystemNPM,
+				BaseURL:   "https://registry.npmjs.org",
+			},
+		),
+	)
+	require.NoError(
+		t,
+		repo.Create(
+			ctx,
+			&domain.Upstream{
+				TenantID:  tenant.ID,
+				Name:      "oci",
+				Ecosystem: domain.EcosystemOCI,
+				BaseURL:   "https://ghcr.io",
+			},
+		),
+	)
+	require.NoError(
+		t,
+		repo.Create(
+			ctx,
+			&domain.Upstream{
+				TenantID:  other.ID,
+				Name:      "npm",
+				Ecosystem: domain.EcosystemNPM,
+				BaseURL:   "https://registry.npmjs.org",
+			},
+		),
+	)
 
 	list, err := repo.ListByTenant(ctx, tenant.ID)
 	require.NoError(t, err)
@@ -945,12 +1033,14 @@ func TestPolicyRepository_ForceDeleteClearsHistoricalReferences(t *testing.T) {
 	assert.Nil(t, evaluationPolicyID)
 
 	var decisionPolicyID *string
-	err = pool.QueryRow(ctx, `SELECT policy_id FROM decisions WHERE tenant_id = $1 LIMIT 1`, tenant.ID).Scan(&decisionPolicyID)
+	err = pool.QueryRow(ctx, `SELECT policy_id FROM decisions WHERE tenant_id = $1 LIMIT 1`, tenant.ID).
+		Scan(&decisionPolicyID)
 	require.NoError(t, err)
 	assert.Nil(t, decisionPolicyID)
 
 	var reasonPolicyID *string
-	err = pool.QueryRow(ctx, `SELECT policy_id FROM evaluation_reasons WHERE evaluation_id = $1`, evaluationID).Scan(&reasonPolicyID)
+	err = pool.QueryRow(ctx, `SELECT policy_id FROM evaluation_reasons WHERE evaluation_id = $1`, evaluationID).
+		Scan(&reasonPolicyID)
 	require.NoError(t, err)
 	assert.Nil(t, reasonPolicyID)
 }

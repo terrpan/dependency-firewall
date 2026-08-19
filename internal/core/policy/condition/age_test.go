@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func ptrTime(t time.Time) *time.Time { return &t }

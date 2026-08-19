@@ -17,6 +17,9 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+// HybridEnvelopeVersion is the envelope format version written by this package, and the Alg values are the hybrid
+// encryption suites it can produce and open. Each combines an asymmetric step that wraps a per-message key for the
+// recipient proxy's public key (ECDH plus HKDF for the P-curves, RSA-OAEP otherwise) with AES-256-GCM over the secret.
 const (
 	HybridEnvelopeVersion = 2
 
@@ -57,7 +60,11 @@ func DecryptWithPrivateKey(privateKey any, payload []byte) ([]byte, error) {
 		return nil, fmt.Errorf("unmarshalling hybrid secret envelope: %w", err)
 	}
 	if env.Version != HybridEnvelopeVersion {
-		return nil, fmt.Errorf("unsupported hybrid secret envelope version %d (expected %d)", env.Version, HybridEnvelopeVersion)
+		return nil, fmt.Errorf(
+			"unsupported hybrid secret envelope version %d (expected %d)",
+			env.Version,
+			HybridEnvelopeVersion,
+		)
 	}
 	if !isWellFormedHybridEnvelope(env) {
 		return nil, fmt.Errorf("invalid hybrid secret envelope")

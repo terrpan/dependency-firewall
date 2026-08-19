@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type spyPolicyRepository struct {
@@ -69,7 +70,11 @@ func (s *spyDecisionRepository) Record(_ context.Context, decision *domain.Decis
 	return nil
 }
 
-func (s *spyDecisionRepository) GetByArtifact(context.Context, string, domain.ArtifactIdentity) (*domain.Decision, error) {
+func (s *spyDecisionRepository) GetByArtifact(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	return nil, domain.ErrArtifactNotFound
 }
 
@@ -77,7 +82,13 @@ func (s *spyDecisionRepository) ListByTenant(context.Context, string, int, int, 
 	return nil, nil
 }
 
-func (s *spyDecisionRepository) HasRecentAllow(context.Context, string, domain.EcosystemType, string, string) (bool, error) {
+func (s *spyDecisionRepository) HasRecentAllow(
+	context.Context,
+	string,
+	domain.EcosystemType,
+	string,
+	string,
+) (bool, error) {
 	return false, nil
 }
 
@@ -96,7 +107,12 @@ func newSpyDecisionCache() *spyDecisionCache {
 	return &spyDecisionCache{getErr: domain.ErrCacheMiss}
 }
 
-func (s *spyDecisionCache) Get(_ context.Context, tenantID string, artifact domain.ArtifactIdentity, _ string) (*domain.Decision, error) {
+func (s *spyDecisionCache) Get(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+	_ string,
+) (*domain.Decision, error) {
 	s.getCalls++
 	s.lastGetTenantID = tenantID
 	s.lastGetArtifact = artifact
@@ -136,13 +152,23 @@ func newSpyProxyMetadataCache() *spyProxyMetadataCache {
 	return &spyProxyMetadataCache{getErr: domain.ErrCacheMiss}
 }
 
-func (s *spyProxyMetadataCache) Get(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (s *spyProxyMetadataCache) Get(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	s.lastGetTenantID = tenantID
 	s.lastGetArtifact = artifact
 	return nil, s.getErr
 }
 
-func (s *spyProxyMetadataCache) Set(_ context.Context, tenantID string, artifact domain.ArtifactIdentity, _ *domain.ArtifactMetadata, ttl time.Duration) error {
+func (s *spyProxyMetadataCache) Set(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+	_ *domain.ArtifactMetadata,
+	ttl time.Duration,
+) error {
 	s.setCalls++
 	s.lastSetTenantID = tenantID
 	s.lastSetArtifact = artifact
@@ -161,7 +187,10 @@ type spyProxyEnricher struct {
 	lastArtifact domain.ArtifactIdentity
 }
 
-func (s *spyProxyEnricher) Enrich(_ context.Context, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (s *spyProxyEnricher) Enrich(
+	_ context.Context,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	s.calls++
 	s.lastArtifact = artifact
 	return s.result, s.err
@@ -175,7 +204,11 @@ type spyUpstreamClient struct {
 	lastArtifact  domain.ArtifactIdentity
 }
 
-func (s *spyUpstreamClient) FetchMetadata(context.Context, domain.Upstream, domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (s *spyUpstreamClient) FetchMetadata(
+	context.Context,
+	domain.Upstream,
+	domain.ArtifactIdentity,
+) (*port.UpstreamResponse, error) {
 	return nil, nil
 }
 
@@ -183,7 +216,11 @@ func (s *spyUpstreamClient) FetchContent(context.Context, domain.Upstream, strin
 	return nil, nil
 }
 
-func (s *spyUpstreamClient) ResolveReference(_ context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
+func (s *spyUpstreamClient) ResolveReference(
+	_ context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (string, error) {
 	s.resolveCalls++
 	s.lastUpstream = upstream
 	s.lastArtifact = artifact
@@ -202,7 +239,11 @@ func (s *spyUpstreamRepository) GetByID(context.Context, string, string) (*domai
 	return nil, domain.ErrUpstreamNotFound
 }
 
-func (s *spyUpstreamRepository) GetByEcosystem(_ context.Context, tenantID string, ecosystem domain.EcosystemType) (*domain.Upstream, error) {
+func (s *spyUpstreamRepository) GetByEcosystem(
+	_ context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+) (*domain.Upstream, error) {
 	s.getByEcosystemHit++
 	s.lastTenantID = tenantID
 	s.lastEcosystem = ecosystem
@@ -254,7 +295,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			result: &domain.ArtifactMetadata{PublishedAt: &publishedAt},
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -341,7 +386,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			},
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -410,7 +459,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			},
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -490,7 +543,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			},
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -555,7 +612,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			},
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -617,7 +678,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			BaseURL:   "https://registry.npmjs.org",
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -679,7 +744,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		}
 		upstreamClient := &spyUpstreamClient{resolveDigest: "should-not-be-used"}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -711,74 +780,81 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		assert.Equal(t, "4.18.2", decisionCache.lastGetArtifact.Version)
 	})
 
-	t.Run("npm bare packument keeps empty version and skips dist-tag resolution, cache, and enrichment", func(t *testing.T) {
-		policyRepo := &spyPolicyRepository{
-			policies: []domain.Policy{
-				{
-					ID:       "p-npm-cvss",
-					TenantID: "tenant-1",
-					Name:     "block-high-cvss",
-					Type:     domain.PolicyTypeCVSSThreshold,
-					Action:   domain.PolicyActionDeny,
-					Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: proxyFloatPtr(7.0)},
-					Priority: 10,
-					Enabled:  true,
+	t.Run(
+		"npm bare packument keeps empty version and skips dist-tag resolution, cache, and enrichment",
+		func(t *testing.T) {
+			policyRepo := &spyPolicyRepository{
+				policies: []domain.Policy{
+					{
+						ID:       "p-npm-cvss",
+						TenantID: "tenant-1",
+						Name:     "block-high-cvss",
+						Type:     domain.PolicyTypeCVSSThreshold,
+						Action:   domain.PolicyActionDeny,
+						Config:   &domain.CVSSThresholdPolicyConfig{MaxCVSS: proxyFloatPtr(7.0)},
+						Priority: 10,
+						Enabled:  true,
+					},
 				},
-			},
-		}
-		decisionRepo := &spyDecisionRepository{}
-		decisionCache := &spyDecisionCache{
-			getErr: nil,
-			cachedDecision: &domain.Decision{
+			}
+			decisionRepo := &spyDecisionRepository{}
+			decisionCache := &spyDecisionCache{
+				getErr: nil,
+				cachedDecision: &domain.Decision{
+					TenantID: "tenant-1",
+					Artifact: domain.ArtifactIdentity{
+						Ecosystem: domain.EcosystemNPM,
+						Name:      "express",
+					},
+					Outcome: domain.DecisionDeny,
+					Reason:  "stale package-wide vulnerability decision",
+				},
+			}
+			metadataCache := newSpyProxyMetadataCache()
+			enricher := &spyProxyEnricher{
+				result: &domain.ArtifactMetadata{MaxCVSS: proxyFloatPtr(9.0)},
+			}
+			upstreamClient := &spyUpstreamClient{resolveDigest: "should-not-be-used"}
+
+			enrichmentService := NewEnrichmentService(
+				enricher,
+				metadataCache,
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
+			service := NewAccessService(
+				policyRepo,
+				decisionRepo,
+				decisionCache,
+				enrichmentService,
+				policy.NewEvaluator(),
+				upstreamClient,
+				&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+				nil,
+			)
+
+			decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
 				TenantID: "tenant-1",
 				Artifact: domain.ArtifactIdentity{
 					Ecosystem: domain.EcosystemNPM,
 					Name:      "express",
 				},
-				Outcome: domain.DecisionDeny,
-				Reason:  "stale package-wide vulnerability decision",
-			},
-		}
-		metadataCache := newSpyProxyMetadataCache()
-		enricher := &spyProxyEnricher{
-			result: &domain.ArtifactMetadata{MaxCVSS: proxyFloatPtr(9.0)},
-		}
-		upstreamClient := &spyUpstreamClient{resolveDigest: "should-not-be-used"}
+				Timestamp: time.Now(),
+			})
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
-		service := NewAccessService(
-			policyRepo,
-			decisionRepo,
-			decisionCache,
-			enrichmentService,
-			policy.NewEvaluator(),
-			upstreamClient,
-			&spyUpstreamRepository{err: domain.ErrUpstreamNotFound},
-			slog.New(slog.NewTextHandler(io.Discard, nil)),
-			nil,
-		)
-
-		decision, err := service.Evaluate(context.Background(), domain.AccessRequest{
-			TenantID: "tenant-1",
-			Artifact: domain.ArtifactIdentity{
-				Ecosystem: domain.EcosystemNPM,
-				Name:      "express",
-			},
-			Timestamp: time.Now(),
-		})
-
-		require.NoError(t, err)
-		require.NotNil(t, decision)
-		assert.Equal(t, domain.DecisionAllow, decision.Outcome)
-		assert.Empty(t, decision.Artifact.Version)
-		assert.Zero(t, upstreamClient.resolveCalls)
-		assert.Zero(t, decisionCache.getCalls)
-		assert.Empty(t, enricher.lastArtifact.Version)
-		assert.Zero(t, enricher.calls)
-		assert.Zero(t, metadataCache.setCalls)
-		assert.Zero(t, decisionCache.setCalls)
-		assert.Zero(t, decisionRepo.recordCalls)
-	})
+			require.NoError(t, err)
+			require.NotNil(t, decision)
+			assert.Equal(t, domain.DecisionAllow, decision.Outcome)
+			assert.Empty(t, decision.Artifact.Version)
+			assert.Zero(t, upstreamClient.resolveCalls)
+			assert.Zero(t, decisionCache.getCalls)
+			assert.Empty(t, enricher.lastArtifact.Version)
+			assert.Zero(t, enricher.calls)
+			assert.Zero(t, metadataCache.setCalls)
+			assert.Zero(t, decisionCache.setCalls)
+			assert.Zero(t, decisionRepo.recordCalls)
+		},
+	)
 
 	t.Run("npm license allowlist denies unlicensed artifacts", func(t *testing.T) {
 		policyRepo := &spyPolicyRepository{
@@ -802,7 +878,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			result: &domain.ArtifactMetadata{},
 		}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -856,7 +936,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		metadataCache := newSpyProxyMetadataCache()
 		enricher := &spyProxyEnricher{}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -907,7 +991,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		metadataCache := newSpyProxyMetadataCache()
 		enricher := &spyProxyEnricher{}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -946,7 +1034,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		decisionCache := newSpyDecisionCache()
 		enricher := &spyProxyEnricher{}
 		metadataCache := newSpyProxyMetadataCache()
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,
@@ -987,7 +1079,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 			metadataCache := newSpyProxyMetadataCache()
 			enricher := &spyProxyEnricher{}
 
-			enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			enrichmentService := NewEnrichmentService(
+				enricher,
+				metadataCache,
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
 			service := NewAccessService(
 				policyRepo,
 				decisionRepo,
@@ -1044,7 +1140,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 				},
 			}
 
-			enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			enrichmentService := NewEnrichmentService(
+				enricher,
+				metadataCache,
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
 			service := NewAccessService(
 				policyRepo,
 				decisionRepo,
@@ -1099,7 +1199,11 @@ func TestProxyService_Evaluate_SharedPolicyFlowAcrossEcosystems(t *testing.T) {
 		metadataCache := newSpyProxyMetadataCache()
 		enricher := &spyProxyEnricher{}
 
-		enrichmentService := NewEnrichmentService(enricher, metadataCache, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		enrichmentService := NewEnrichmentService(
+			enricher,
+			metadataCache,
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+		)
 		service := NewAccessService(
 			policyRepo,
 			decisionRepo,

@@ -30,7 +30,8 @@ func TestOCIClientFetchMetadata_FollowsBearerChallenge(t *testing.T) {
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"token": token}))
 		case "/v2/library/nginx/manifests/1.25.3":
 			if r.Header.Get("Authorization") != "Bearer "+token {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",service="registry.example",scope="repository:library/nginx:pull"`)
+				w.Header().
+					Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",service="registry.example",scope="repository:library/nginx:pull"`)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -75,7 +76,8 @@ func TestOCIClientFetchContent_FollowsBearerChallenge(t *testing.T) {
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"access_token": token}))
 		case "/v2/library/nginx/blobs/" + digest:
 			if r.Header.Get("Authorization") != "Bearer "+token {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
+				w.Header().
+					Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -112,7 +114,8 @@ func TestOCIClientResolveReference_FollowsBearerChallenge(t *testing.T) {
 			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"token": token}))
 		case "/v2/library/nginx/manifests/1.25.3":
 			if r.Header.Get("Authorization") != "Bearer "+token {
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
+				w.Header().
+					Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -157,7 +160,8 @@ func TestOCIClient_ReusesBearerTokenForRepository(t *testing.T) {
 		case "/v2/library/nginx/manifests/1.25.3":
 			if r.Header.Get("Authorization") != "Bearer "+token {
 				unauthorizedCount.Add(1)
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
+				w.Header().
+					Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -165,7 +169,8 @@ func TestOCIClient_ReusesBearerTokenForRepository(t *testing.T) {
 		case "/v2/library/nginx/blobs/" + digest:
 			if r.Header.Get("Authorization") != "Bearer "+token {
 				unauthorizedCount.Add(1)
-				w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
+				w.Header().
+					Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",scope="repository:library/nginx:pull"`)
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -189,7 +194,11 @@ func TestOCIClient_ReusesBearerTokenForRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, metadataResp.Body.Close())
 
-	contentResp, err := client.FetchContent(context.Background(), domain.Upstream{BaseURL: srv.URL + "/v2/library/nginx"}, digest)
+	contentResp, err := client.FetchContent(
+		context.Background(),
+		domain.Upstream{BaseURL: srv.URL + "/v2/library/nginx"},
+		digest,
+	)
 	require.NoError(t, err)
 	require.NoError(t, contentResp.Body.Close())
 
@@ -279,7 +288,12 @@ func TestOCIClientFetchMetadata_UsesBasicAuthForBearerTokenChallenge(t *testing.
 			Secret:   "registry-pat",
 		},
 	}
-	artifact := domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Version: "1.0.0"}
+	artifact := domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: "acme",
+		Name:      "app",
+		Version:   "1.0.0",
+	}
 
 	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
 	require.NoError(t, err)
@@ -305,7 +319,12 @@ func TestOCIClientFetchMetadata_UsesStaticBearerToken(t *testing.T) {
 			Secret: token,
 		},
 	}
-	artifact := domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Version: "1.0.0"}
+	artifact := domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: "acme",
+		Name:      "app",
+		Version:   "1.0.0",
+	}
 
 	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
 	require.NoError(t, err)
@@ -336,7 +355,12 @@ func TestOCIClientFetchMetadata_DecryptsEncryptedBearerTokenAtRequestTime(t *tes
 			Secret: string(encrypted),
 		},
 	}
-	artifact := domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Version: "1.0.0"}
+	artifact := domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: "acme",
+		Name:      "app",
+		Version:   "1.0.0",
+	}
 
 	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
 	require.NoError(t, err)
@@ -385,7 +409,12 @@ func TestOCIClientFetchMetadata_DecryptsEncryptedBasicAuthForBearerTokenChalleng
 			Secret:   string(encrypted),
 		},
 	}
-	artifact := domain.ArtifactIdentity{Ecosystem: domain.EcosystemOCI, Namespace: "acme", Name: "app", Version: "1.0.0"}
+	artifact := domain.ArtifactIdentity{
+		Ecosystem: domain.EcosystemOCI,
+		Namespace: "acme",
+		Name:      "app",
+		Version:   "1.0.0",
+	}
 
 	resp, err := client.FetchMetadata(context.Background(), upstream, artifact)
 	require.NoError(t, err)

@@ -18,12 +18,19 @@ func TestDiskCacheRoundTripAndScopeIsolation(t *testing.T) {
 	cache, err := NewDiskCache(DiskCacheOptions{RootDir: dir})
 	require.NoError(t, err)
 
-	writer, err := cache.StartWrite(context.Background(), "tenant-a", "upstream-a", port.OCIArtifactBlob, "sha256:abc123", port.OCIArtifactDescriptor{
-		ContentType: "application/octet-stream",
-		Headers: map[string]string{
-			"Content-Length": "5",
+	writer, err := cache.StartWrite(
+		context.Background(),
+		"tenant-a",
+		"upstream-a",
+		port.OCIArtifactBlob,
+		"sha256:abc123",
+		port.OCIArtifactDescriptor{
+			ContentType: "application/octet-stream",
+			Headers: map[string]string{
+				"Content-Length": "5",
+			},
 		},
-	})
+	)
 	require.NoError(t, err)
 
 	_, err = writer.Write([]byte("hello"))
@@ -53,9 +60,16 @@ func TestDiskCacheAbortLeavesNoEntry(t *testing.T) {
 	cache, err := NewDiskCache(DiskCacheOptions{RootDir: dir})
 	require.NoError(t, err)
 
-	writer, err := cache.StartWrite(context.Background(), "tenant-a", "upstream-a", port.OCIArtifactManifest, "sha256:def456", port.OCIArtifactDescriptor{
-		ContentType: "application/vnd.oci.image.manifest.v1+json",
-	})
+	writer, err := cache.StartWrite(
+		context.Background(),
+		"tenant-a",
+		"upstream-a",
+		port.OCIArtifactManifest,
+		"sha256:def456",
+		port.OCIArtifactDescriptor{
+			ContentType: "application/vnd.oci.image.manifest.v1+json",
+		},
+	)
 	require.NoError(t, err)
 	_, err = writer.Write([]byte(`{"schemaVersion":2}`))
 	require.NoError(t, err)
@@ -74,7 +88,14 @@ func TestDiskCacheRejectsIncompleteScope(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "upstream_id")
 
-	_, err = cache.StartWrite(context.Background(), "", "upstream-a", port.OCIArtifactBlob, "sha256:abc123", port.OCIArtifactDescriptor{})
+	_, err = cache.StartWrite(
+		context.Background(),
+		"",
+		"upstream-a",
+		port.OCIArtifactBlob,
+		"sha256:abc123",
+		port.OCIArtifactDescriptor{},
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tenant_id")
 }
@@ -88,9 +109,16 @@ func TestDiskCacheMaxEntriesEvictsOldestPerScope(t *testing.T) {
 	require.NoError(t, err)
 
 	writeArtifact := func(upstreamID, digest, body string) {
-		writer, err := cache.StartWrite(context.Background(), "tenant-a", upstreamID, port.OCIArtifactBlob, digest, port.OCIArtifactDescriptor{
-			ContentType: "application/octet-stream",
-		})
+		writer, err := cache.StartWrite(
+			context.Background(),
+			"tenant-a",
+			upstreamID,
+			port.OCIArtifactBlob,
+			digest,
+			port.OCIArtifactDescriptor{
+				ContentType: "application/octet-stream",
+			},
+		)
 		require.NoError(t, err)
 		_, err = writer.Write([]byte(body))
 		require.NoError(t, err)

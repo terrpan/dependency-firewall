@@ -114,10 +114,28 @@ func TestIsHybridEnvelopeRejectsLegacyPlaintext(t *testing.T) {
 	assert.False(t, IsHybridEnvelope([]byte("registry-token")))
 	assert.False(t, IsHybridEnvelope([]byte(`{"version":1,"nonce":"abc","ciphertext":"def"}`)))
 	assert.False(t, IsHybridEnvelope([]byte(`{"version":2,"alg":"unknown","nonce":"abc","ciphertext":"def"}`)))
-	assert.False(t, IsHybridEnvelope([]byte(`{"version":2,"alg":"ecies-p256-aes256gcm","nonce":"abc","ciphertext":"def"}`)))
-	assert.False(t, IsHybridEnvelope([]byte(`{"version":2,"alg":"rsa-oaep-aes256gcm","ephemeral_pub":"abc","nonce":"abc","ciphertext":"def"}`)))
-	assert.False(t, IsHybridEnvelope([]byte(`{"version":3,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`)))
-	assert.True(t, IsHybridEnvelope([]byte(`{"version":2,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`)))
+	assert.False(
+		t,
+		IsHybridEnvelope([]byte(`{"version":2,"alg":"ecies-p256-aes256gcm","nonce":"abc","ciphertext":"def"}`)),
+	)
+	assert.False(
+		t,
+		IsHybridEnvelope(
+			[]byte(`{"version":2,"alg":"rsa-oaep-aes256gcm","ephemeral_pub":"abc","nonce":"abc","ciphertext":"def"}`),
+		),
+	)
+	assert.False(
+		t,
+		IsHybridEnvelope(
+			[]byte(`{"version":3,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`),
+		),
+	)
+	assert.True(
+		t,
+		IsHybridEnvelope(
+			[]byte(`{"version":2,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`),
+		),
+	)
 }
 
 func TestDecryptRejectsNonMatchingVersion(t *testing.T) {
@@ -126,11 +144,17 @@ func TestDecryptRejectsNonMatchingVersion(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
-	_, err = DecryptWithPrivateKey(privateKey, []byte(`{"version":1,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`))
+	_, err = DecryptWithPrivateKey(
+		privateKey,
+		[]byte(`{"version":1,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`),
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "version")
 
-	_, err = DecryptWithPrivateKey(privateKey, []byte(`{"version":3,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`))
+	_, err = DecryptWithPrivateKey(
+		privateKey,
+		[]byte(`{"version":3,"alg":"rsa-oaep-aes256gcm","encrypted_key":"abc","nonce":"abc","ciphertext":"def"}`),
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "version")
 }

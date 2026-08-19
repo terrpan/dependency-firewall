@@ -38,7 +38,11 @@ func (s Scorecard) Evaluate(req domain.AccessRequest, config domain.PolicyConfig
 			)
 		}
 		if *scorecard.Score < *typed.MinScore {
-			return true, fmt.Sprintf("source repository Scorecard %.1f is below minimum %.1f", *scorecard.Score, *typed.MinScore), nil
+			return true, fmt.Sprintf(
+				"source repository Scorecard %.1f is below minimum %.1f",
+				*scorecard.Score,
+				*typed.MinScore,
+			), nil
 		}
 	}
 
@@ -68,7 +72,12 @@ func (s Scorecard) Evaluate(req domain.AccessRequest, config domain.PolicyConfig
 			)
 		}
 		if actualScore < minScore {
-			return true, fmt.Sprintf("source repository Scorecard check %q scored %.1f below minimum %.1f", checkName, actualScore, minScore), nil
+			return true, fmt.Sprintf(
+				"source repository Scorecard check %q scored %.1f below minimum %.1f",
+				checkName,
+				actualScore,
+				minScore,
+			), nil
 		}
 	}
 
@@ -96,7 +105,10 @@ func scorecardUnavailableReason(req domain.AccessRequest, detail string) string 
 	ref := scorecardReference(req.Metadata, req.Artifact)
 	scorecard := scorecardResult(req.Metadata)
 	if scorecard != nil && strings.TrimSpace(scorecard.UnavailableReason) != "" {
-		return fmt.Sprintf("%s and Scorecard policy denies the artifact", strings.TrimSpace(scorecard.UnavailableReason))
+		return fmt.Sprintf(
+			"%s and Scorecard policy denies the artifact",
+			strings.TrimSpace(scorecard.UnavailableReason),
+		)
 	}
 
 	switch {

@@ -53,10 +53,15 @@ func TestTenantAuthorizationInterceptor_RecordsDeniedRequest(t *testing.T) {
 		},
 	})
 
-	_, err := interceptor(ctx, struct{}{}, &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}, func(context.Context, any) (any, error) {
-		t.Fatal("handler should not be called")
-		return nil, nil
-	})
+	_, err := interceptor(
+		ctx,
+		struct{}{},
+		&grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"},
+		func(context.Context, any) (any, error) {
+			t.Fatal("handler should not be called")
+			return nil, nil
+		},
+	)
 
 	require.Error(t, err)
 	assert.Equal(t, codes.PermissionDenied, status.Code(err))
@@ -111,13 +116,18 @@ func TestTenantAuthorizationStreamInterceptor_AuthorizesDecodedTenant(t *testing
 			stream := &testServerStream{ctx: ctx, request: tt.request}
 			received := false
 
-			err := interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: "/test.Service/Watch"}, func(_ any, stream grpc.ServerStream) error {
-				if err := stream.RecvMsg(&streamTenantRequest{}); err != nil {
-					return err
-				}
-				received = true
-				return nil
-			})
+			err := interceptor(
+				nil,
+				stream,
+				&grpc.StreamServerInfo{FullMethod: "/test.Service/Watch"},
+				func(_ any, stream grpc.ServerStream) error {
+					if err := stream.RecvMsg(&streamTenantRequest{}); err != nil {
+						return err
+					}
+					received = true
+					return nil
+				},
+			)
 
 			assert.Equal(t, tt.wantCode, status.Code(err))
 			assert.Equal(t, tt.wantReceived, received)

@@ -6,17 +6,12 @@ import (
 )
 
 func scorecardPolicyDefinition() policyDefinition {
-	return definePolicy(
+	return defineDenyPolicyV1(
 		domain.PolicyTypeDescriptor{
-			Type:                    domain.PolicyTypeScorecard,
-			Summary:                 "Gate by OpenSSF Scorecard",
-			Description:             "Matches npm artifacts whose source repository Scorecard falls below the configured overall or per-check thresholds.",
-			Help:                    "Use this to require a minimum repository Scorecard before allowing a package. It can deny on the overall score, named check scores, or both. When repository identity or Scorecard data is unavailable, the configured behavior decides whether the policy denies or skips.",
-			CurrentSchemaVersion:    1,
-			SupportedSchemaVersions: []int{1},
-			SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-			SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemNPM},
-			RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityScorecardLookup},
+			Type:        domain.PolicyTypeScorecard,
+			Summary:     "Gate by OpenSSF Scorecard",
+			Description: "Matches npm artifacts whose source repository Scorecard falls below the configured overall or per-check thresholds.",
+			Help:        "Use this to require a minimum repository Scorecard before allowing a package. It can deny on the overall score, named check scores, or both. When repository identity or Scorecard data is unavailable, the configured behavior decides whether the policy denies or skips.",
 			Example: `- name: require-secure-source-repos
   type: scorecard
   schema_version: 1
@@ -30,8 +25,9 @@ func scorecardPolicyDefinition() policyDefinition {
     unavailable_scorecard_behavior: skip`,
 		},
 		condition.Scorecard{},
+		domain.EcosystemNPM,
+		domain.UpstreamCapabilityScorecardLookup,
 		true,
-		configTypeMatcher[*domain.ScorecardPolicyConfig],
-		configSchema(1, func() domain.PolicyConfig { return &domain.ScorecardPolicyConfig{} }),
+		func() *domain.ScorecardPolicyConfig { return &domain.ScorecardPolicyConfig{} },
 	)
 }

@@ -99,7 +99,16 @@ func TestHealthHandler_JSONStructure(t *testing.T) {
 	var raw map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&raw))
 
-	expectedKeys := []string{"status", "service_name", "version", "go_version", "os", "arch", "timestamp", "dependencies"}
+	expectedKeys := []string{
+		"status",
+		"service_name",
+		"version",
+		"go_version",
+		"os",
+		"arch",
+		"timestamp",
+		"dependencies",
+	}
 	for _, key := range expectedKeys {
 		assert.Contains(t, raw, key, "response missing key: %s", key)
 	}
@@ -111,7 +120,12 @@ func TestHealthHandler_JSONStructure(t *testing.T) {
 }
 
 func TestHealthHandler_IncludesProxyStatusWhenConfigured(t *testing.T) {
-	srv := setupHealthServer(t, nil, nil, service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"))
+	srv := setupHealthServer(
+		t,
+		nil,
+		nil,
+		service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"),
+	)
 
 	resp, err := http.Get(srv.URL + "/healthz")
 	require.NoError(t, err)

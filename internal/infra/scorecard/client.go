@@ -59,7 +59,12 @@ func (c *Client) Lookup(ctx context.Context, repo domain.SourceRepository) (*dom
 		return nil, fmt.Errorf("%w: source repository is required for Scorecard lookup", domain.ErrEnrichmentFailed)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.baseURL, "/")+"/projects/"+projectURI, nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		strings.TrimRight(c.baseURL, "/")+"/projects/"+projectURI,
+		nil,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("%w: building request: %v", domain.ErrEnrichmentFailed, err)
 	}

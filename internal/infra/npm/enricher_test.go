@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 type stubScorecardClient struct {
@@ -360,7 +361,11 @@ func TestMetadataEnricher_Enrich(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, meta.Scorecard)
-		assert.Equal(t, "npm package does not declare a supported GitHub source repository", meta.Scorecard.UnavailableReason)
+		assert.Equal(
+			t,
+			"npm package does not declare a supported GitHub source repository",
+			meta.Scorecard.UnavailableReason,
+		)
 		assert.Nil(t, meta.SourceRepository)
 	})
 }
@@ -373,7 +378,11 @@ func TestSplitLicenseExpression(t *testing.T) {
 	}{
 		{name: "single SPDX id", value: "MIT", want: []string{"MIT"}},
 		{name: "OR expression", value: "(MIT OR Apache-2.0)", want: []string{"MIT", "Apache-2.0"}},
-		{name: "WITH exception", value: "GPL-2.0-only WITH Classpath-exception-2.0", want: []string{"GPL-2.0-only", "Classpath-exception-2.0"}},
+		{
+			name:  "WITH exception",
+			value: "GPL-2.0-only WITH Classpath-exception-2.0",
+			want:  []string{"GPL-2.0-only", "Classpath-exception-2.0"},
+		},
 		{name: "plus shorthand preserved", value: "GPL-2.0+", want: []string{"GPL-2.0+"}},
 	}
 

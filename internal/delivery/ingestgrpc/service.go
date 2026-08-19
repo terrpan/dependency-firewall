@@ -21,7 +21,13 @@ type proxyIngestService interface {
 	RecordAuditEvent(context.Context, *domain.AuditEvent) error
 	EnqueueDependencyGraphResolve(context.Context, domain.DependencyGraphResolveRequest) (bool, error)
 	ClaimDependencyGraphResolve(context.Context, string, time.Time) (*domain.DependencyGraphResolveRequest, error)
-	CompleteDependencyGraphResolve(context.Context, domain.DependencyGraphResolveRequest, []domain.DependencyGraphNode, []domain.DependencyGraphEdge, string) error
+	CompleteDependencyGraphResolve(
+		context.Context,
+		domain.DependencyGraphResolveRequest,
+		[]domain.DependencyGraphNode,
+		[]domain.DependencyGraphEdge,
+		string,
+	) error
 	FailDependencyGraphResolve(context.Context, domain.DependencyGraphResolveRequest, string, time.Time) error
 	WatchDependencyGraphResolve(context.Context, string) (<-chan struct{}, error)
 	LookupDependencyGraphContext(context.Context, domain.DependencyContextSummaryKey) (*domain.DependencyContext, error)
@@ -33,12 +39,27 @@ type proxyIngestGRPCService interface {
 	ListDecisionsByTenant(context.Context, *ListDecisionsByTenantRequest) (*ListDecisionsByTenantResponse, error)
 	HasRecentAllow(context.Context, *HasRecentAllowRequest) (*HasRecentAllowResponse, error)
 	RecordAuditEvent(context.Context, *RecordAuditEventRequest) (*RecordAuditEventResponse, error)
-	EnqueueDependencyGraphResolve(context.Context, *EnqueueDependencyGraphResolveRequest) (*EnqueueDependencyGraphResolveResponse, error)
-	ClaimDependencyGraphResolve(context.Context, *ClaimDependencyGraphResolveRequest) (*ClaimDependencyGraphResolveResponse, error)
-	CompleteDependencyGraphResolve(context.Context, *CompleteDependencyGraphResolveRequest) (*CompleteDependencyGraphResolveResponse, error)
-	FailDependencyGraphResolve(context.Context, *FailDependencyGraphResolveRequest) (*FailDependencyGraphResolveResponse, error)
+	EnqueueDependencyGraphResolve(
+		context.Context,
+		*EnqueueDependencyGraphResolveRequest,
+	) (*EnqueueDependencyGraphResolveResponse, error)
+	ClaimDependencyGraphResolve(
+		context.Context,
+		*ClaimDependencyGraphResolveRequest,
+	) (*ClaimDependencyGraphResolveResponse, error)
+	CompleteDependencyGraphResolve(
+		context.Context,
+		*CompleteDependencyGraphResolveRequest,
+	) (*CompleteDependencyGraphResolveResponse, error)
+	FailDependencyGraphResolve(
+		context.Context,
+		*FailDependencyGraphResolveRequest,
+	) (*FailDependencyGraphResolveResponse, error)
 	WatchDependencyGraphResolve(context.Context, *WatchDependencyGraphResolveRequest) (<-chan struct{}, error)
-	LookupDependencyGraphContext(context.Context, *LookupDependencyGraphContextRequest) (*LookupDependencyGraphContextResponse, error)
+	LookupDependencyGraphContext(
+		context.Context,
+		*LookupDependencyGraphContextRequest,
+	) (*LookupDependencyGraphContextResponse, error)
 }
 
 // Server serves proxy ingestion RPCs over gRPC.

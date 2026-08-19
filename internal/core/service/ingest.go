@@ -22,7 +22,12 @@ type ProxyIngestService struct {
 
 // NewProxyIngestService creates a new ProxyIngestService. graphs and notifier
 // may be nil when the runtime does not process dependency graph jobs.
-func NewProxyIngestService(decisions port.DecisionRepository, audits port.AuditEventRecorder, graphs port.DependencyGraphQueue, notifier *DependencyGraphJobNotifier) *ProxyIngestService {
+func NewProxyIngestService(
+	decisions port.DecisionRepository,
+	audits port.AuditEventRecorder,
+	graphs port.DependencyGraphQueue,
+	notifier *DependencyGraphJobNotifier,
+) *ProxyIngestService {
 	var graphResolver port.DependencyGraphResolver
 	if resolver, ok := graphs.(port.DependencyGraphResolver); ok {
 		graphResolver = resolver
@@ -56,7 +61,11 @@ func (s *ProxyIngestService) RecordDecision(ctx context.Context, decision *domai
 }
 
 // GetDecisionByArtifact loads a persisted decision for a tenant artifact.
-func (s *ProxyIngestService) GetDecisionByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (s *ProxyIngestService) GetDecisionByArtifact(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	if s == nil || s.decisions == nil {
 		return nil, fmt.Errorf("getting decision by artifact: repository unavailable")
 	}
@@ -67,7 +76,12 @@ func (s *ProxyIngestService) GetDecisionByArtifact(ctx context.Context, tenantID
 }
 
 // ListDecisionsByTenant lists persisted decisions for a tenant.
-func (s *ProxyIngestService) ListDecisionsByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+func (s *ProxyIngestService) ListDecisionsByTenant(
+	ctx context.Context,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
 	if s == nil || s.decisions == nil {
 		return nil, fmt.Errorf("listing decisions: repository unavailable")
 	}
@@ -78,7 +92,12 @@ func (s *ProxyIngestService) ListDecisionsByTenant(ctx context.Context, tenantID
 }
 
 // HasRecentAllow reports whether a tenant artifact has a recent allow decision.
-func (s *ProxyIngestService) HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error) {
+func (s *ProxyIngestService) HasRecentAllow(
+	ctx context.Context,
+	tenantID string,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
 	if s == nil || s.decisions == nil {
 		return false, fmt.Errorf("checking recent allow: repository unavailable")
 	}
@@ -103,7 +122,10 @@ func (s *ProxyIngestService) RecordAuditEvent(ctx context.Context, event *domain
 }
 
 // EnqueueDependencyGraphResolve persists an async graph-resolution request.
-func (s *ProxyIngestService) EnqueueDependencyGraphResolve(ctx context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (s *ProxyIngestService) EnqueueDependencyGraphResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	if s == nil || s.graphs == nil {
 		return false, fmt.Errorf("enqueueing dependency graph resolve: queue unavailable")
 	}
@@ -118,7 +140,10 @@ func (s *ProxyIngestService) EnqueueDependencyGraphResolve(ctx context.Context, 
 }
 
 // WatchDependencyGraphResolve streams wake-up signals emitted when graph jobs are enqueued.
-func (s *ProxyIngestService) WatchDependencyGraphResolve(ctx context.Context, tenantID string) (<-chan struct{}, error) {
+func (s *ProxyIngestService) WatchDependencyGraphResolve(
+	ctx context.Context,
+	tenantID string,
+) (<-chan struct{}, error) {
 	if s == nil || s.graphNotifier == nil {
 		return nil, fmt.Errorf("watching dependency graph resolve: notifier unavailable")
 	}
@@ -129,7 +154,10 @@ func (s *ProxyIngestService) WatchDependencyGraphResolve(ctx context.Context, te
 }
 
 // LookupDependencyGraphContext loads the graph context summary for a tenant artifact.
-func (s *ProxyIngestService) LookupDependencyGraphContext(ctx context.Context, key domain.DependencyContextSummaryKey) (*domain.DependencyContext, error) {
+func (s *ProxyIngestService) LookupDependencyGraphContext(
+	ctx context.Context,
+	key domain.DependencyContextSummaryKey,
+) (*domain.DependencyContext, error) {
 	if s == nil || s.graphContexts == nil {
 		return nil, fmt.Errorf("looking up dependency graph context: lookup unavailable")
 	}
@@ -140,7 +168,11 @@ func (s *ProxyIngestService) LookupDependencyGraphContext(ctx context.Context, k
 }
 
 // ClaimDependencyGraphResolve claims the next retryable resolver job.
-func (s *ProxyIngestService) ClaimDependencyGraphResolve(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error) {
+func (s *ProxyIngestService) ClaimDependencyGraphResolve(
+	ctx context.Context,
+	tenantID string,
+	now time.Time,
+) (*domain.DependencyGraphResolveRequest, error) {
 	if s == nil || s.graphResolver == nil {
 		return nil, fmt.Errorf("claiming dependency graph resolve: resolver unavailable")
 	}
@@ -154,7 +186,13 @@ func (s *ProxyIngestService) ClaimDependencyGraphResolve(ctx context.Context, te
 }
 
 // CompleteDependencyGraphResolve persists the graph produced by a resolver worker.
-func (s *ProxyIngestService) CompleteDependencyGraphResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error {
+func (s *ProxyIngestService) CompleteDependencyGraphResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+	nodes []domain.DependencyGraphNode,
+	edges []domain.DependencyGraphEdge,
+	graphHash string,
+) error {
 	if s == nil || s.graphResolver == nil {
 		return fmt.Errorf("completing dependency graph resolve: resolver unavailable")
 	}
@@ -168,7 +206,12 @@ func (s *ProxyIngestService) CompleteDependencyGraphResolve(ctx context.Context,
 }
 
 // FailDependencyGraphResolve records a resolver failure and retry time.
-func (s *ProxyIngestService) FailDependencyGraphResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error {
+func (s *ProxyIngestService) FailDependencyGraphResolve(
+	ctx context.Context,
+	req domain.DependencyGraphResolveRequest,
+	message string,
+	retryAfter time.Time,
+) error {
 	if s == nil || s.graphResolver == nil {
 		return fmt.Errorf("failing dependency graph resolve: resolver unavailable")
 	}

@@ -36,7 +36,12 @@ type DependencyGraphWorker struct {
 
 // NewDependencyGraphWorker creates a new DependencyGraphWorker. watcher may be
 // nil, in which case the worker relies solely on interval polling.
-func NewDependencyGraphWorker(resolver port.DependencyGraphResolver, watcher port.DependencyGraphJobWatcher, cfg DependencyGraphWorkerConfig, logger *slog.Logger) *DependencyGraphWorker {
+func NewDependencyGraphWorker(
+	resolver port.DependencyGraphResolver,
+	watcher port.DependencyGraphJobWatcher,
+	cfg DependencyGraphWorkerConfig,
+	logger *slog.Logger,
+) *DependencyGraphWorker {
 	return &DependencyGraphWorker{resolver: resolver, watcher: watcher, cfg: cfg, logger: logger}
 }
 
@@ -158,12 +163,15 @@ func (w *DependencyGraphWorker) resolveJob(ctx context.Context, job domain.Depen
 	)
 }
 
-func resolveNPMGraph(ctx context.Context, job domain.DependencyGraphResolveRequest) ([]domain.DependencyGraphNode, []domain.DependencyGraphEdge, string, error) {
+func resolveNPMGraph(
+	ctx context.Context,
+	job domain.DependencyGraphResolveRequest,
+) ([]domain.DependencyGraphNode, []domain.DependencyGraphEdge, string, error) {
 	dir, err := os.MkdirTemp("", "dependency-firewall-npm-graph-*")
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("creating resolver workspace: %w", err)
 	}
-	defer os.RemoveAll(dir) //nolint:errcheck
+	defer os.RemoveAll(dir) //nolint:errcheck // best-effort cleanup of a temp workspace; the OS reclaims it regardless
 
 	packageJSON := []byte(`{"private":true,"name":"dependency-firewall-graph-root","version":"0.0.0"}` + "\n")
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), packageJSON, 0o600); err != nil {
@@ -172,7 +180,6 @@ func resolveNPMGraph(ctx context.Context, job domain.DependencyGraphResolveReque
 
 	args := []string{
 		"install",
-		job.Root.FullName() + "@" + job.Root.Version,
 		"--package-lock-only",
 		"--ignore-scripts",
 		"--no-audit",
@@ -182,6 +189,11 @@ func resolveNPMGraph(ctx context.Context, job domain.DependencyGraphResolveReque
 	if registry := strings.TrimSpace(job.Upstream.BaseURL); registry != "" {
 		args = append(args, "--registry", registry)
 	}
+	// "--" ends npm's own option parsing. Defense in depth alongside the
+	// leading-"-" rejection in domain.NormalizeArtifactIdentity: even if a
+	// malformed identity reached this far, it cannot be reinterpreted as a
+	// flag to the npm invocation below.
+	args = append(args, "--", job.Root.FullName()+"@"+job.Root.Version)
 	cmd := exec.CommandContext(ctx, "npm", args...)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
@@ -189,6 +201,7 @@ func resolveNPMGraph(ctx context.Context, job domain.DependencyGraphResolveReque
 		return nil, nil, "", fmt.Errorf("running npm resolver: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 
+	//nolint:gosec // fixed filename inside the os.MkdirTemp workspace created above
 	lockData, err := os.ReadFile(filepath.Join(dir, "package-lock.json"))
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("reading resolver package-lock.json: %w", err)

@@ -29,21 +29,29 @@ func TestNPMClient_ListManifestDependencyNames(t *testing.T) {
 	defer srv.Close()
 
 	client := NewNPMClient(srv.Client())
-	names, err := client.ListManifestDependencyNames(context.Background(), domain.Upstream{BaseURL: srv.URL}, domain.ArtifactIdentity{
-		Ecosystem: domain.EcosystemNPM,
-		Name:      "morgan",
-		Version:   "1.10.0",
-	})
+	names, err := client.ListManifestDependencyNames(
+		context.Background(),
+		domain.Upstream{BaseURL: srv.URL},
+		domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "morgan",
+			Version:   "1.10.0",
+		},
+	)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"debug", "on-finished", "fsevents", "react"}, names)
 }
 
 func TestNPMClient_ListManifestDependencyNames_RequiresVersion(t *testing.T) {
 	client := NewNPMClient(&http.Client{})
-	_, err := client.ListManifestDependencyNames(context.Background(), domain.Upstream{BaseURL: "http://localhost"}, domain.ArtifactIdentity{
-		Ecosystem: domain.EcosystemNPM,
-		Name:      "morgan",
-	})
+	_, err := client.ListManifestDependencyNames(
+		context.Background(),
+		domain.Upstream{BaseURL: "http://localhost"},
+		domain.ArtifactIdentity{
+			Ecosystem: domain.EcosystemNPM,
+			Name:      "morgan",
+		},
+	)
 	require.Error(t, err)
 }
 

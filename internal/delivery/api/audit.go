@@ -41,16 +41,16 @@ func (h *AuditHandler) RegisterHumaRoutes(api huma.API) {
 
 type auditListInput struct {
 	TenantID      string `header:"X-Tenant-ID" doc:"Tenant identifier"`
-	Limit         string `query:"limit" doc:"Maximum audit events to return"`
-	Offset        string `query:"offset" doc:"Audit events to skip"`
-	Search        string `query:"search" doc:"Case-insensitive search across event type, message, correlation ID, policy, upstream, and artifact fields"`
-	EventType     string `query:"event_type" doc:"Exact audit event type filter"`
-	Outcome       string `query:"outcome" doc:"Exact decision outcome filter"`
-	CorrelationID string `query:"correlation_id" doc:"Exact request correlation identifier"`
-	PolicyID      string `query:"policy_id" doc:"Exact policy identifier"`
-	Source        string `query:"source" doc:"Exact source filter such as delivery/npm or core/access"`
-	Since         string `query:"since" doc:"Inclusive RFC3339 lower bound for created_at"`
-	Until         string `query:"until" doc:"Inclusive RFC3339 upper bound for created_at"`
+	Limit         string `                     doc:"Maximum audit events to return"                                                                            query:"limit"`
+	Offset        string `                     doc:"Audit events to skip"                                                                                      query:"offset"`
+	Search        string `                     doc:"Case-insensitive search across event type, message, correlation ID, policy, upstream, and artifact fields" query:"search"`
+	EventType     string `                     doc:"Exact audit event type filter"                                                                             query:"event_type"`
+	Outcome       string `                     doc:"Exact decision outcome filter"                                                                             query:"outcome"`
+	CorrelationID string `                     doc:"Exact request correlation identifier"                                                                      query:"correlation_id"`
+	PolicyID      string `                     doc:"Exact policy identifier"                                                                                   query:"policy_id"`
+	Source        string `                     doc:"Exact source filter such as delivery/npm or core/access"                                                   query:"source"`
+	Since         string `                     doc:"Inclusive RFC3339 lower bound for created_at"                                                              query:"since"`
+	Until         string `                     doc:"Inclusive RFC3339 upper bound for created_at"                                                              query:"until"`
 }
 
 type auditListOutput struct {
@@ -89,7 +89,15 @@ func (h *AuditHandler) listHuma(ctx context.Context, input *auditListInput) (*au
 		Until:         until,
 	})
 	if err != nil {
-		return nil, humaInternalError(ctx, h.logger, "listing audit events", err, "failed to list audit events", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"listing audit events",
+			err,
+			"failed to list audit events",
+			"tenant_id",
+			tenantID,
+		)
 	}
 
 	return &auditListOutput{Body: toAuditEventsResponse(events)}, nil

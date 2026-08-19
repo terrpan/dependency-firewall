@@ -75,11 +75,13 @@ func TestOCITenantFromHost(t *testing.T) {
 		},
 	}
 
-	handler := OCITenantFromHost()(NewTenantResolver(repo).Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tenant, ok := TenantFromContext(r.Context())
-		require.True(t, ok)
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"tenant_id": tenant.ID}))
-	})))
+	handler := OCITenantFromHost()(
+		NewTenantResolver(repo).Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tenant, ok := TenantFromContext(r.Context())
+			require.True(t, ok)
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{"tenant_id": tenant.ID}))
+		})),
+	)
 
 	t.Run("resolves tenant from host", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "http://tenant-123.localhost:8080/v2/", nil)

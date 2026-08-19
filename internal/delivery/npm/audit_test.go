@@ -23,7 +23,11 @@ type stubManifestLister struct {
 	deps map[string][]string
 }
 
-func (s *stubManifestLister) ListManifestDependencyNames(_ context.Context, _ domain.Upstream, artifact domain.ArtifactIdentity) ([]string, error) {
+func (s *stubManifestLister) ListManifestDependencyNames(
+	_ context.Context,
+	_ domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) ([]string, error) {
 	return s.deps[artifact.Name+"@"+artifact.Version], nil
 }
 
@@ -32,7 +36,10 @@ type recordingGraphQueue struct {
 	requests []domain.DependencyGraphResolveRequest
 }
 
-func (q *recordingGraphQueue) EnqueueResolve(_ context.Context, req domain.DependencyGraphResolveRequest) (bool, error) {
+func (q *recordingGraphQueue) EnqueueResolve(
+	_ context.Context,
+	req domain.DependencyGraphResolveRequest,
+) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.requests = append(q.requests, req)

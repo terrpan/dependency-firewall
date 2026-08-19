@@ -49,7 +49,13 @@ func validateSchemaVersion(policyType domain.PolicyType, version int) error {
 	if slices.Contains(descriptor.SupportedSchemaVersions, version) {
 		return nil
 	}
-	return fmt.Errorf("%w: schema_version %d is not supported for policy type %q; supported versions: %v", domain.ErrUnsupportedPolicySchemaVersion, version, policyType, descriptor.SupportedSchemaVersions)
+	return fmt.Errorf(
+		"%w: schema_version %d is not supported for policy type %q; supported versions: %v",
+		domain.ErrUnsupportedPolicySchemaVersion,
+		version,
+		policyType,
+		descriptor.SupportedSchemaVersions,
+	)
 }
 
 // SupportedSchemaVersions returns the supported schema versions for a policy type.

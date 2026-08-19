@@ -65,7 +65,7 @@ func NewDiskCache(opts DiskCacheOptions) (*DiskCache, error) {
 	if root == "" {
 		return nil, fmt.Errorf("disk cache root directory is required")
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, fmt.Errorf("creating cache root: %w", err)
 	}
 
@@ -78,12 +78,19 @@ func NewDiskCache(opts DiskCacheOptions) (*DiskCache, error) {
 }
 
 // Get retrieves a cached OCI artifact. Returns domain.ErrCacheMiss if not found.
-func (c *DiskCache) Get(_ context.Context, tenantID string, upstreamID string, kind port.OCIArtifactKind, digest string) (*port.UpstreamResponse, error) {
+func (c *DiskCache) Get(
+	_ context.Context,
+	tenantID string,
+	upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+) (*port.UpstreamResponse, error) {
 	dataPath, metaPath, err := c.finalPaths(tenantID, upstreamID, kind, digest)
 	if err != nil {
 		return nil, err
 	}
 
+	//nolint:gosec // G304: digest is not yet path-validated, see splitDigest and docs/proxy-behavior.md "Possible future work"
 	metaBytes, err := os.ReadFile(metaPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -97,6 +104,7 @@ func (c *DiskCache) Get(_ context.Context, tenantID string, upstreamID string, k
 		return nil, fmt.Errorf("decoding cache metadata: %w", err)
 	}
 
+	//nolint:gosec // G304: digest is not yet path-validated, see splitDigest and docs/proxy-behavior.md "Possible future work"
 	file, err := os.Open(dataPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -114,13 +122,20 @@ func (c *DiskCache) Get(_ context.Context, tenantID string, upstreamID string, k
 }
 
 // StartWrite begins a staged OCI artifact cache write.
-func (c *DiskCache) StartWrite(_ context.Context, tenantID string, upstreamID string, kind port.OCIArtifactKind, digest string, descriptor port.OCIArtifactDescriptor) (port.OCIArtifactWriter, error) {
+func (c *DiskCache) StartWrite(
+	_ context.Context,
+	tenantID string,
+	upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+	descriptor port.OCIArtifactDescriptor,
+) (port.OCIArtifactWriter, error) {
 	finalData, finalMeta, err := c.finalPaths(tenantID, upstreamID, kind, digest)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(finalData), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(finalData), 0o750); err != nil {
 		return nil, fmt.Errorf("creating cache directory: %w", err)
 	}
 
@@ -129,7 +144,7 @@ func (c *DiskCache) StartWrite(_ context.Context, tenantID string, upstreamID st
 		return nil, err
 	}
 	tempDir := filepath.Join(scopeRoot, ".tmp")
-	if err := os.MkdirAll(tempDir, 0o755); err != nil {
+	if err := os.MkdirAll(tempDir, 0o750); err != nil {
 		return nil, fmt.Errorf("creating cache temp directory: %w", err)
 	}
 
@@ -182,7 +197,7 @@ func (s *diskWriteSession) Commit(ctx context.Context) error {
 	}
 
 	tempMeta := s.tempDataPath + ".meta"
-	if err := os.WriteFile(tempMeta, metaBytes, 0o644); err != nil {
+	if err := os.WriteFile(tempMeta, metaBytes, 0o600); err != nil {
 		_ = os.Remove(s.tempDataPath)
 		return fmt.Errorf("writing cache metadata: %w", err)
 	}
@@ -243,36 +258,40 @@ func (c *DiskCache) enforceLimits(_ context.Context, tenantID, upstreamID string
 	if err != nil {
 		return err
 	}
-
-	now := time.Now()
-	if c.maxAge > 0 {
-		var kept []cachedFile
-		for _, file := range files {
-			if now.Sub(file.modTime) > c.maxAge {
-				if err := removeCachedFile(file); err != nil {
-					return err
-				}
-				continue
-			}
-			kept = append(kept, file)
-		}
-		files = kept
+	files, err = c.removeExpiredFiles(files, time.Now())
+	if err != nil {
+		return err
 	}
+	return c.enforceCapacityLimits(files)
+}
 
+func (c *DiskCache) removeExpiredFiles(files []cachedFile, now time.Time) ([]cachedFile, error) {
+	if c.maxAge <= 0 {
+		return files, nil
+	}
+	kept := make([]cachedFile, 0, len(files))
+	for _, file := range files {
+		if now.Sub(file.modTime) <= c.maxAge {
+			kept = append(kept, file)
+			continue
+		}
+		if err := removeCachedFile(file); err != nil {
+			return nil, err
+		}
+	}
+	return kept, nil
+}
+
+func (c *DiskCache) enforceCapacityLimits(files []cachedFile) error {
 	if c.maxEntries <= 0 && c.maxBytes <= 0 {
 		return nil
 	}
-
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].modTime.Before(files[j].modTime)
 	})
 
-	var totalBytes int64
-	for _, file := range files {
-		totalBytes += file.size
-	}
-
-	for len(files) > 0 && ((c.maxEntries > 0 && len(files) > c.maxEntries) || (c.maxBytes > 0 && totalBytes > c.maxBytes)) {
+	totalBytes := cachedFilesSize(files)
+	for len(files) > 0 && c.capacityExceeded(len(files), totalBytes) {
 		oldest := files[0]
 		files = files[1:]
 		totalBytes -= oldest.size
@@ -280,8 +299,21 @@ func (c *DiskCache) enforceLimits(_ context.Context, tenantID, upstreamID string
 			return err
 		}
 	}
-
 	return nil
+}
+
+func cachedFilesSize(files []cachedFile) int64 {
+	var totalBytes int64
+	for _, file := range files {
+		totalBytes += file.size
+	}
+	return totalBytes
+}
+
+func (c *DiskCache) capacityExceeded(entryCount int, totalBytes int64) bool {
+	tooManyEntries := c.maxEntries > 0 && entryCount > c.maxEntries
+	tooManyBytes := c.maxBytes > 0 && totalBytes > c.maxBytes
+	return tooManyEntries || tooManyBytes
 }
 
 func (c *DiskCache) collectScopedFiles(scopeRoot string) ([]cachedFile, error) {
@@ -334,7 +366,11 @@ func removeCachedFile(file cachedFile) error {
 	return nil
 }
 
-func (c *DiskCache) finalPaths(tenantID, upstreamID string, kind port.OCIArtifactKind, digest string) (string, string, error) {
+func (c *DiskCache) finalPaths(
+	tenantID, upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+) (string, string, error) {
 	algo, encoded, err := splitDigest(digest)
 	if err != nil {
 		return "", "", err
@@ -359,6 +395,11 @@ func (c *DiskCache) scopeRoot(tenantID, upstreamID string) (string, error) {
 	return filepath.Join(c.rootDir, tenantComponent, upstreamComponent), nil
 }
 
+// splitDigest does not validate that encoded is a well-formed digest body
+// before it is joined into a cache file path in finalPaths, so a crafted
+// digest (e.g. containing "..") can escape the cache root. Stronger OCI
+// digest/path validation is tracked as future work in docs/proxy-behavior.md;
+// the resulting paths are read in Get (see the nolint markers there).
 func splitDigest(digest string) (string, string, error) {
 	algo, encoded, ok := strings.Cut(strings.TrimSpace(digest), ":")
 	if !ok || algo == "" || encoded == "" {

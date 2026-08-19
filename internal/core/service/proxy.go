@@ -8,11 +8,12 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -389,6 +390,10 @@ func (s *AccessService) finalizeDecision(
 
 // HasRecentAllow checks if there's a recent allow decision for the given
 // repository identity (tenant + ecosystem + namespace + name).
-func (s *AccessService) HasRecentAllow(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (bool, error) {
+func (s *AccessService) HasRecentAllow(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (bool, error) {
 	return s.decisions.HasRecentAllow(ctx, tenantID, artifact.Ecosystem, artifact.Namespace, artifact.Name)
 }

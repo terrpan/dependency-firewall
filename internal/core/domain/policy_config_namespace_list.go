@@ -5,7 +5,7 @@ import "fmt"
 // NamespaceListPolicyConfig configures the allowlist and blocklist policy types.
 type NamespaceListPolicyConfig struct {
 	Namespaces []string `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
-	DryRun     bool     `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+	DryRun     bool     `json:"dry_run,omitempty"    yaml:"dry_run,omitempty"`
 }
 
 // Validate validates the config.

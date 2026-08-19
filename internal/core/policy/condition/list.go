@@ -39,7 +39,11 @@ type NamespaceAllowlist struct{}
 func (n NamespaceAllowlist) Evaluate(req domain.AccessRequest, config domain.PolicyConfig) (bool, string, error) {
 	typed, ok := config.(*domain.NamespaceListPolicyConfig)
 	if !ok {
-		return false, "", fmt.Errorf("namespace_allowlist requires %T, got %T", &domain.NamespaceListPolicyConfig{}, config)
+		return false, "", fmt.Errorf(
+			"namespace_allowlist requires %T, got %T",
+			&domain.NamespaceListPolicyConfig{},
+			config,
+		)
 	}
 	if err := typed.Validate(); err != nil {
 		return false, "", err

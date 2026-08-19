@@ -39,7 +39,12 @@ type DecisionRepository interface {
 	Record(ctx context.Context, decision *domain.Decision) error
 	GetByArtifact(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error)
 	ListByTenant(ctx context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error)
-	HasRecentAllow(ctx context.Context, tenantID string, ecosystem domain.EcosystemType, namespace, name string) (bool, error)
+	HasRecentAllow(
+		ctx context.Context,
+		tenantID string,
+		ecosystem domain.EcosystemType,
+		namespace, name string,
+	) (bool, error)
 }
 
 // DependencyGraphRepository manages durable npm dependency graphs and resolver jobs.
@@ -58,9 +63,24 @@ type DependencyGraphContextLookup interface {
 
 // DependencyGraphResolver claims and completes graph-resolution jobs.
 type DependencyGraphResolver interface {
-	ClaimNextResolveJob(ctx context.Context, tenantID string, now time.Time) (*domain.DependencyGraphResolveRequest, error)
-	CompleteResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, nodes []domain.DependencyGraphNode, edges []domain.DependencyGraphEdge, graphHash string) error
-	FailResolve(ctx context.Context, req domain.DependencyGraphResolveRequest, message string, retryAfter time.Time) error
+	ClaimNextResolveJob(
+		ctx context.Context,
+		tenantID string,
+		now time.Time,
+	) (*domain.DependencyGraphResolveRequest, error)
+	CompleteResolve(
+		ctx context.Context,
+		req domain.DependencyGraphResolveRequest,
+		nodes []domain.DependencyGraphNode,
+		edges []domain.DependencyGraphEdge,
+		graphHash string,
+	) error
+	FailResolve(
+		ctx context.Context,
+		req domain.DependencyGraphResolveRequest,
+		message string,
+		retryAfter time.Time,
+	) error
 }
 
 // DependencyGraphQueue enqueues idempotent async graph resolution requests.
@@ -93,7 +113,11 @@ type BundleUpstreamRepository interface {
 // UpstreamAuthSecretRewrapper decrypts one stored upstream auth secret and
 // immediately passes it to a caller-supplied wrapping function.
 type UpstreamAuthSecretRewrapper interface {
-	RewrapUpstreamAuthSecret(ctx context.Context, tenantID, upstreamID string, wrap UpstreamAuthSecretWrapper) ([]byte, error)
+	RewrapUpstreamAuthSecret(
+		ctx context.Context,
+		tenantID, upstreamID string,
+		wrap UpstreamAuthSecretWrapper,
+	) ([]byte, error)
 }
 
 // UpstreamAuthSecretWrapper encrypts or otherwise wraps a plaintext upstream auth secret.

@@ -89,7 +89,11 @@ func (s *spyPolicyServiceRepo) ListByTenant(context.Context, string) ([]domain.P
 	return s.listPolicies, nil
 }
 
-func (s *spyPolicyServiceRepo) ListVersions(_ context.Context, tenantID, policyID string, limit int) ([]domain.PolicyVersion, error) {
+func (s *spyPolicyServiceRepo) ListVersions(
+	_ context.Context,
+	tenantID, policyID string,
+	limit int,
+) ([]domain.PolicyVersion, error) {
 	for i := range s.listPolicies {
 		if s.listPolicies[i].TenantID == tenantID && s.listPolicies[i].ID == policyID {
 			versions := append([]domain.PolicyVersion(nil), s.versions[policyID]...)
@@ -117,7 +121,11 @@ func (s *spyPolicyServiceRepo) Update(_ context.Context, policy *domain.Policy) 
 	return nil
 }
 
-func (s *spyPolicyServiceRepo) RollbackToVersion(_ context.Context, tenantID, policyID string, version int) (*domain.Policy, error) {
+func (s *spyPolicyServiceRepo) RollbackToVersion(
+	_ context.Context,
+	tenantID, policyID string,
+	version int,
+) (*domain.Policy, error) {
 	for i := range s.listPolicies {
 		if s.listPolicies[i].TenantID == tenantID && s.listPolicies[i].ID == policyID {
 			var snapshot *domain.PolicyVersion
@@ -205,7 +213,11 @@ func (s *stubPolicyUpstreamRepository) GetByID(_ context.Context, tenantID, id s
 	return &copyUpstream, nil
 }
 
-func (s *stubPolicyUpstreamRepository) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
+func (s *stubPolicyUpstreamRepository) GetByEcosystem(
+	context.Context,
+	string,
+	domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return nil, domain.ErrUpstreamNotFound
 }
 
@@ -225,7 +237,12 @@ func (s *stubPolicyUpstreamRepository) Delete(context.Context, string, string) e
 	return nil
 }
 
-func (s *spyPolicyDecisionCache) Get(context.Context, string, domain.ArtifactIdentity, string) (*domain.Decision, error) {
+func (s *spyPolicyDecisionCache) Get(
+	context.Context,
+	string,
+	domain.ArtifactIdentity,
+	string,
+) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 
@@ -487,7 +504,11 @@ func TestPolicyService_ListTypes(t *testing.T) {
 			assert.Contains(t, descriptor.Example, "license_allowlist")
 			assert.Equal(t, []domain.PolicyAction{domain.PolicyActionDeny}, descriptor.SupportedActions)
 			assert.Equal(t, []domain.EcosystemType{domain.EcosystemNPM}, descriptor.SupportedEcosystems)
-			assert.Equal(t, []domain.UpstreamCapability{domain.UpstreamCapabilityLicenses}, descriptor.RequiredCapabilities)
+			assert.Equal(
+				t,
+				[]domain.UpstreamCapability{domain.UpstreamCapabilityLicenses},
+				descriptor.RequiredCapabilities,
+			)
 		}
 		if descriptor.Type == domain.PolicyTypeNamespaceAllowlist {
 			foundNamespaceAllowlist = true
@@ -495,7 +516,11 @@ func TestPolicyService_ListTypes(t *testing.T) {
 			assert.NotEmpty(t, descriptor.Description)
 			assert.Contains(t, descriptor.Example, "namespace_allowlist")
 			assert.Equal(t, []domain.PolicyAction{domain.PolicyActionDeny}, descriptor.SupportedActions)
-			assert.Equal(t, []domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI}, descriptor.SupportedEcosystems)
+			assert.Equal(
+				t,
+				[]domain.EcosystemType{domain.EcosystemNPM, domain.EcosystemOCI},
+				descriptor.SupportedEcosystems,
+			)
 			assert.Empty(t, descriptor.RequiredCapabilities)
 		}
 	}

@@ -4,11 +4,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
-func (s *AccessService) denyForInvalidPolicySet(ctx context.Context, req domain.AccessRequest, validationErr error) *domain.Decision {
+func (s *AccessService) denyForInvalidPolicySet(
+	ctx context.Context,
+	req domain.AccessRequest,
+	validationErr error,
+) *domain.Decision {
 	span := trace.SpanFromContext(ctx)
 	recordSpanError(span, validationErr)
 	_ = s.recordAudit(ctx, domain.AuditEvent{

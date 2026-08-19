@@ -14,7 +14,11 @@ type Enricher interface {
 
 // UpstreamClient fetches metadata and content from upstream registries.
 type UpstreamClient interface {
-	FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*UpstreamResponse, error)
+	FetchMetadata(
+		ctx context.Context,
+		upstream domain.Upstream,
+		artifact domain.ArtifactIdentity,
+	) (*UpstreamResponse, error)
 	FetchContent(ctx context.Context, upstream domain.Upstream, locator string) (*UpstreamResponse, error)
 	ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error)
 }
@@ -22,7 +26,11 @@ type UpstreamClient interface {
 // NPMManifestDependencyLister lists the dependency package names declared by
 // one concrete npm package version manifest.
 type NPMManifestDependencyLister interface {
-	ListManifestDependencyNames(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) ([]string, error)
+	ListManifestDependencyNames(
+		ctx context.Context,
+		upstream domain.Upstream,
+		artifact domain.ArtifactIdentity,
+	) ([]string, error)
 }
 
 // UpstreamResponse wraps a streaming response from an upstream registry.

@@ -12,7 +12,12 @@ import (
 // New creates a validator configured for the given struct tag name.
 func New(tagName string) *validator.Validate {
 	v := validator.New(validator.WithRequiredStructEnabled())
-	v.RegisterValidation("notblank", notBlank)
+	// Registration only fails on an empty tag or nil function, both of which are
+	// fixed here. Swallowing the error would silently drop the notblank rule and
+	// let blank values through validation, so fail loudly at initialisation.
+	if err := v.RegisterValidation("notblank", notBlank); err != nil {
+		panic(fmt.Sprintf("registering notblank validator: %v", err))
+	}
 
 	if tagName != "" {
 		v.RegisterTagNameFunc(func(field reflect.StructField) string {

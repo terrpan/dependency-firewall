@@ -31,7 +31,11 @@ func metadataKey(tenantID string, generation int64, artifact domain.ArtifactIden
 }
 
 // Get retrieves cached artifact metadata. Returns domain.ErrCacheMiss if not found.
-func (c *MetadataCache) Get(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (c *MetadataCache) Get(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	generation, err := c.currentGeneration(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -53,7 +57,13 @@ func (c *MetadataCache) Get(ctx context.Context, tenantID string, artifact domai
 }
 
 // Set stores artifact metadata in the cache with the given TTL.
-func (c *MetadataCache) Set(ctx context.Context, tenantID string, artifact domain.ArtifactIdentity, metadata *domain.ArtifactMetadata, ttl time.Duration) error {
+func (c *MetadataCache) Set(
+	ctx context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+	metadata *domain.ArtifactMetadata,
+	ttl time.Duration,
+) error {
 	data, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("marshalling metadata for cache: %w", err)
@@ -88,16 +98,5 @@ func (c *MetadataCache) InvalidateTenant(ctx context.Context, tenantID string) e
 }
 
 func (c *MetadataCache) currentGeneration(ctx context.Context, tenantID string) (int64, error) {
-	value, err := c.client.Do(ctx, c.client.B().Get().Key(metadataGenerationKey(tenantID)).Build()).ToString()
-	if err == nil {
-		generation, parseErr := strconv.ParseInt(value, 10, 64)
-		if parseErr != nil {
-			return 0, fmt.Errorf("parsing metadata cache generation: %w", parseErr)
-		}
-		return generation, nil
-	}
-	if valkeygo.IsValkeyNil(err) {
-		return 0, nil
-	}
-	return 0, fmt.Errorf("getting metadata cache generation: %w", err)
+	return currentCacheGeneration(ctx, c.client, metadataGenerationKey(tenantID), "metadata")
 }

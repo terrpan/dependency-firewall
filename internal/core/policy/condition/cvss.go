@@ -27,7 +27,11 @@ func (c CVSSThreshold) Evaluate(req domain.AccessRequest, config domain.PolicyCo
 	if typed.MaxCVSS != nil && req.Metadata.MaxCVSS != nil {
 		score := *req.Metadata.MaxCVSS
 		if score >= *typed.MaxCVSS {
-			return true, fmt.Sprintf("artifact has CVSS score %.1f at or above threshold %.1f", score, *typed.MaxCVSS), nil
+			return true, fmt.Sprintf(
+				"artifact has CVSS score %.1f at or above threshold %.1f",
+				score,
+				*typed.MaxCVSS,
+			), nil
 		}
 	}
 
@@ -43,9 +47,18 @@ func (c CVSSThreshold) Evaluate(req domain.AccessRequest, config domain.PolicyCo
 
 			if severityAtOrAbove(actual, threshold) {
 				if inferredFromScore {
-					return true, fmt.Sprintf("artifact has vulnerability with inferred severity %s (CVSS %.1f) at or above threshold %s", actual, vulnerability.CVSS, threshold), nil
+					return true, fmt.Sprintf(
+						"artifact has vulnerability with inferred severity %s (CVSS %.1f) at or above threshold %s",
+						actual,
+						vulnerability.CVSS,
+						threshold,
+					), nil
 				}
-				return true, fmt.Sprintf("artifact has vulnerability with severity %s at or above threshold %s", actual, threshold), nil
+				return true, fmt.Sprintf(
+					"artifact has vulnerability with severity %s at or above threshold %s",
+					actual,
+					threshold,
+				), nil
 			}
 		}
 	}

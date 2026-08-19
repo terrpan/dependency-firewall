@@ -11,6 +11,8 @@ import (
 // DependencyGraphStatus describes the lifecycle of one resolved root graph.
 type DependencyGraphStatus string
 
+// A root is enqueued as pending, claimed by a resolver worker as resolving, and ends either complete with a stored
+// node/edge graph and hash, or failed with an error message and a fixed retry time.
 const (
 	DependencyGraphPending   DependencyGraphStatus = "pending"
 	DependencyGraphResolving DependencyGraphStatus = "resolving"
@@ -21,6 +23,8 @@ const (
 // DependencyScope describes how a requested artifact relates to known npm root graphs.
 type DependencyScope string
 
+// Scope is derived from the minimum depth at which an artifact appears in resolved graphs: the root itself and depth-1
+// packages are direct, deeper packages are transitive, and absent or conflicting evidence normalizes to unknown.
 const (
 	DependencyScopeDirect     DependencyScope = "direct"
 	DependencyScopeTransitive DependencyScope = "transitive"
@@ -30,6 +34,8 @@ const (
 // DependencyType classifies an npm dependency edge.
 type DependencyType string
 
+// These mirror the npm dependency kinds parsed out of a resolved package lock, and are the values policy targets match
+// against in their dependency_types selector.
 const (
 	DependencyTypeProd     DependencyType = "prod"
 	DependencyTypeDev      DependencyType = "dev"

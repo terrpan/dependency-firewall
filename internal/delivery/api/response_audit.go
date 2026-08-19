@@ -6,6 +6,9 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// AuditEventResponse is the wire form of one append-only audit record. CorrelationID ties together every event emitted
+// for a single proxy request, and Payload carries the evidence retained at the configured audit detail level. TenantID
+// is deliberately absent because audit reads are already scoped to the requesting tenant.
 type AuditEventResponse struct {
 	ID            string                   `json:"id"`
 	CorrelationID string                   `json:"correlation_id,omitempty"`

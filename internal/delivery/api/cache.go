@@ -65,7 +65,15 @@ func (h *CacheHandler) clearDecisionCacheHuma(ctx context.Context, input *cacheT
 	}
 
 	if err := h.caches.ClearTenantDecisions(ctx, tenantID); err != nil {
-		return nil, humaInternalError(ctx, h.logger, "clearing tenant decision cache", err, "failed to clear decision cache", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"clearing tenant decision cache",
+			err,
+			"failed to clear decision cache",
+			"tenant_id",
+			tenantID,
+		)
 	}
 
 	return &cacheClearOutput{
@@ -83,7 +91,15 @@ func (h *CacheHandler) clearMetadataCacheHuma(ctx context.Context, input *cacheT
 	}
 
 	if err := h.caches.ClearTenantMetadata(ctx, tenantID); err != nil {
-		return nil, humaInternalError(ctx, h.logger, "clearing tenant metadata cache", err, "failed to clear metadata cache", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"clearing tenant metadata cache",
+			err,
+			"failed to clear metadata cache",
+			"tenant_id",
+			tenantID,
+		)
 	}
 
 	return &cacheClearOutput{

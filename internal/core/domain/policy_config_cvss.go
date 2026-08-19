@@ -5,6 +5,8 @@ import "fmt"
 // SeverityLevel represents a CVSS severity level.
 type SeverityLevel string
 
+// Qualitative CVSS severity bands, ordered from most to least severe. The cvss_threshold policy uses them as an
+// alternative to a numeric score so tenants can express a minimum severity that must be present to deny.
 const (
 	SeverityCritical SeverityLevel = "critical"
 	SeverityHigh     SeverityLevel = "high"
@@ -15,9 +17,9 @@ const (
 
 // CVSSThresholdPolicyConfig configures the cvss_threshold policy type.
 type CVSSThresholdPolicyConfig struct {
-	MaxCVSS         *float64       `json:"max_cvss,omitempty" yaml:"max_cvss,omitempty"`
+	MaxCVSS         *float64       `json:"max_cvss,omitempty"         yaml:"max_cvss,omitempty"`
 	MinimumSeverity *SeverityLevel `json:"minimum_severity,omitempty" yaml:"minimum_severity,omitempty"`
-	DryRun          bool           `json:"dry_run,omitempty" yaml:"dry_run,omitempty"`
+	DryRun          bool           `json:"dry_run,omitempty"          yaml:"dry_run,omitempty"`
 }
 
 // Validate validates the config.

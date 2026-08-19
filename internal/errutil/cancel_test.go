@@ -49,5 +49,6 @@ func TestIsDeadlineExceededContext(t *testing.T) {
 
 	assert.True(t, IsDeadlineExceededContext(ctx))
 	assert.False(t, IsDeadlineExceededContext(context.Background()))
+	//nolint:staticcheck // passing nil is the case under test
 	assert.False(t, IsDeadlineExceededContext(nil))
 }

@@ -33,7 +33,11 @@ type cacheReadCloser struct {
 }
 
 // NewCachedOCIClient creates a cache-backed OCI client.
-func NewCachedOCIClient(delegate port.UpstreamClient, cache port.OCIArtifactCache, logger *slog.Logger) *CachedOCIClient {
+func NewCachedOCIClient(
+	delegate port.UpstreamClient,
+	cache port.OCIArtifactCache,
+	logger *slog.Logger,
+) *CachedOCIClient {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -45,7 +49,11 @@ func NewCachedOCIClient(delegate port.UpstreamClient, cache port.OCIArtifactCach
 }
 
 // FetchMetadata fetches OCI manifests, consulting the cache when a digest is available.
-func (c *CachedOCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (c *CachedOCIClient) FetchMetadata(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (*port.UpstreamResponse, error) {
 	return c.fetchWithCache(
 		ctx,
 		upstream,
@@ -58,7 +66,11 @@ func (c *CachedOCIClient) FetchMetadata(ctx context.Context, upstream domain.Ups
 }
 
 // FetchContent fetches OCI blobs, consulting the cache first by tenant, upstream, and digest.
-func (c *CachedOCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
+func (c *CachedOCIClient) FetchContent(
+	ctx context.Context,
+	upstream domain.Upstream,
+	digest string,
+) (*port.UpstreamResponse, error) {
 	return c.fetchWithCache(
 		ctx,
 		upstream,
@@ -109,11 +121,21 @@ func (c *CachedOCIClient) fetchWithCache(
 }
 
 // ResolveReference delegates tag resolution to the wrapped upstream client.
-func (c *CachedOCIClient) ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
+func (c *CachedOCIClient) ResolveReference(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (string, error) {
 	return c.delegate.ResolveReference(ctx, upstream, artifact)
 }
 
-func (c *CachedOCIClient) wrapResponse(ctx context.Context, tenantID, upstreamID string, kind port.OCIArtifactKind, digest string, resp *port.UpstreamResponse) (*port.UpstreamResponse, error) {
+func (c *CachedOCIClient) wrapResponse(
+	ctx context.Context,
+	tenantID, upstreamID string,
+	kind port.OCIArtifactKind,
+	digest string,
+	resp *port.UpstreamResponse,
+) (*port.UpstreamResponse, error) {
 	if digest == "" || resp == nil || resp.StatusCode != http.StatusOK || resp.Body == nil {
 		return resp, nil
 	}

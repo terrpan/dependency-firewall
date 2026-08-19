@@ -47,7 +47,10 @@ func NewNPMInstallSnapshotService(
 
 // ProcessSnapshot infers the root packages of an install snapshot and enqueues
 // one graph-resolution job per root. It returns the inferred roots.
-func (s *NPMInstallSnapshotService) ProcessSnapshot(ctx context.Context, snapshot domain.NPMInstallSnapshot) ([]domain.ArtifactIdentity, error) {
+func (s *NPMInstallSnapshotService) ProcessSnapshot(
+	ctx context.Context,
+	snapshot domain.NPMInstallSnapshot,
+) ([]domain.ArtifactIdentity, error) {
 	if s == nil || s.manifests == nil || s.queue == nil {
 		return nil, nil
 	}
@@ -118,7 +121,11 @@ func (s *NPMInstallSnapshotService) ProcessSnapshot(ctx context.Context, snapsho
 // collectDependencyNames fetches each snapshot package manifest with bounded
 // concurrency and returns the union of declared dependency names plus the
 // number of manifests that could not be inspected.
-func (s *NPMInstallSnapshotService) collectDependencyNames(ctx context.Context, upstream domain.Upstream, packages []domain.ArtifactIdentity) (map[string]struct{}, int) {
+func (s *NPMInstallSnapshotService) collectDependencyNames(
+	ctx context.Context,
+	upstream domain.Upstream,
+	packages []domain.ArtifactIdentity,
+) (map[string]struct{}, int) {
 	var (
 		mu            sync.Mutex
 		wg            sync.WaitGroup

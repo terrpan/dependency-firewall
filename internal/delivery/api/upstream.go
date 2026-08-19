@@ -62,7 +62,12 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Update an upstream",
 		Description: "Updates a tenant-scoped upstream registry configuration.",
 		Tags:        []string{"upstreams"},
-		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError),
+		Errors: controlPlaneErrors(
+			http.StatusBadRequest,
+			http.StatusConflict,
+			http.StatusNotFound,
+			http.StatusInternalServerError,
+		),
 	}, h.update)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-upstream",
@@ -79,18 +84,18 @@ func (h *UpstreamHandler) RegisterHumaRoutes(api huma.API) {
 }
 
 type createUpstreamRequest struct {
-	Name         string                      `json:"name,omitempty" validate:"notblank" doc:"Upstream display name"`
-	Ecosystem    domain.EcosystemType        `json:"ecosystem,omitempty" validate:"required,oneof=npm oci" doc:"Upstream ecosystem"`
-	BaseURL      string                      `json:"base_url,omitempty" validate:"notblank,url" doc:"Upstream base URL"`
-	Capabilities []domain.UpstreamCapability `json:"capabilities,omitempty" doc:"Capability profile used for policy compatibility checks"`
-	Auth         *upstreamAuthRequest        `json:"auth,omitempty" doc:"Optional server-side upstream authentication settings"`
+	Name         string                      `json:"name,omitempty"         validate:"notblank"               doc:"Upstream display name"`
+	Ecosystem    domain.EcosystemType        `json:"ecosystem,omitempty"    validate:"required,oneof=npm oci" doc:"Upstream ecosystem"`
+	BaseURL      string                      `json:"base_url,omitempty"     validate:"notblank,url"           doc:"Upstream base URL"`
+	Capabilities []domain.UpstreamCapability `json:"capabilities,omitempty"                                   doc:"Capability profile used for policy compatibility checks"`
+	Auth         *upstreamAuthRequest        `json:"auth,omitempty"                                           doc:"Optional server-side upstream authentication settings"`
 }
 
 type upstreamAuthRequest struct {
-	Type     domain.UpstreamAuthType `json:"type,omitempty" enum:"none,basic,bearer_token" doc:"Upstream authentication type"`
-	Username string                  `json:"username,omitempty" doc:"Username for basic/PAT authentication"`
-	Password string                  `json:"password,omitempty" doc:"Password or PAT for basic authentication"`
-	Token    string                  `json:"token,omitempty" doc:"Static bearer token"`
+	Type     domain.UpstreamAuthType `json:"type,omitempty"     enum:"none,basic,bearer_token" doc:"Upstream authentication type"`
+	Username string                  `json:"username,omitempty"                                doc:"Username for basic/PAT authentication"`
+	Password string                  `json:"password,omitempty"                                doc:"Password or PAT for basic authentication"`
+	Token    string                  `json:"token,omitempty"                                   doc:"Static bearer token"`
 }
 
 type upstreamHeaderInput struct {
@@ -104,12 +109,12 @@ type createUpstreamInput struct {
 
 type upstreamIDInput struct {
 	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
-	ID       string `path:"id" doc:"Upstream identifier"`
+	ID       string `                     doc:"Upstream identifier" path:"id"`
 }
 
 type updateUpstreamInput struct {
 	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
-	ID       string `path:"id" doc:"Upstream identifier"`
+	ID       string `                     doc:"Upstream identifier" path:"id"`
 	Body     createUpstreamRequest
 }
 
@@ -140,7 +145,15 @@ func (h *UpstreamHandler) list(ctx context.Context, input *upstreamHeaderInput) 
 
 	upstreams, err := h.upstreams.ListByTenant(ctx, tenantID)
 	if err != nil {
-		return nil, humaInternalError(ctx, h.logger, "listing upstreams", err, "failed to list upstreams", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"listing upstreams",
+			err,
+			"failed to list upstreams",
+			"tenant_id",
+			tenantID,
+		)
 	}
 	return &upstreamListOutput{Body: toUpstreamsResponse(upstreams)}, nil
 }
@@ -159,7 +172,17 @@ func (h *UpstreamHandler) get(ctx context.Context, input *upstreamIDInput) (*ups
 		if errors.Is(err, domain.ErrUpstreamNotFound) {
 			return nil, huma.Error404NotFound("upstream not found")
 		}
-		return nil, humaInternalError(ctx, h.logger, "getting upstream", err, "failed to get upstream", "tenant_id", tenantID, "upstream_id", input.ID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"getting upstream",
+			err,
+			"failed to get upstream",
+			"tenant_id",
+			tenantID,
+			"upstream_id",
+			input.ID,
+		)
 	}
 	return &upstreamOutput{Body: toUpstreamResponse(upstream)}, nil
 }
@@ -185,12 +208,26 @@ func (h *UpstreamHandler) delete(ctx context.Context, input *upstreamIDInput) (*
 		if errors.Is(err, domain.ErrUpstreamInUse) {
 			return nil, huma.Error409Conflict("upstream is still referenced by policies")
 		}
-		return nil, humaInternalError(ctx, h.logger, "deleting upstream", err, "failed to delete upstream", "tenant_id", tenantID, "upstream_id", input.ID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"deleting upstream",
+			err,
+			"failed to delete upstream",
+			"tenant_id",
+			tenantID,
+			"upstream_id",
+			input.ID,
+		)
 	}
 	return nil, nil
 }
 
-func (h *UpstreamHandler) createUpstream(ctx context.Context, rawTenantID string, req createUpstreamRequest) (*UpstreamResponse, error) {
+func (h *UpstreamHandler) createUpstream(
+	ctx context.Context,
+	rawTenantID string,
+	req createUpstreamRequest,
+) (*UpstreamResponse, error) {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -222,15 +259,30 @@ func (h *UpstreamHandler) createUpstream(ctx context.Context, rawTenantID string
 		if errors.Is(err, domain.ErrUnsupportedUpstreamCapability) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		if errors.Is(err, domain.ErrUpstreamAuthInvalid) || errors.Is(err, domain.ErrUpstreamAuthKeyUnavailable) || errors.Is(err, domain.ErrUpstreamAuthTransportInsecure) {
+		if errors.Is(err, domain.ErrUpstreamAuthInvalid) || errors.Is(err, domain.ErrUpstreamAuthKeyUnavailable) ||
+			errors.Is(err, domain.ErrUpstreamAuthTransportInsecure) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, humaInternalError(ctx, h.logger, "creating upstream", err, "failed to create upstream", "tenant_id", tenantID, "upstream_name", req.Name)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"creating upstream",
+			err,
+			"failed to create upstream",
+			"tenant_id",
+			tenantID,
+			"upstream_name",
+			req.Name,
+		)
 	}
 	return toUpstreamResponse(upstream), nil
 }
 
-func (h *UpstreamHandler) updateUpstream(ctx context.Context, rawTenantID, id string, req createUpstreamRequest) (*UpstreamResponse, error) {
+func (h *UpstreamHandler) updateUpstream(
+	ctx context.Context,
+	rawTenantID, id string,
+	req createUpstreamRequest,
+) (*UpstreamResponse, error) {
 	tenantID, err := tenantIDFromValue(rawTenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -266,14 +318,35 @@ func (h *UpstreamHandler) updateUpstream(ctx context.Context, rawTenantID, id st
 		if errors.Is(err, domain.ErrUnsupportedUpstreamCapability) || errors.Is(err, domain.ErrUpstreamPolicyConflict) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		if errors.Is(err, domain.ErrUpstreamAuthInvalid) || errors.Is(err, domain.ErrUpstreamAuthKeyUnavailable) || errors.Is(err, domain.ErrUpstreamAuthTransportInsecure) {
+		if errors.Is(err, domain.ErrUpstreamAuthInvalid) || errors.Is(err, domain.ErrUpstreamAuthKeyUnavailable) ||
+			errors.Is(err, domain.ErrUpstreamAuthTransportInsecure) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, humaInternalError(ctx, h.logger, "updating upstream", err, "failed to update upstream", "tenant_id", tenantID, "upstream_id", id)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"updating upstream",
+			err,
+			"failed to update upstream",
+			"tenant_id",
+			tenantID,
+			"upstream_id",
+			id,
+		)
 	}
 	updated, err := h.upstreams.GetByID(ctx, tenantID, id)
 	if err != nil {
-		return nil, humaInternalError(ctx, h.logger, "loading updated upstream", err, "failed to load updated upstream", "tenant_id", tenantID, "upstream_id", id)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"loading updated upstream",
+			err,
+			"failed to load updated upstream",
+			"tenant_id",
+			tenantID,
+			"upstream_id",
+			id,
+		)
 	}
 	return toUpstreamResponse(updated), nil
 }

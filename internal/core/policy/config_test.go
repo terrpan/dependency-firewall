@@ -11,14 +11,22 @@ import (
 
 func TestDecodeStoredConfigJSON(t *testing.T) {
 	t.Run("stored deprecated enforce returns upgrade error", func(t *testing.T) {
-		_, err := DecodeStoredConfigJSON(domain.PolicyTypeMaximumAge, 1, []byte(`{"max_age_days":730,"enforce":"warn"}`))
+		_, err := DecodeStoredConfigJSON(
+			domain.PolicyTypeMaximumAge,
+			1,
+			[]byte(`{"max_age_days":730,"enforce":"warn"}`),
+		)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, domain.ErrDeprecatedPolicyConfig)
 		assert.Contains(t, err.Error(), "run the policy data migration")
 	})
 
 	t.Run("stored dry_run config still decodes", func(t *testing.T) {
-		cfg, err := DecodeStoredConfigJSON(domain.PolicyTypeMaximumAge, 1, []byte(`{"max_age_days":730,"dry_run":true}`))
+		cfg, err := DecodeStoredConfigJSON(
+			domain.PolicyTypeMaximumAge,
+			1,
+			[]byte(`{"max_age_days":730,"dry_run":true}`),
+		)
 		require.NoError(t, err)
 		typed, ok := cfg.(*domain.MaximumAgePolicyConfig)
 		require.True(t, ok)
@@ -29,9 +37,9 @@ func TestDecodeStoredConfigJSON(t *testing.T) {
 }
 
 func TestToDomainPolicies_RejectsUnsupportedSchemaVersion(t *testing.T) {
-	pf := &PolicyFile{
+	pf := &File{
 		TenantID: "tenant-1",
-		Policies: []PolicyDef{{
+		Policies: []Def{{
 			Name:          "block-critical",
 			Type:          "cvss_threshold",
 			SchemaVersion: intPtr(2),

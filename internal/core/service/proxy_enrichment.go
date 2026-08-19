@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
-func (s *AccessService) enrichArtifact(ctx context.Context, req domain.AccessRequest) (*domain.ArtifactMetadata, error) {
+func (s *AccessService) enrichArtifact(
+	ctx context.Context,
+	req domain.AccessRequest,
+) (*domain.ArtifactMetadata, error) {
 	if err := s.recordAudit(ctx, domain.AuditEvent{
 		TenantID:      req.TenantID,
 		CorrelationID: req.RequestID,

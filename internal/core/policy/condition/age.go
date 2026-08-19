@@ -22,22 +22,13 @@ func (m MinimumAge) Evaluate(req domain.AccessRequest, config domain.PolicyConfi
 		return false, "", err
 	}
 
-	if isExcludedPackage(req.Artifact.FullName(), typed.ExcludePackages) {
-		return false, "", nil
-	}
-
-	if req.Metadata == nil || req.Metadata.PublishedAt == nil {
-		return false, "", nil
-	}
-
-	ageDays := time.Since(*req.Metadata.PublishedAt).Hours() / 24
-	ageDaysRounded := int(math.Floor(ageDays))
-
-	if ageDays < float64(*typed.MinAgeDays) {
-		return true, fmt.Sprintf("artifact published %d days ago, minimum required is %d days", ageDaysRounded, *typed.MinAgeDays), nil
-	}
-
-	return false, "", nil
+	return evaluateAge(
+		req,
+		typed.ExcludePackages,
+		*typed.MinAgeDays,
+		isYoungerThan,
+		"artifact published %d days ago, minimum required is %d days",
+	)
 }
 
 // MaximumAge matches when an artifact was published more than max_age_days ago.
@@ -53,22 +44,43 @@ func (m MaximumAge) Evaluate(req domain.AccessRequest, config domain.PolicyConfi
 		return false, "", err
 	}
 
-	if isExcludedPackage(req.Artifact.FullName(), typed.ExcludePackages) {
+	return evaluateAge(
+		req,
+		typed.ExcludePackages,
+		*typed.MaxAgeDays,
+		isOlderThan,
+		"artifact published %d days ago, maximum allowed is %d days",
+	)
+}
+
+func evaluateAge(
+	req domain.AccessRequest,
+	excludedPackages []string,
+	thresholdDays int,
+	matches func(float64, int) bool,
+	reasonFormat string,
+) (bool, string, error) {
+	if isExcludedPackage(req.Artifact.FullName(), excludedPackages) {
 		return false, "", nil
 	}
-
 	if req.Metadata == nil || req.Metadata.PublishedAt == nil {
 		return false, "", nil
 	}
 
 	ageDays := time.Since(*req.Metadata.PublishedAt).Hours() / 24
-	ageDaysRounded := int(math.Floor(ageDays))
-
-	if ageDays > float64(*typed.MaxAgeDays) {
-		return true, fmt.Sprintf("artifact published %d days ago, maximum allowed is %d days", ageDaysRounded, *typed.MaxAgeDays), nil
+	if !matches(ageDays, thresholdDays) {
+		return false, "", nil
 	}
 
-	return false, "", nil
+	return true, fmt.Sprintf(reasonFormat, int(math.Floor(ageDays)), thresholdDays), nil
+}
+
+func isYoungerThan(ageDays float64, thresholdDays int) bool {
+	return ageDays < float64(thresholdDays)
+}
+
+func isOlderThan(ageDays float64, thresholdDays int) bool {
+	return ageDays > float64(thresholdDays)
 }
 
 // isExcludedPackage checks if the artifact's full name is in the exclude_packages list.

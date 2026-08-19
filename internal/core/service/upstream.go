@@ -17,7 +17,11 @@ type UpstreamService struct {
 }
 
 // NewUpstreamService creates a new UpstreamService.
-func NewUpstreamService(repo port.UpstreamRepository, policies port.PolicyRepository, options ...UpstreamServiceOption) *UpstreamService {
+func NewUpstreamService(
+	repo port.UpstreamRepository,
+	policies port.PolicyRepository,
+	options ...UpstreamServiceOption,
+) *UpstreamService {
 	s := &UpstreamService{
 		repo:                        repo,
 		policies:                    policies,

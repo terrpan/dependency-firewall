@@ -5,6 +5,8 @@ import "time"
 // UpstreamAuthType identifies the server-side authentication mode for an upstream registry.
 type UpstreamAuthType string
 
+// How the firewall authenticates its own outbound requests to an upstream registry: not at all, with HTTP basic
+// credentials (username plus password or PAT), or with a bearer token. Clients of the proxy never see these values.
 const (
 	UpstreamAuthNone        UpstreamAuthType = "none"
 	UpstreamAuthBasic       UpstreamAuthType = "basic"

@@ -36,7 +36,10 @@ func registerControlPlaneRoutes(
 				client: telemetry.WrapHTTPClient(&http.Client{Timeout: 3 * time.Second}),
 			}))
 		} else {
-			healthOptions = append(healthOptions, service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"))
+			healthOptions = append(
+				healthOptions,
+				service.WithProxyStatus("separate", "proxy runs as a separate service in control-plane mode"),
+			)
 		}
 	}
 
@@ -54,15 +57,29 @@ func registerControlPlaneRoutes(
 	apidelivery.NewHealthHandler(healthService, logger).RegisterHumaRoutes(controlPlaneAPI)
 
 	tenantService := service.NewTenantService(deps.tenantRepo)
-	policyService := service.NewPolicyService(deps.policyRepo, deps.policyRevisionRepo, deps.decisionCache, deps.upstreamRepo)
+	policyService := service.NewPolicyService(
+		deps.policyRepo,
+		deps.policyRevisionRepo,
+		deps.decisionCache,
+		deps.upstreamRepo,
+	)
 	cacheService := service.NewCacheService(deps.decisionCache, deps.metadataCache)
 	upstreamService := service.NewUpstreamService(
 		deps.upstreamRepo,
 		deps.policyRepo,
-		service.WithAuthenticatedUpstreams(cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls"),
+		service.WithAuthenticatedUpstreams(
+			cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls",
+		),
 	)
 	evaluationService := service.NewEvaluationService(deps.decisionRepo)
-	auditListService := service.NewAuditService(nil, deps.auditRepo, logger, cfg.Audit.Enabled, parseAuditFailureMode(cfg.Audit.FailureMode), parseAuditDetailLevel(cfg.Audit.DetailLevel))
+	auditListService := service.NewAuditService(
+		nil,
+		deps.auditRepo,
+		logger,
+		cfg.Audit.Enabled,
+		parseAuditFailureMode(cfg.Audit.FailureMode),
+		parseAuditDetailLevel(cfg.Audit.DetailLevel),
+	)
 
 	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
@@ -87,84 +104,135 @@ func registerProxyRoutes(
 ) {
 	bundlePolicyRepo := bundleinfra.NewPolicyRepository(bundleProvider)
 	bundleUpstreamRepo := bundleinfra.NewUpstreamRepository(bundleProvider)
+	accessService := newProxyAccessService(deps, logger, bundlePolicyRepo, bundleUpstreamRepo)
 
-	evaluator := policy.NewEvaluator()
+	if registerHealth {
+		registerProxyHealthRoutes(mux, deps, logger, info, bundleProvider)
+	}
+
+	tenantResolver := middleware.NewTenantResolver(bundleinfra.NewTenantLookup(bundleProvider))
+	mux.Handle("/v2/", newOCIProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver))
+	mux.Handle("/npm/", newNPMProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver))
+}
+
+func newProxyAccessService(
+	deps *dependencies,
+	logger *slog.Logger,
+	bundlePolicyRepo port.PolicyRepository,
+	bundleUpstreamRepo port.UpstreamRepository,
+) *service.AccessService {
 	dependencyContextService := service.NewDependencyContextService(
 		deps.dependencyContextCache,
 		deps.dependencyGraphContexts,
 		deps.dependencyGraphQueue,
 		logger,
 	)
-	accessService := service.NewAccessService(
+	return service.NewAccessService(
 		bundlePolicyRepo,
 		deps.decisionRepo,
 		deps.decisionCache,
 		deps.enrichmentService,
-		evaluator,
+		policy.NewEvaluator(),
 		deps.ociClient,
 		bundleUpstreamRepo,
 		logger,
 		deps.auditService,
 		service.WithDependencyContextService(dependencyContextService),
 	)
+}
 
-	ociHandler := ocidelivery.NewRegistryHandler(accessService, deps.ociClient, bundleUpstreamRepo, logger, deps.auditService)
-	var snapshotService *service.NPMInstallSnapshotService
-	if manifests, ok := deps.npmClient.(port.NPMManifestDependencyLister); ok && deps.dependencyGraphQueue != nil {
-		snapshotService = service.NewNPMInstallSnapshotService(manifests, deps.dependencyGraphQueue, logger)
+func registerProxyHealthRoutes(
+	mux *http.ServeMux,
+	deps *dependencies,
+	logger *slog.Logger,
+	info BuildInfo,
+	bundleProvider port.TenantBundleProvider,
+) {
+	healthOptions := []service.HealthOption{
+		service.WithProxyStatus("running", "proxy routes are served by this process"),
 	}
-	npmHandler := npmdelivery.NewRegistryHandler(accessService, deps.npmClient, bundleUpstreamRepo, logger, deps.auditService, snapshotService)
-
-	if registerHealth {
-		healthOptions := []service.HealthOption{
-			service.WithProxyStatus("running", "proxy routes are served by this process"),
-		}
-		if checker, ok := bundleProvider.(service.ComponentStatusChecker); ok {
-			healthOptions = append(healthOptions, service.WithBundleStatusChecker(checker))
-		}
-
-		var dbChecker service.HealthChecker
-		if deps.pool != nil {
-			dbChecker = &dbHealthChecker{pool: deps.pool}
-		}
-		var cacheChecker service.HealthChecker
-		if deps.valkeyClient != nil {
-			cacheChecker = &cacheHealthChecker{client: deps.valkeyClient}
-		}
-
-		healthService := service.NewHealthService(
-			info.ServiceName,
-			info.Version,
-			info.Commit,
-			info.BuildTime,
-			dbChecker,
-			cacheChecker,
-			logger,
-			healthOptions...,
-		)
-		healthdelivery.NewHandler(healthService).RegisterRoutes(mux)
+	if checker, ok := bundleProvider.(service.ComponentStatusChecker); ok {
+		healthOptions = append(healthOptions, service.WithBundleStatusChecker(checker))
 	}
 
-	tenantResolver := middleware.NewTenantResolver(bundleinfra.NewTenantLookup(bundleProvider))
+	var dbChecker service.HealthChecker
+	if deps.pool != nil {
+		dbChecker = &dbHealthChecker{pool: deps.pool}
+	}
+	var cacheChecker service.HealthChecker
+	if deps.valkeyClient != nil {
+		cacheChecker = &cacheHealthChecker{client: deps.valkeyClient}
+	}
 
+	healthService := service.NewHealthService(
+		info.ServiceName,
+		info.Version,
+		info.Commit,
+		info.BuildTime,
+		dbChecker,
+		cacheChecker,
+		logger,
+		healthOptions...,
+	)
+	healthdelivery.NewHandler(healthService).RegisterRoutes(mux)
+}
+
+func newOCIProxyHandler(
+	accessService *service.AccessService,
+	deps *dependencies,
+	bundleUpstreamRepo port.UpstreamRepository,
+	logger *slog.Logger,
+	tenantResolver *middleware.TenantResolver,
+) http.Handler {
+	ociHandler := ocidelivery.NewRegistryHandler(
+		accessService,
+		deps.ociClient,
+		bundleUpstreamRepo,
+		logger,
+		deps.auditService,
+	)
 	ociMux := http.NewServeMux()
 	ociHandler.RegisterRoutes(ociMux)
-	var ociWrapped http.Handler = ociMux
-	ociWrapped = tenantResolver.Middleware(ociWrapped)
-	ociWrapped = middleware.OCITenantFromHost()(ociWrapped)
-	ociWrapped = middleware.RequestLogging(logger)(ociWrapped)
-	ociWrapped = middleware.Recovery(logger)(ociWrapped)
-	ociWrapped = middleware.RequestID()(ociWrapped)
+	var wrapped http.Handler = ociMux
+	wrapped = tenantResolver.Middleware(wrapped)
+	wrapped = middleware.OCITenantFromHost()(wrapped)
+	wrapped = middleware.RequestLogging(logger)(wrapped)
+	wrapped = middleware.Recovery(logger)(wrapped)
+	return middleware.RequestID()(wrapped)
+}
 
+func newNPMProxyHandler(
+	accessService *service.AccessService,
+	deps *dependencies,
+	bundleUpstreamRepo port.UpstreamRepository,
+	logger *slog.Logger,
+	tenantResolver *middleware.TenantResolver,
+) http.Handler {
+	npmHandler := npmdelivery.NewRegistryHandler(
+		accessService,
+		deps.npmClient,
+		bundleUpstreamRepo,
+		logger,
+		deps.auditService,
+		newNPMInstallSnapshotService(deps, logger),
+	)
 	npmMux := http.NewServeMux()
 	npmHandler.RegisterRoutes(npmMux)
-	var npmWrapped http.Handler = npmMux
-	npmWrapped = tenantResolver.Middleware(npmWrapped)
-	npmWrapped = middleware.NPMTenantFromPath()(npmWrapped)
-	npmWrapped = middleware.RequestLogging(logger)(npmWrapped)
-	npmWrapped = middleware.Recovery(logger)(npmWrapped)
-	npmWrapped = middleware.RequestID()(npmWrapped)
+	var wrapped http.Handler = npmMux
+	wrapped = tenantResolver.Middleware(wrapped)
+	wrapped = middleware.NPMTenantFromPath()(wrapped)
+	wrapped = middleware.RequestLogging(logger)(wrapped)
+	wrapped = middleware.Recovery(logger)(wrapped)
+	return middleware.RequestID()(wrapped)
+}
 
-	mux.Handle("/v2/", ociWrapped)
-	mux.Handle("/npm/", npmWrapped)
+func newNPMInstallSnapshotService(
+	deps *dependencies,
+	logger *slog.Logger,
+) *service.NPMInstallSnapshotService {
+	manifests, ok := deps.npmClient.(port.NPMManifestDependencyLister)
+	if !ok || deps.dependencyGraphQueue == nil {
+		return nil
+	}
+	return service.NewNPMInstallSnapshotService(manifests, deps.dependencyGraphQueue, logger)
 }

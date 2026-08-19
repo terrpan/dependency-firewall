@@ -60,7 +60,12 @@ func (h *TenantHandler) RegisterHumaRoutes(api huma.API) {
 		Summary:     "Update a tenant",
 		Description: "Updates the mutable fields of an existing tenant record.",
 		Tags:        []string{"tenants"},
-		Errors:      controlPlaneErrors(http.StatusBadRequest, http.StatusConflict, http.StatusNotFound, http.StatusInternalServerError),
+		Errors: controlPlaneErrors(
+			http.StatusBadRequest,
+			http.StatusConflict,
+			http.StatusNotFound,
+			http.StatusInternalServerError,
+		),
 	}, h.update)
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-tenant",
@@ -129,7 +134,15 @@ func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantO
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			return nil, huma.Error404NotFound("tenant not found")
 		}
-		return nil, humaInternalError(ctx, h.logger, "getting tenant", err, "failed to get tenant", "tenant_id", input.ID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"getting tenant",
+			err,
+			"failed to get tenant",
+			"tenant_id",
+			input.ID,
+		)
 	}
 	return &tenantOutput{Body: toTenantResponse(tenant)}, nil
 }
@@ -147,7 +160,15 @@ func (h *TenantHandler) delete(ctx context.Context, input *tenantIDInput) (*stru
 		if errors.Is(err, domain.ErrTenantNotFound) {
 			return nil, huma.Error404NotFound("tenant not found")
 		}
-		return nil, humaInternalError(ctx, h.logger, "deleting tenant", err, "failed to delete tenant", "tenant_id", input.ID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"deleting tenant",
+			err,
+			"failed to delete tenant",
+			"tenant_id",
+			input.ID,
+		)
 	}
 	return nil, nil
 }
@@ -162,7 +183,15 @@ func (h *TenantHandler) createTenant(ctx context.Context, req createTenantReques
 		if errors.Is(err, domain.ErrTenantNameConflict) {
 			return nil, huma.Error409Conflict("tenant name already exists")
 		}
-		return nil, humaInternalError(ctx, h.logger, "creating tenant", err, "failed to create tenant", "tenant_name", req.Name)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"creating tenant",
+			err,
+			"failed to create tenant",
+			"tenant_name",
+			req.Name,
+		)
 	}
 	return toTenantResponse(tenant), nil
 }

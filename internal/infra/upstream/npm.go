@@ -35,7 +35,11 @@ func npmPackagePath(artifact domain.ArtifactIdentity) string {
 // FetchMetadata fetches package metadata from the npm registry. If the artifact
 // has a semver version, it fetches that specific version; otherwise it fetches
 // the full package document.
-func (c *NPMClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (c *NPMClient) FetchMetadata(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (*port.UpstreamResponse, error) {
 	base := strings.TrimRight(upstream.BaseURL, "/")
 	pkgPath := npmPackagePath(artifact)
 
@@ -77,7 +81,11 @@ func (c *NPMClient) FetchMetadata(ctx context.Context, upstream domain.Upstream,
 //
 // For npm, the caller is expected to encode the tarball reference in the digest
 // string as "name/version" so the client can reconstruct the tarball URL.
-func (c *NPMClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
+func (c *NPMClient) FetchContent(
+	ctx context.Context,
+	upstream domain.Upstream,
+	digest string,
+) (*port.UpstreamResponse, error) {
 	reqURL := strings.TrimRight(upstream.BaseURL, "/") + "/" + digest
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -115,7 +123,11 @@ type npmManifestDependencies struct {
 
 // ListManifestDependencyNames fetches one concrete package version manifest and
 // returns the names of its declared runtime, optional, and peer dependencies.
-func (c *NPMClient) ListManifestDependencyNames(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) ([]string, error) {
+func (c *NPMClient) ListManifestDependencyNames(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) ([]string, error) {
 	if strings.TrimSpace(artifact.Version) == "" {
 		return nil, fmt.Errorf("listing npm manifest dependencies: version is required")
 	}
@@ -137,7 +149,11 @@ func (c *NPMClient) ListManifestDependencyNames(ctx context.Context, upstream do
 		return nil, fmt.Errorf("decoding npm manifest: %w", err)
 	}
 
-	names := make([]string, 0, len(manifest.Dependencies)+len(manifest.OptionalDependencies)+len(manifest.PeerDependencies))
+	names := make(
+		[]string,
+		0,
+		len(manifest.Dependencies)+len(manifest.OptionalDependencies)+len(manifest.PeerDependencies),
+	)
 	for _, deps := range []map[string]string{manifest.Dependencies, manifest.OptionalDependencies, manifest.PeerDependencies} {
 		for name := range deps {
 			names = append(names, name)
@@ -153,7 +169,11 @@ type npmDistTags struct {
 
 // ResolveReference resolves an npm dist-tag (e.g. "latest") to a semver version string
 // by fetching the full package metadata and reading .dist-tags.{tag}.
-func (c *NPMClient) ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
+func (c *NPMClient) ResolveReference(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (string, error) {
 	base := strings.TrimRight(upstream.BaseURL, "/")
 	pkgPath := npmPackagePath(artifact)
 	reqURL := base + "/" + pkgPath

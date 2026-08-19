@@ -6,6 +6,8 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// TenantResponse is the wire form of a tenant, the isolation boundary that owns policies, upstreams, decisions and
+// audit records. Its ID is the value callers pass as X-Tenant-ID to scope control-plane and proxy requests.
 type TenantResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`

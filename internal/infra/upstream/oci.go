@@ -57,7 +57,11 @@ func repoPath(artifact domain.ArtifactIdentity) string {
 }
 
 // FetchMetadata fetches a manifest from the upstream registry.
-func (c *OCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (*port.UpstreamResponse, error) {
+func (c *OCIClient) FetchMetadata(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (*port.UpstreamResponse, error) {
 	ref := artifact.Digest
 	if ref == "" {
 		ref = artifact.Version
@@ -72,7 +76,11 @@ func (c *OCIClient) FetchMetadata(ctx context.Context, upstream domain.Upstream,
 // The digest parameter must include the full digest reference (e.g. "sha256:abc123").
 // The upstream.BaseURL should include the repository path context — the handler prepends
 // "/v2/{repo}" to the base URL before calling this method.
-func (c *OCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, digest string) (*port.UpstreamResponse, error) {
+func (c *OCIClient) FetchContent(
+	ctx context.Context,
+	upstream domain.Upstream,
+	digest string,
+) (*port.UpstreamResponse, error) {
 	url := fmt.Sprintf("%s/blobs/%s",
 		strings.TrimRight(upstream.BaseURL, "/"),
 		digest,
@@ -82,7 +90,11 @@ func (c *OCIClient) FetchContent(ctx context.Context, upstream domain.Upstream, 
 }
 
 // ResolveReference resolves a tag to a digest via HEAD request, falling back to GET.
-func (c *OCIClient) ResolveReference(ctx context.Context, upstream domain.Upstream, artifact domain.ArtifactIdentity) (string, error) {
+func (c *OCIClient) ResolveReference(
+	ctx context.Context,
+	upstream domain.Upstream,
+	artifact domain.ArtifactIdentity,
+) (string, error) {
 	url := ociManifestURL(upstream, artifact, artifact.Version)
 
 	// Try HEAD first.

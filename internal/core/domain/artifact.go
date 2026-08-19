@@ -17,6 +17,8 @@ type ArtifactIdentity struct {
 // AccessRequestKind identifies the protocol-level request shape.
 type AccessRequestKind string
 
+// The npm proxy distinguishes packument (metadata) requests from tarball downloads because only a tarball request
+// carries a concrete version, and version-sensitive enrichment and decision caching depend on that distinction.
 const (
 	AccessRequestKindNPMMetadata AccessRequestKind = "npm_metadata"
 	AccessRequestKindNPMTarball  AccessRequestKind = "npm_tarball"

@@ -13,19 +13,26 @@ import (
 )
 
 // ListVersions returns retained versions for a policy, newest first.
-func (r *PolicyRepository) ListVersions(ctx context.Context, tenantID, policyID string, limit int) ([]domain.PolicyVersion, error) {
+func (r *PolicyRepository) ListVersions(
+	ctx context.Context,
+	tenantID, policyID string,
+	limit int,
+) ([]domain.PolicyVersion, error) {
 	if limit <= 0 {
 		limit = retainedPolicyVersionCount
 	}
 
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.pool.Query(
+		ctx,
 		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
 		 FROM policy_versions pv
 		 JOIN policies p ON p.id = pv.policy_id
 		 WHERE p.tenant_id = $1 AND pv.policy_id = $2
 		 ORDER BY pv.version DESC
 		 LIMIT $3`,
-		tenantID, policyID, limit,
+		tenantID,
+		policyID,
+		limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("listing policy versions: %w", err)
@@ -52,31 +59,78 @@ func (r *PolicyRepository) ListVersions(ctx context.Context, tenantID, policyID 
 }
 
 // RollbackToVersion restores a policy from a retained snapshot and creates a new current version.
-func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, policyID string, version int) (*domain.Policy, error) {
+func (r *PolicyRepository) RollbackToVersion(
+	ctx context.Context,
+	tenantID, policyID string,
+	version int,
+) (*domain.Policy, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; nothing to report on the happy path
 
-	target, err := scanPolicyVersion(tx.QueryRow(ctx,
+	target, err := r.loadRollbackPolicyVersion(ctx, tx, tenantID, policyID, version)
+	if err != nil {
+		return nil, err
+	}
+	policyDef := rollbackPolicy(tenantID, policyID, target)
+	if err := corepolicy.ValidatePolicy(policyDef); err != nil {
+		return nil, err
+	}
+	configJSON, targetJSON, err := marshalRollbackPolicy(target)
+	if err != nil {
+		return nil, err
+	}
+	if err := updatePolicyForRollback(
+		ctx, tx, &policyDef, target, tenantID, policyID, configJSON, targetJSON,
+	); err != nil {
+		return nil, err
+	}
+	if err := recordRollbackPolicyVersion(ctx, tx, policyID, policyDef, configJSON, targetJSON); err != nil {
+		return nil, err
+	}
+	if err := prunePolicyVersions(ctx, tx, policyID); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing policy rollback: %w", err)
+	}
+
+	return &policyDef, nil
+}
+
+func (r *PolicyRepository) loadRollbackPolicyVersion(
+	ctx context.Context,
+	tx pgx.Tx,
+	tenantID, policyID string,
+	version int,
+) (domain.PolicyVersion, error) {
+	target, err := scanPolicyVersion(tx.QueryRow(
+		ctx,
 		`SELECT pv.policy_id, pv.version, pv.upstream_id, pv.name, pv.type, pv.action, pv.schema_version, pv.config, pv.target, pv.priority, pv.enabled, pv.created_at
 		 FROM policy_versions pv
 		 JOIN policies p ON p.id = pv.policy_id
 		 WHERE p.tenant_id = $1 AND pv.policy_id = $2 AND pv.version = $3`,
-		tenantID, policyID, version,
+		tenantID,
+		policyID,
+		version,
 	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			if _, currentErr := r.GetByID(ctx, tenantID, policyID); currentErr != nil {
-				return nil, currentErr
+				return domain.PolicyVersion{}, currentErr
 			}
-			return nil, domain.ErrPolicyVersionNotFound
+			return domain.PolicyVersion{}, domain.ErrPolicyVersionNotFound
 		}
-		return nil, fmt.Errorf("loading policy version: %w", err)
+		return domain.PolicyVersion{}, fmt.Errorf("loading policy version: %w", err)
 	}
+	return target, nil
+}
 
-	policyDef := domain.Policy{
+func rollbackPolicy(tenantID, policyID string, target domain.PolicyVersion) domain.Policy {
+	return domain.Policy{
 		ID:            policyID,
 		TenantID:      tenantID,
 		UpstreamID:    target.UpstreamID,
@@ -89,20 +143,29 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 		Priority:      target.Priority,
 		Enabled:       target.Enabled,
 	}
-	if err := corepolicy.ValidatePolicy(policyDef); err != nil {
-		return nil, err
-	}
+}
 
+func marshalRollbackPolicy(target domain.PolicyVersion) ([]byte, []byte, error) {
 	configJSON, err := json.Marshal(target.Config)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling rolled back config: %w", err)
+		return nil, nil, fmt.Errorf("marshalling rolled back config: %w", err)
 	}
 	targetJSON, err := json.Marshal(target.Target)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling rolled back target: %w", err)
+		return nil, nil, fmt.Errorf("marshalling rolled back target: %w", err)
 	}
+	return configJSON, targetJSON, nil
+}
 
-	err = tx.QueryRow(ctx,
+func updatePolicyForRollback(
+	ctx context.Context,
+	tx pgx.Tx,
+	policyDef *domain.Policy,
+	target domain.PolicyVersion,
+	tenantID, policyID string,
+	configJSON, targetJSON []byte,
+) error {
+	err := tx.QueryRow(ctx,
 		`UPDATE policies
 		 SET upstream_id = $1, name = $2, type = $3, action = $4, schema_version = $5, config = $6, target = $7, priority = $8,
 		     enabled = $9, version = version + 1, updated_at = now()
@@ -122,12 +185,22 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 	).Scan(&policyDef.Version, &policyDef.CreatedAt, &policyDef.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, domain.ErrPolicyNotFound
+			return domain.ErrPolicyNotFound
 		}
-		return nil, fmt.Errorf("updating policy during rollback: %w", err)
+		return fmt.Errorf("updating policy during rollback: %w", err)
 	}
+	return nil
+}
 
-	_, err = tx.Exec(ctx,
+func recordRollbackPolicyVersion(
+	ctx context.Context,
+	tx pgx.Tx,
+	policyID string,
+	policyDef domain.Policy,
+	configJSON, targetJSON []byte,
+) error {
+	_, err := tx.Exec(
+		ctx,
 		`INSERT INTO policy_versions (policy_id, version, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		policyID,
@@ -143,17 +216,9 @@ func (r *PolicyRepository) RollbackToVersion(ctx context.Context, tenantID, poli
 		policyDef.Enabled,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("recording rollback policy version: %w", err)
+		return fmt.Errorf("recording rollback policy version: %w", err)
 	}
-	if err := prunePolicyVersions(ctx, tx, policyID); err != nil {
-		return nil, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("committing policy rollback: %w", err)
-	}
-
-	return &policyDef, nil
+	return nil
 }
 
 func prunePolicyVersions(ctx context.Context, tx pgx.Tx, policyID string) error {

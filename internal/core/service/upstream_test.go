@@ -19,7 +19,11 @@ func (s *stubUpstreamRepository) GetByID(context.Context, string, string) (*doma
 	return nil, domain.ErrUpstreamNotFound
 }
 
-func (s *stubUpstreamRepository) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
+func (s *stubUpstreamRepository) GetByEcosystem(
+	context.Context,
+	string,
+	domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return nil, domain.ErrUpstreamNotFound
 }
 

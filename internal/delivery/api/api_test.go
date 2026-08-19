@@ -156,7 +156,11 @@ func (m *mockPolicyRepo) ListByTenant(_ context.Context, tenantID string) ([]dom
 	return result, nil
 }
 
-func (m *mockPolicyRepo) ListVersions(_ context.Context, tenantID, policyID string, limit int) ([]domain.PolicyVersion, error) {
+func (m *mockPolicyRepo) ListVersions(
+	_ context.Context,
+	tenantID, policyID string,
+	limit int,
+) ([]domain.PolicyVersion, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if _, ok := m.policies[m.key(tenantID, policyID)]; !ok {
@@ -188,7 +192,11 @@ func (m *mockPolicyRepo) Update(_ context.Context, p *domain.Policy) error {
 	return nil
 }
 
-func (m *mockPolicyRepo) RollbackToVersion(_ context.Context, tenantID, policyID string, version int) (*domain.Policy, error) {
+func (m *mockPolicyRepo) RollbackToVersion(
+	_ context.Context,
+	tenantID, policyID string,
+	version int,
+) (*domain.Policy, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	current, ok := m.policies[m.key(tenantID, policyID)]
@@ -280,7 +288,12 @@ type mockMetadataCache struct {
 	invalidateTenantErr error
 }
 
-func (m *mockDecisionCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity, _ string) (*domain.Decision, error) {
+func (m *mockDecisionCache) Get(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+	_ string,
+) (*domain.Decision, error) {
 	return nil, domain.ErrCacheMiss
 }
 
@@ -302,11 +315,21 @@ func (m *mockDecisionCache) InvalidateTenant(_ context.Context, tenantID string)
 	return nil
 }
 
-func (m *mockMetadataCache) Get(_ context.Context, _ string, _ domain.ArtifactIdentity) (*domain.ArtifactMetadata, error) {
+func (m *mockMetadataCache) Get(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	return nil, domain.ErrCacheMiss
 }
 
-func (m *mockMetadataCache) Set(_ context.Context, _ string, _ domain.ArtifactIdentity, _ *domain.ArtifactMetadata, _ time.Duration) error {
+func (m *mockMetadataCache) Set(
+	_ context.Context,
+	_ string,
+	_ domain.ArtifactIdentity,
+	_ *domain.ArtifactMetadata,
+	_ time.Duration,
+) error {
 	return nil
 }
 
@@ -371,7 +394,11 @@ func (m *mockUpstreamRepo) GetByID(_ context.Context, tenantID, id string) (*dom
 	return u, nil
 }
 
-func (m *mockUpstreamRepo) GetByEcosystem(_ context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+func (m *mockUpstreamRepo) GetByEcosystem(
+	_ context.Context,
+	tenantID string,
+	eco domain.EcosystemType,
+) (*domain.Upstream, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, u := range m.upstreams {
@@ -453,7 +480,11 @@ func (m *mockDecisionRepo) Record(_ context.Context, d *domain.Decision) error {
 	return nil
 }
 
-func (m *mockDecisionRepo) GetByArtifact(_ context.Context, tenantID string, artifact domain.ArtifactIdentity) (*domain.Decision, error) {
+func (m *mockDecisionRepo) GetByArtifact(
+	_ context.Context,
+	tenantID string,
+	artifact domain.ArtifactIdentity,
+) (*domain.Decision, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for i := range m.decisions {
@@ -465,7 +496,12 @@ func (m *mockDecisionRepo) GetByArtifact(_ context.Context, tenantID string, art
 	return nil, domain.ErrArtifactNotFound
 }
 
-func (m *mockDecisionRepo) ListByTenant(_ context.Context, tenantID string, limit, offset int, search string) ([]domain.Decision, error) {
+func (m *mockDecisionRepo) ListByTenant(
+	_ context.Context,
+	tenantID string,
+	limit, offset int,
+	search string,
+) ([]domain.Decision, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var result []domain.Decision
@@ -506,7 +542,12 @@ func matchesDecisionArtifactSearch(decision domain.Decision, search string) bool
 	return false
 }
 
-func (m *mockDecisionRepo) HasRecentAllow(_ context.Context, _ string, _ domain.EcosystemType, _, _ string) (bool, error) {
+func (m *mockDecisionRepo) HasRecentAllow(
+	_ context.Context,
+	_ string,
+	_ domain.EcosystemType,
+	_, _ string,
+) (bool, error) {
 	return false, nil
 }
 
@@ -583,12 +624,16 @@ func matchesAuditSearch(event domain.AuditEvent, search string) bool {
 
 // --- Test helpers ---
 
-func setupTestServer(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache) {
+func setupTestServer(
+	t *testing.T,
+) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache) {
 	srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache, _ := setupTestServerWithCaches(t)
 	return srv, tenantRepo, policyRepo, upstreamRepo, decisionRepo, decisionCache
 }
 
-func setupTestServerWithCaches(t *testing.T) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache, *mockMetadataCache) {
+func setupTestServerWithCaches(
+	t *testing.T,
+) (*httptest.Server, *mockTenantRepo, *mockPolicyRepo, *mockUpstreamRepo, *mockDecisionRepo, *mockDecisionCache, *mockMetadataCache) {
 	t.Helper()
 	logger := slog.Default()
 	tenantRepo := newMockTenantRepo()
@@ -609,11 +654,24 @@ func setupTestServerWithCaches(t *testing.T) (*httptest.Server, *mockTenantRepo,
 	)
 	NewHealthHandler(healthSvc, logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewTenantHandler(service.NewTenantService(tenantRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
-	NewPolicyHandler(service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache, upstreamRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewPolicyHandler(
+		service.NewPolicyService(policyRepo, &mockPolicyRevisionRepo{}, decisionCache, upstreamRepo),
+		logger,
+	).RegisterHumaRoutes(controlPlaneAPI)
 	NewCacheHandler(service.NewCacheService(decisionCache, metadataCache), logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewUpstreamHandler(service.NewUpstreamService(upstreamRepo, policyRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
 	NewEvaluationHandler(service.NewEvaluationService(decisionRepo), logger).RegisterHumaRoutes(controlPlaneAPI)
-	NewAuditHandler(service.NewAuditService(nil, auditRepo, logger, true, domain.AuditFailureModeFailClosed, domain.AuditDetailLevelSummary), logger).RegisterHumaRoutes(controlPlaneAPI)
+	NewAuditHandler(
+		service.NewAuditService(
+			nil,
+			auditRepo,
+			logger,
+			true,
+			domain.AuditFailureModeFailClosed,
+			domain.AuditDetailLevelSummary,
+		),
+		logger,
+	).RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -627,7 +685,17 @@ func setupAuditTestServer(t *testing.T) (*httptest.Server, *mockAuditRepo) {
 
 	mux := http.NewServeMux()
 	controlPlaneAPI := NewControlPlaneAPI(mux, "test")
-	NewAuditHandler(service.NewAuditService(nil, auditRepo, logger, true, domain.AuditFailureModeFailClosed, domain.AuditDetailLevelSummary), logger).
+	NewAuditHandler(
+		service.NewAuditService(
+			nil,
+			auditRepo,
+			logger,
+			true,
+			domain.AuditFailureModeFailClosed,
+			domain.AuditDetailLevelSummary,
+		),
+		logger,
+	).
 		RegisterHumaRoutes(controlPlaneAPI)
 
 	srv := httptest.NewServer(mux)
@@ -652,7 +720,13 @@ func doJSON(t *testing.T, method, url string, body any, headers map[string]strin
 	return resp
 }
 
-func doRaw(t *testing.T, method, url string, body []byte, contentType string, headers map[string]string) *http.Response {
+func doRaw(
+	t *testing.T,
+	method, url string,
+	body []byte,
+	contentType string,
+	headers map[string]string,
+) *http.Response {
 	t.Helper()
 	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	require.NoError(t, err)
@@ -729,7 +803,13 @@ func Test_TenantCRUD(t *testing.T) {
 	assert.Len(t, list, 1)
 
 	// Update
-	resp = doJSON(t, http.MethodPut, srv.URL+"/api/v1/tenants/"+created.ID, map[string]string{"name": "acme-updated"}, nil)
+	resp = doJSON(
+		t,
+		http.MethodPut,
+		srv.URL+"/api/v1/tenants/"+created.ID,
+		map[string]string{"name": "acme-updated"},
+		nil,
+	)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	updated := decodeJSON[domain.Tenant](t, resp)
 	assert.Equal(t, "acme-updated", updated.Name)
@@ -761,12 +841,26 @@ func Test_TenantValidation(t *testing.T) {
 	body := decodeJSON[map[string]string](t, resp)
 	assert.Contains(t, body["error"], `field "name" is required`)
 
-	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/tenants", []byte(`{"name":"acme","slug":"acme"}`), "application/json", nil)
+	resp = doRaw(
+		t,
+		http.MethodPost,
+		srv.URL+"/api/v1/tenants",
+		[]byte(`{"name":"acme","slug":"acme"}`),
+		"application/json",
+		nil,
+	)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body = decodeJSON[map[string]string](t, resp)
 	assert.Equal(t, `invalid JSON: unknown field "slug"`, body["error"])
 
-	resp = doRaw(t, http.MethodPost, srv.URL+"/api/v1/tenants", []byte(`{"name":"acme"} trailing`), "application/json", nil)
+	resp = doRaw(
+		t,
+		http.MethodPost,
+		srv.URL+"/api/v1/tenants",
+		[]byte(`{"name":"acme"} trailing`),
+		"application/json",
+		nil,
+	)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	body = decodeJSON[map[string]string](t, resp)
 	assert.Equal(t, "invalid JSON: invalid character 't' after top-level value", body["error"])
@@ -911,7 +1005,12 @@ func assertOpenAPIDescription(t *testing.T, paths map[string]any, path, method s
 	assert.NotEmptyf(t, operation["description"], "description missing for %s %s", method, path)
 }
 
-func assertOpenAPIRequestBodyContentTypes(t *testing.T, paths map[string]any, path, method string, contentTypes ...string) {
+func assertOpenAPIRequestBodyContentTypes(
+	t *testing.T,
+	paths map[string]any,
+	path, method string,
+	contentTypes ...string,
+) {
 	t.Helper()
 
 	operation := openAPIOperation(t, paths, path, method)
@@ -923,7 +1022,15 @@ func assertOpenAPIRequestBodyContentTypes(t *testing.T, paths map[string]any, pa
 	require.Truef(t, ok, "requestBody content missing for %s %s", method, path)
 
 	for _, contentType := range contentTypes {
-		assert.Containsf(t, content, contentType, "requestBody content type %s missing for %s %s", contentType, method, path)
+		assert.Containsf(
+			t,
+			content,
+			contentType,
+			"requestBody content type %s missing for %s %s",
+			contentType,
+			method,
+			path,
+		)
 	}
 }
 
@@ -962,7 +1069,15 @@ func assertOpenAPIResponseStatusAbsent(t *testing.T, paths map[string]any, path,
 	t.Helper()
 
 	responses := openAPIResponses(t, paths, path, method)
-	assert.NotContainsf(t, responses, fmt.Sprintf("%d", status), "response %d should not be registered for %s %s", status, method, path)
+	assert.NotContainsf(
+		t,
+		responses,
+		fmt.Sprintf("%d", status),
+		"response %d should not be registered for %s %s",
+		status,
+		method,
+		path,
+	)
 }
 
 func openAPIResponses(t *testing.T, paths map[string]any, path, method string) map[string]any {
@@ -1245,7 +1360,13 @@ func Test_PolicyVersionHistoryAndRollback(t *testing.T) {
 	assert.Equal(t, "block-critical-stricter", versions[0].Name)
 	assert.Equal(t, "block-critical", versions[1].Name)
 
-	resp = doJSON(t, http.MethodPost, srv.URL+"/api/v1/policies/"+created.ID+"/rollback", map[string]any{"version": 1}, headers)
+	resp = doJSON(
+		t,
+		http.MethodPost,
+		srv.URL+"/api/v1/policies/"+created.ID+"/rollback",
+		map[string]any{"version": 1},
+		headers,
+	)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	rolledBack := decodeJSON[PolicyResponse](t, resp)
 	assert.Equal(t, 3, rolledBack.Version)
@@ -2123,14 +2244,26 @@ func Test_AuditEventList(t *testing.T) {
 	assert.Equal(t, "evt-1", list[0].ID)
 	assert.Equal(t, "evt-2", list[1].ID)
 
-	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/audit/events?event_type=decision_computed&outcome=deny&search=lodash", nil, headers)
+	resp = doJSON(
+		t,
+		http.MethodGet,
+		srv.URL+"/api/v1/audit/events?event_type=decision_computed&outcome=deny&search=lodash",
+		nil,
+		headers,
+	)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	list = decodeJSON[[]AuditEventResponse](t, resp)
 	require.Len(t, list, 1)
 	assert.Equal(t, "evt-1", list[0].ID)
 	assert.Equal(t, "policy-1", list[0].PolicyID)
 
-	resp = doJSON(t, http.MethodGet, srv.URL+"/api/v1/audit/events?correlation_id=req-20260503-101600-ffff00", nil, headers)
+	resp = doJSON(
+		t,
+		http.MethodGet,
+		srv.URL+"/api/v1/audit/events?correlation_id=req-20260503-101600-ffff00",
+		nil,
+		headers,
+	)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	list = decodeJSON[[]AuditEventResponse](t, resp)
 	require.Len(t, list, 1)
@@ -2286,7 +2419,12 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 	assert.Contains(t, data, "ecosystem", "response should have 'ecosystem' field (lowercase)")
 	assert.Contains(t, data, "base_url", "response should have 'base_url' field (lowercase snake_case)")
 	assert.Contains(t, data, "capabilities", "response should have 'capabilities' field (lowercase)")
-	assert.Contains(t, data, "supported_policy_types", "response should have 'supported_policy_types' field (lowercase snake_case)")
+	assert.Contains(
+		t,
+		data,
+		"supported_policy_types",
+		"response should have 'supported_policy_types' field (lowercase snake_case)",
+	)
 	assert.Contains(t, data, "created_at", "response should have 'created_at' field (lowercase snake_case)")
 	assert.Contains(t, data, "updated_at", "response should have 'updated_at' field (lowercase snake_case)")
 
@@ -2295,7 +2433,12 @@ func Test_UpstreamResponseDTO_HasLowercaseJSONTags(t *testing.T) {
 	assert.NotContains(t, data, "BaseURL", "response should not have 'BaseURL' field (capital)")
 	assert.NotContains(t, data, "Ecosystem", "response should not have 'Ecosystem' field (capital)")
 	assert.NotContains(t, data, "Capabilities", "response should not have 'Capabilities' field (capital)")
-	assert.NotContains(t, data, "SupportedPolicyTypes", "response should not have 'SupportedPolicyTypes' field (capital)")
+	assert.NotContains(
+		t,
+		data,
+		"SupportedPolicyTypes",
+		"response should not have 'SupportedPolicyTypes' field (capital)",
+	)
 	assert.NotContains(t, data, "CreatedAt", "response should not have 'CreatedAt' field (capital)")
 	assert.NotContains(t, data, "UpdatedAt", "response should not have 'UpdatedAt' field (capital)")
 }

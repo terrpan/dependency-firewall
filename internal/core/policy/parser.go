@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"gopkg.in/yaml.v3"
+
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 var validActions = map[string]domain.PolicyAction{
@@ -14,14 +15,14 @@ var validActions = map[string]domain.PolicyAction{
 	string(domain.PolicyActionDeny):  domain.PolicyActionDeny,
 }
 
-// ParseFile parses raw YAML or JSON bytes into a PolicyFile.
-func ParseFile(data []byte) (*PolicyFile, error) {
+// ParseFile parses raw YAML or JSON bytes into a File.
+func ParseFile(data []byte) (*File, error) {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return nil, fmt.Errorf("parsing policy file: %w: empty policy document", domain.ErrInvalidPolicy)
 	}
 
-	var pf PolicyFile
+	var pf File
 	if looksLikeJSON(trimmed) {
 		if err := json.Unmarshal(trimmed, &pf); err != nil {
 			return nil, fmt.Errorf("parsing policy JSON: %w", err)
@@ -34,15 +35,15 @@ func ParseFile(data []byte) (*PolicyFile, error) {
 	return &pf, nil
 }
 
-// ToDomainPolicies converts a parsed PolicyFile into domain Policy objects.
-func ToDomainPolicies(file *PolicyFile) ([]domain.Policy, error) {
+// ToDomainPolicies converts a parsed File into domain Policy objects.
+func ToDomainPolicies(file *File) ([]domain.Policy, error) {
 	return ToDomainPoliciesForTenant(file, "")
 }
 
-// ToDomainPoliciesForTenant converts a parsed PolicyFile into domain Policy
+// ToDomainPoliciesForTenant converts a parsed File into domain Policy
 // objects for the provided tenant. When tenantID is non-empty, it overrides any
 // tenant_id defined in the YAML file.
-func ToDomainPoliciesForTenant(file *PolicyFile, tenantID string) ([]domain.Policy, error) {
+func ToDomainPoliciesForTenant(file *File, tenantID string) ([]domain.Policy, error) {
 	effectiveTenantID := tenantID
 	if effectiveTenantID == "" {
 		effectiveTenantID = file.TenantID
@@ -68,7 +69,7 @@ func ToDomainPoliciesForTenant(file *PolicyFile, tenantID string) ([]domain.Poli
 	return policies, nil
 }
 
-func toDomainPolicy(tenantID string, def PolicyDef, index int) (domain.Policy, error) {
+func toDomainPolicy(tenantID string, def Def, index int) (domain.Policy, error) {
 	if def.Name == "" {
 		return domain.Policy{}, fmt.Errorf("name is required")
 	}

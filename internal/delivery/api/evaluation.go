@@ -43,9 +43,9 @@ func (h *EvaluationHandler) RegisterHumaRoutes(api huma.API) {
 
 type evaluationListInput struct {
 	TenantID string `header:"X-Tenant-ID" doc:"Tenant identifier"`
-	Limit    string `query:"limit" doc:"Maximum evaluations to return"`
-	Offset   string `query:"offset" doc:"Evaluations to skip"`
-	Search   string `query:"search" doc:"Case-insensitive artifact search across namespace, name, version, and digest"`
+	Limit    string `                     doc:"Maximum evaluations to return"                                                query:"limit"`
+	Offset   string `                     doc:"Evaluations to skip"                                                          query:"offset"`
+	Search   string `                     doc:"Case-insensitive artifact search across namespace, name, version, and digest" query:"search"`
 }
 
 type evaluationListOutput struct {
@@ -64,7 +64,15 @@ func (h *EvaluationHandler) listHuma(ctx context.Context, input *evaluationListI
 
 	decisions, err := h.evaluations.ListByTenant(ctx, tenantID, limit, offset, strings.TrimSpace(input.Search))
 	if err != nil {
-		return nil, humaInternalError(ctx, h.logger, "listing evaluations", err, "failed to list evaluations", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"listing evaluations",
+			err,
+			"failed to list evaluations",
+			"tenant_id",
+			tenantID,
+		)
 	}
 
 	return &evaluationListOutput{Body: toDecisionsResponse(decisions)}, nil

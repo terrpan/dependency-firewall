@@ -16,8 +16,8 @@ import (
 )
 
 type importPoliciesInput struct {
-	TenantID    string `header:"X-Tenant-ID" doc:"Tenant identifier"`
-	ContentType string `header:"Content-Type" hidden:"true"`
+	TenantID    string `header:"X-Tenant-ID"  doc:"Tenant identifier"`
+	ContentType string `header:"Content-Type"                         hidden:"true"`
 	RawBody     []byte
 }
 
@@ -27,21 +27,24 @@ type importPoliciesOutput struct {
 
 type policyImportDocument struct {
 	TenantID string                   `json:"tenant_id" yaml:"tenant_id"`
-	Policies []policyImportDefinition `json:"policies" yaml:"policies"`
+	Policies []policyImportDefinition `json:"policies"  yaml:"policies"`
 }
 
 type policyImportDefinition struct {
-	UpstreamID    *string        `json:"upstream_id" yaml:"upstream_id"`
-	Name          string         `json:"name" yaml:"name"`
-	Type          string         `json:"type" yaml:"type"`
+	UpstreamID    *string        `json:"upstream_id"    yaml:"upstream_id"`
+	Name          string         `json:"name"           yaml:"name"`
+	Type          string         `json:"type"           yaml:"type"`
 	SchemaVersion *int           `json:"schema_version" yaml:"schema_version"`
-	Action        string         `json:"action" yaml:"action"`
-	Priority      *int           `json:"priority" yaml:"priority"`
-	Config        map[string]any `json:"config" yaml:"config"`
-	Enabled       *bool          `json:"enabled" yaml:"enabled"`
+	Action        string         `json:"action"         yaml:"action"`
+	Priority      *int           `json:"priority"       yaml:"priority"`
+	Config        map[string]any `json:"config"         yaml:"config"`
+	Enabled       *bool          `json:"enabled"        yaml:"enabled"`
 }
 
-func (h *PolicyHandler) importPoliciesHuma(ctx context.Context, input *importPoliciesInput) (*importPoliciesOutput, error) {
+func (h *PolicyHandler) importPoliciesHuma(
+	ctx context.Context,
+	input *importPoliciesInput,
+) (*importPoliciesOutput, error) {
 	tenantID, err := tenantIDFromValue(input.TenantID)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -68,7 +71,15 @@ func (h *PolicyHandler) importPoliciesHuma(ctx context.Context, input *importPol
 		if isPolicyNameConflict(err) {
 			return nil, huma.Error409Conflict("policy name already exists")
 		}
-		return nil, humaInternalError(ctx, h.logger, "importing policies", err, "failed to import policies", "tenant_id", tenantID)
+		return nil, humaInternalError(
+			ctx,
+			h.logger,
+			"importing policies",
+			err,
+			"failed to import policies",
+			"tenant_id",
+			tenantID,
+		)
 	}
 
 	return &importPoliciesOutput{
@@ -109,13 +120,13 @@ func parsePolicyImportDocument(data []byte) (*policyImportDocument, error) {
 	return &document, nil
 }
 
-func (d *policyImportDocument) toCorePolicyFile() *corepolicy.PolicyFile {
-	file := &corepolicy.PolicyFile{
+func (d *policyImportDocument) toCorePolicyFile() *corepolicy.File {
+	file := &corepolicy.File{
 		TenantID: d.TenantID,
-		Policies: make([]corepolicy.PolicyDef, len(d.Policies)),
+		Policies: make([]corepolicy.Def, len(d.Policies)),
 	}
 	for i := range d.Policies {
-		file.Policies[i] = corepolicy.PolicyDef{
+		file.Policies[i] = corepolicy.Def{
 			Name:          d.Policies[i].Name,
 			UpstreamID:    d.Policies[i].UpstreamID,
 			Type:          d.Policies[i].Type,

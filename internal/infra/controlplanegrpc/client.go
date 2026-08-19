@@ -104,6 +104,7 @@ func serverTransportCredentials(cfg config.BundleTLSConfig) (credentials.Transpo
 }
 
 func certPoolFromFile(path string) (*x509.CertPool, error) {
+	//nolint:gosec // path is an operator-supplied CA file from static config, not request input
 	pem, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading grpc ca file: %w", err)
