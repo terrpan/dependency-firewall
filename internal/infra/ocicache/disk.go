@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -90,7 +91,9 @@ func (c *DiskCache) Get(
 		return nil, err
 	}
 
-	//nolint:gosec // G304: digest is not yet path-validated, see splitDigest and docs/proxy-behavior.md "Possible future work"
+	// dataPath/metaPath are derived from a digest validated by splitDigest,
+	// so this cannot escape the tenant/upstream-scoped cache root.
+	//nolint:gosec // G304: path components are validated, see splitDigest
 	metaBytes, err := os.ReadFile(metaPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -104,7 +107,7 @@ func (c *DiskCache) Get(
 		return nil, fmt.Errorf("decoding cache metadata: %w", err)
 	}
 
-	//nolint:gosec // G304: digest is not yet path-validated, see splitDigest and docs/proxy-behavior.md "Possible future work"
+	//nolint:gosec // G304: path components are validated, see splitDigest
 	file, err := os.Open(dataPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -395,14 +398,26 @@ func (c *DiskCache) scopeRoot(tenantID, upstreamID string) (string, error) {
 	return filepath.Join(c.rootDir, tenantComponent, upstreamComponent), nil
 }
 
-// splitDigest does not validate that encoded is a well-formed digest body
-// before it is joined into a cache file path in finalPaths, so a crafted
-// digest (e.g. containing "..") can escape the cache root. Stronger OCI
-// digest/path validation is tracked as future work in docs/proxy-behavior.md;
-// the resulting paths are read in Get (see the nolint markers there).
+// ociDigestRE enforces the OCI image spec digest grammar
+// (algorithm ":" encoded, where algorithm is one or more lowercase
+// alphanumeric components separated by "+", ".", "_", or "-", and encoded is
+// restricted to the base16/base32/base64url alphabet). Restricting both
+// components to this character set is what makes it safe to join them
+// directly into a cache file path in finalPaths: neither component can
+// contain "/", "..", or other path metacharacters, so a crafted digest
+// cannot escape the tenant/upstream-scoped cache root.
+var ociDigestRE = regexp.MustCompile(`^[a-z0-9]+(?:[+._-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$`)
+
+// splitDigest validates that digest matches the OCI digest grammar before
+// splitting it into its algorithm and encoded components. The resulting
+// paths are read in Get.
 func splitDigest(digest string) (string, string, error) {
-	algo, encoded, ok := strings.Cut(strings.TrimSpace(digest), ":")
-	if !ok || algo == "" || encoded == "" {
+	digest = strings.TrimSpace(digest)
+	if !ociDigestRE.MatchString(digest) {
+		return "", "", fmt.Errorf("invalid OCI digest %q", digest)
+	}
+	algo, encoded, ok := strings.Cut(digest, ":")
+	if !ok {
 		return "", "", fmt.Errorf("invalid OCI digest %q", digest)
 	}
 	return algo, encoded, nil

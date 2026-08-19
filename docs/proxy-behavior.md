@@ -123,13 +123,13 @@ Client-facing registry authentication is absent. Do not confuse upstream authent
 
 ## Cache scope and constraints
 
-| Cache | Scope in current key | Current constraint |
-| --- | --- | --- |
-| Decision (Valkey) | tenant, generation, dependency-context hash, artifact identity | no `upstream_id` |
-| Metadata (Valkey) | tenant, generation, artifact identity | no `upstream_id` |
-| Dependency context (Valkey) | tenant, upstream, artifact identity | upstream-scoped |
-| Tenant bundle (in process) | tenant | contains upstream-specific records; on-demand refresh |
-| OCI artifact (disk) | tenant, upstream, kind, digest | upstream-scoped |
+| Cache                       | Scope in current key                                           | Current constraint                                    |
+| --------------------------- | -------------------------------------------------------------- | ----------------------------------------------------- |
+| Decision (Valkey)           | tenant, generation, dependency-context hash, artifact identity | no `upstream_id`                                      |
+| Metadata (Valkey)           | tenant, generation, artifact identity                          | no `upstream_id`                                      |
+| Dependency context (Valkey) | tenant, upstream, artifact identity                            | upstream-scoped                                       |
+| Tenant bundle (in process)  | tenant                                                         | contains upstream-specific records; on-demand refresh |
+| OCI artifact (disk)         | tenant, upstream, kind, digest                                 | upstream-scoped                                       |
 
 Decision and metadata isolation is tenant-aware but not fully upstream-aware. Tenants with multiple equivalent-ecosystem upstreams must account for possible cross-upstream reuse. Graph-context and OCI artifact caches do include upstream identity.
 
@@ -168,6 +168,11 @@ These are directions, not current guarantees:
 
 - client authentication, scoped tokens, OIDC/CLI login, and registry challenge flows;
 - upstream-scoped decision/metadata keys and recent-allow queries;
-- stronger OCI digest/path validation and enforced HTTPS for authenticated upstreams;
+- enforced HTTPS for authenticated upstreams;
 - S3/GCS artifact cache implementations;
 - asynchronous or batched durable audit writes.
+
+OCI digests used to key the disk artifact cache are validated against the OCI
+image spec digest grammar (`internal/infra/ocicache/disk.go`'s `splitDigest`)
+before being joined into a cache file path, so a malformed or path-traversal
+digest cannot escape the tenant/upstream-scoped cache root.
