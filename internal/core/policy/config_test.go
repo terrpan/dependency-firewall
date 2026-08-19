@@ -37,9 +37,9 @@ func TestDecodeStoredConfigJSON(t *testing.T) {
 }
 
 func TestToDomainPolicies_RejectsUnsupportedSchemaVersion(t *testing.T) {
-	pf := &PolicyFile{
+	pf := &File{
 		TenantID: "tenant-1",
-		Policies: []PolicyDef{{
+		Policies: []Def{{
 			Name:          "block-critical",
 			Type:          "cvss_threshold",
 			SchemaVersion: intPtr(2),

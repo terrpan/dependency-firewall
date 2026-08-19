@@ -76,9 +76,9 @@ policies:
 
 func TestToDomainPolicies(t *testing.T) {
 	t.Run("missing tenant_id returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "",
-			Policies: []PolicyDef{{Name: "x", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny"}},
+			Policies: []Def{{Name: "x", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny"}},
 		}
 		_, err := ToDomainPolicies(pf)
 		require.Error(t, err)
@@ -86,9 +86,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("invalid policy type returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{{Name: "x", Type: "unknown_type", SchemaVersion: intPtr(1), Action: "deny"}},
+			Policies: []Def{{Name: "x", Type: "unknown_type", SchemaVersion: intPtr(1), Action: "deny"}},
 		}
 		_, err := ToDomainPolicies(pf)
 		require.Error(t, err)
@@ -96,9 +96,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("explicit tenant override replaces YAML tenant_id", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "yaml-tenant",
-			Policies: []PolicyDef{{
+			Policies: []Def{{
 				Name:          "x",
 				Type:          "cvss_threshold",
 				SchemaVersion: intPtr(1),
@@ -113,9 +113,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("license policy type is accepted", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "block-gpl",
 					Type:          "license",
@@ -132,9 +132,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("license allowlist policy type is accepted", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "allow-approved-licenses",
 					Type:          "license_allowlist",
@@ -151,9 +151,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("license allowlist schema v2 is accepted", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "allow-approved-licenses",
 					Type:          "license_allowlist",
@@ -175,9 +175,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("namespace allowlist policy type is accepted", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "allow-only-official-images",
 					Type:          "namespace_allowlist",
@@ -194,8 +194,8 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("tenant override allows files without tenant_id", func(t *testing.T) {
-		pf := &PolicyFile{
-			Policies: []PolicyDef{{
+		pf := &File{
+			Policies: []Def{{
 				Name:          "x",
 				Type:          "cvss_threshold",
 				SchemaVersion: intPtr(1),
@@ -210,9 +210,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("invalid action returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{{Name: "x", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "block"}},
+			Policies: []Def{{Name: "x", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "block"}},
 		}
 		_, err := ToDomainPolicies(pf)
 		require.Error(t, err)
@@ -220,9 +220,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("missing name returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{{Name: "", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny"}},
+			Policies: []Def{{Name: "", Type: "cvss_threshold", SchemaVersion: intPtr(1), Action: "deny"}},
 		}
 		_, err := ToDomainPolicies(pf)
 		require.Error(t, err)
@@ -230,9 +230,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("default enabled to true when not specified", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "p1",
 					Type:          "cvss_threshold",
@@ -249,9 +249,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("enabled false is preserved", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "p1",
 					Type:          "cvss_threshold",
@@ -268,9 +268,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("priority defaults to index when not specified", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "first",
 					Type:          "cvss_threshold",
@@ -306,9 +306,9 @@ func TestToDomainPolicies(t *testing.T) {
 		p10 := 10
 		p20 := 20
 		p5 := 5
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "first",
 					Type:          "cvss_threshold",
@@ -344,9 +344,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("unsupported config key returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "x",
 					Type:          "cvss_threshold",
@@ -362,9 +362,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("invalid dry_run type returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{
+			Policies: []Def{
 				{
 					Name:          "x",
 					Type:          "cvss_threshold",
@@ -384,9 +384,9 @@ func TestToDomainPolicies(t *testing.T) {
 	})
 
 	t.Run("missing schema_version returns error", func(t *testing.T) {
-		pf := &PolicyFile{
+		pf := &File{
 			TenantID: "t1",
-			Policies: []PolicyDef{{
+			Policies: []Def{{
 				Name:   "x",
 				Type:   "cvss_threshold",
 				Action: "deny",

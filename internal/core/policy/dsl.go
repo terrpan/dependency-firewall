@@ -1,14 +1,14 @@
 // Package policy implements the policy DSL, parser, and evaluation engine.
 package policy
 
-// PolicyFile represents a YAML or JSON policy definition file.
-type PolicyFile struct {
-	TenantID string      `yaml:"tenant_id" json:"tenant_id"`
-	Policies []PolicyDef `yaml:"policies"  json:"policies"`
+// File represents a YAML or JSON policy definition file.
+type File struct {
+	TenantID string `yaml:"tenant_id" json:"tenant_id"`
+	Policies []Def  `yaml:"policies"  json:"policies"`
 }
 
-// PolicyDef is a single policy definition from a YAML or JSON document.
-type PolicyDef struct {
+// Def is a single policy definition from a YAML or JSON document.
+type Def struct {
 	UpstreamID    *string        `yaml:"upstream_id"    json:"upstream_id"`
 	Name          string         `yaml:"name"           json:"name"`
 	Type          string         `yaml:"type"           json:"type"`

@@ -120,13 +120,13 @@ func parsePolicyImportDocument(data []byte) (*policyImportDocument, error) {
 	return &document, nil
 }
 
-func (d *policyImportDocument) toCorePolicyFile() *corepolicy.PolicyFile {
-	file := &corepolicy.PolicyFile{
+func (d *policyImportDocument) toCorePolicyFile() *corepolicy.File {
+	file := &corepolicy.File{
 		TenantID: d.TenantID,
-		Policies: make([]corepolicy.PolicyDef, len(d.Policies)),
+		Policies: make([]corepolicy.Def, len(d.Policies)),
 	}
 	for i := range d.Policies {
-		file.Policies[i] = corepolicy.PolicyDef{
+		file.Policies[i] = corepolicy.Def{
 			Name:          d.Policies[i].Name,
 			UpstreamID:    d.Policies[i].UpstreamID,
 			Type:          d.Policies[i].Type,

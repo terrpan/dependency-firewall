@@ -180,7 +180,6 @@ func resolveNPMGraph(
 
 	args := []string{
 		"install",
-		job.Root.FullName() + "@" + job.Root.Version,
 		"--package-lock-only",
 		"--ignore-scripts",
 		"--no-audit",
@@ -190,6 +189,11 @@ func resolveNPMGraph(
 	if registry := strings.TrimSpace(job.Upstream.BaseURL); registry != "" {
 		args = append(args, "--registry", registry)
 	}
+	// "--" ends npm's own option parsing. Defense in depth alongside the
+	// leading-"-" rejection in domain.NormalizeArtifactIdentity: even if a
+	// malformed identity reached this far, it cannot be reinterpreted as a
+	// flag to the npm invocation below.
+	args = append(args, "--", job.Root.FullName()+"@"+job.Root.Version)
 	cmd := exec.CommandContext(ctx, "npm", args...)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()

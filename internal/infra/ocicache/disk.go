@@ -90,6 +90,7 @@ func (c *DiskCache) Get(
 		return nil, err
 	}
 
+	//nolint:gosec // G304: digest is not yet path-validated, see splitDigest and docs/proxy-behavior.md "Possible future work"
 	metaBytes, err := os.ReadFile(metaPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -103,6 +104,7 @@ func (c *DiskCache) Get(
 		return nil, fmt.Errorf("decoding cache metadata: %w", err)
 	}
 
+	//nolint:gosec // G304: digest is not yet path-validated, see splitDigest and docs/proxy-behavior.md "Possible future work"
 	file, err := os.Open(dataPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -376,6 +378,11 @@ func (c *DiskCache) scopeRoot(tenantID, upstreamID string) (string, error) {
 	return filepath.Join(c.rootDir, tenantComponent, upstreamComponent), nil
 }
 
+// splitDigest does not validate that encoded is a well-formed digest body
+// before it is joined into a cache file path in finalPaths, so a crafted
+// digest (e.g. containing "..") can escape the cache root. Stronger OCI
+// digest/path validation is tracked as future work in docs/proxy-behavior.md;
+// the resulting paths are read in Get (see the nolint markers there).
 func splitDigest(digest string) (string, string, error) {
 	algo, encoded, ok := strings.Cut(strings.TrimSpace(digest), ":")
 	if !ok || algo == "" || encoded == "" {

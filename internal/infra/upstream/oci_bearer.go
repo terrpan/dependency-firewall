@@ -29,6 +29,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 		}
 	}
 
+	//nolint:gosec // G704: req targets the operator/tenant-configured upstream registry; forwarding to it is this proxy's purpose, not attacker-directed SSRF
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -52,6 +53,7 @@ func (c *OCIClient) doOCIRequest(req *http.Request, upstream domain.Upstream) (*
 	retry.Header = req.Header.Clone()
 	retry.Header.Set("Authorization", "Bearer "+token)
 
+	//nolint:gosec // G704: retry is req.Clone with only the Authorization header changed; same configured-upstream destination as above
 	retryResp, err := c.httpClient.Do(retry)
 	if err != nil {
 		return nil, err
