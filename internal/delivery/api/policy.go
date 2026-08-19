@@ -27,6 +27,12 @@ func (h *PolicyHandler) RegisterRoutes(mux *http.ServeMux) {
 
 // RegisterHumaRoutes registers policy metadata routes on the control-plane Huma API.
 func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
+	h.registerPolicyCRUDRoutes(api)
+	h.registerPolicyLifecycleRoutes(api)
+	configurePolicyOpenAPI(api)
+}
+
+func (h *PolicyHandler) registerPolicyCRUDRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-policy",
 		Method:        http.MethodPost,
@@ -89,6 +95,9 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 			http.StatusInternalServerError,
 		),
 	}, h.delete)
+}
+
+func (h *PolicyHandler) registerPolicyLifecycleRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-policy-versions",
 		Method:      http.MethodGet,
@@ -140,6 +149,9 @@ func (h *PolicyHandler) RegisterHumaRoutes(api huma.API) {
 			http.StatusInternalServerError,
 		),
 	}, h.importPoliciesHuma)
+}
+
+func configurePolicyOpenAPI(api huma.API) {
 	removeValidationResponse(api, "/api/v1/policies", http.MethodGet, http.MethodPost)
 	removeValidationResponse(api, "/api/v1/policies/{id}", http.MethodGet, http.MethodPut, http.MethodDelete)
 	removeValidationResponse(api, "/api/v1/policies/{id}/versions", http.MethodGet)

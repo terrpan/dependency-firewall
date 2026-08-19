@@ -32,69 +32,78 @@ func RunControlPlane(ctx context.Context, cfg *config.Config, logger *slog.Logge
 		true,
 		true,
 		func(logger *slog.Logger, deps *dependencies) error {
-			installRuntimeServices(cfg, logger, deps, deps.auditRepo, deps.auditRepo)
-
-			controlPlaneMux := http.NewServeMux()
-			if err := registerControlPlaneRoutes(controlPlaneMux, deps, cfg, logger, info); err != nil {
-				return err
-			}
-
-			httpServer := newHTTPServer(cfg, controlPlaneMux)
-
-			controlPlaneGRPCOptions, err := controlPlaneGRPCServerOptions(cfg, logger, deps.auditService)
-			if err != nil {
-				return err
-			}
-			if cfg.Bundle.TLS.Mode == "mtls" {
-				if deps.bundleUpstreamRepo == nil {
-					return fmt.Errorf("bundle upstream repository is required in mTLS mode")
-				}
-				if deps.authSecretRewrapper == nil {
-					return fmt.Errorf("upstream auth secret rewrapper is required in mTLS mode")
-				}
-			}
-			grpcServer := grpc.NewServer(controlPlaneGRPCOptions...)
-			bundleService, err := newLocalBundleService(deps, cfg.Bundle.TLS.Mode == "mtls")
-			if err != nil {
-				return err
-			}
-			bundleServer, err := bundlegrpc.NewServer(bundleService, deps.authSecretRewrapper)
-			if err != nil {
-				return err
-			}
-			bundleServer.Register(grpcServer)
-			graphJobNotifier := service.NewDependencyGraphJobNotifier()
-			ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo, deps.dependencyGraphQueue, graphJobNotifier)).
-				Register(grpcServer)
-
-			listener, err := net.Listen("tcp", cfg.Bundle.ListenAddr)
-			if err != nil {
-				return fmt.Errorf("listening for bundle grpc: %w", err)
-			}
-			// grpc.Server.Serve closes the listener on return, so this is a
-			// backstop for the error paths above it and normally reports
-			// "use of closed network connection".
-			defer func() { _ = listener.Close() }()
-
-			logger.Info("starting control plane",
-				"http_addr", httpServer.Addr,
-				"bundle_addr", cfg.Bundle.ListenAddr,
-			)
-			if cfg.Bundle.TLS.Mode != "mtls" && cfg.Bundle.TLS.AllowInsecureControlPlane {
-				logger.Warn("control plane gRPC is running without mTLS",
-					"bundle_addr", cfg.Bundle.ListenAddr,
-					"runtime_mode", cfg.Runtime.Mode,
-					"bundle_tls_mode", cfg.Bundle.TLS.Mode,
-					"override", "bundle.tls.allow_insecure_control_plane",
-				)
-			}
-
-			return serve(ctx, logger,
-				httpServerRunner("control-plane-http", httpServer),
-				grpcServerRunner("control-plane-grpc", grpcServer, listener),
-				optionalDependencyGraphWorkerRunner(ctx, cfg, logger, deps.dependencyGraphRepo, graphJobNotifier),
-			)
+			return runControlPlane(ctx, cfg, logger, info, deps)
 		},
+	)
+}
+
+func runControlPlane(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	info BuildInfo,
+	deps *dependencies,
+) error {
+	installRuntimeServices(cfg, logger, deps, deps.auditRepo, deps.auditRepo)
+
+	controlPlaneMux := http.NewServeMux()
+	if err := registerControlPlaneRoutes(controlPlaneMux, deps, cfg, logger, info); err != nil {
+		return err
+	}
+	httpServer := newHTTPServer(cfg, controlPlaneMux)
+
+	controlPlaneGRPCOptions, err := controlPlaneGRPCServerOptions(cfg, logger, deps.auditService)
+	if err != nil {
+		return err
+	}
+	if cfg.Bundle.TLS.Mode == "mtls" {
+		if deps.bundleUpstreamRepo == nil {
+			return fmt.Errorf("bundle upstream repository is required in mTLS mode")
+		}
+		if deps.authSecretRewrapper == nil {
+			return fmt.Errorf("upstream auth secret rewrapper is required in mTLS mode")
+		}
+	}
+	grpcServer := grpc.NewServer(controlPlaneGRPCOptions...)
+	bundleService, err := newLocalBundleService(deps, cfg.Bundle.TLS.Mode == "mtls")
+	if err != nil {
+		return err
+	}
+	bundleServer, err := bundlegrpc.NewServer(bundleService, deps.authSecretRewrapper)
+	if err != nil {
+		return err
+	}
+	bundleServer.Register(grpcServer)
+	graphJobNotifier := service.NewDependencyGraphJobNotifier()
+	ingestgrpc.NewServer(service.NewProxyIngestService(deps.decisionRepo, deps.auditRepo, deps.dependencyGraphQueue, graphJobNotifier)).
+		Register(grpcServer)
+
+	listener, err := net.Listen("tcp", cfg.Bundle.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listening for bundle grpc: %w", err)
+	}
+	// grpc.Server.Serve closes the listener on return, so this is a
+	// backstop for the error paths above it and normally reports
+	// "use of closed network connection".
+	defer func() { _ = listener.Close() }()
+
+	logger.Info("starting control plane",
+		"http_addr", httpServer.Addr,
+		"bundle_addr", cfg.Bundle.ListenAddr,
+	)
+	if cfg.Bundle.TLS.Mode != "mtls" && cfg.Bundle.TLS.AllowInsecureControlPlane {
+		logger.Warn("control plane gRPC is running without mTLS",
+			"bundle_addr", cfg.Bundle.ListenAddr,
+			"runtime_mode", cfg.Runtime.Mode,
+			"bundle_tls_mode", cfg.Bundle.TLS.Mode,
+			"override", "bundle.tls.allow_insecure_control_plane",
+		)
+	}
+
+	return serve(ctx, logger,
+		httpServerRunner("control-plane-http", httpServer),
+		grpcServerRunner("control-plane-grpc", grpcServer, listener),
+		optionalDependencyGraphWorkerRunner(ctx, cfg, logger, deps.dependencyGraphRepo, graphJobNotifier),
 	)
 }
 

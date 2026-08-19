@@ -20,13 +20,15 @@ func (s *Server) RecordDecision(ctx context.Context, req *RecordDecisionRequest)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid decision: %v", err)
 	}
-	if strings.TrimSpace(decision.TenantID) == "" {
-		return nil, status.Error(codes.InvalidArgument, "decision tenant_id is required")
-	}
-	if err := s.service.RecordDecision(ctx, decision); err != nil {
-		return nil, toStatusError(err)
-	}
-	return &RecordDecisionResponse{Decision: fromDomainDecision(decision)}, nil
+	return persistTenantRecord(
+		ctx,
+		decision,
+		decision.TenantID,
+		"decision tenant_id is required",
+		s.service,
+		proxyIngestService.RecordDecision,
+		recordDecisionResponse,
+	)
 }
 
 // GetDecisionByArtifact returns the most recent persisted decision for an artifact.
@@ -87,13 +89,40 @@ func (s *Server) RecordAuditEvent(
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid event: %v", err)
 	}
-	if strings.TrimSpace(event.TenantID) == "" {
-		return nil, status.Error(codes.InvalidArgument, "event tenant_id is required")
+	return persistTenantRecord(
+		ctx,
+		event,
+		event.TenantID,
+		"event tenant_id is required",
+		s.service,
+		proxyIngestService.RecordAuditEvent,
+		recordAuditEventResponse,
+	)
+}
+
+func persistTenantRecord[Record, Response any](
+	ctx context.Context,
+	record *Record,
+	tenantID, missingTenantMessage string,
+	service proxyIngestService,
+	persist func(proxyIngestService, context.Context, *Record) error,
+	toResponse func(*Record) *Response,
+) (*Response, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, status.Error(codes.InvalidArgument, missingTenantMessage)
 	}
-	if err := s.service.RecordAuditEvent(ctx, event); err != nil {
+	if err := persist(service, ctx, record); err != nil {
 		return nil, toStatusError(err)
 	}
-	return &RecordAuditEventResponse{Event: fromDomainAuditEvent(event)}, nil
+	return toResponse(record), nil
+}
+
+func recordDecisionResponse(decision *domain.Decision) *RecordDecisionResponse {
+	return &RecordDecisionResponse{Decision: fromDomainDecision(decision)}
+}
+
+func recordAuditEventResponse(event *domain.AuditEvent) *RecordAuditEventResponse {
+	return &RecordAuditEventResponse{Event: fromDomainAuditEvent(event)}
 }
 
 // EnqueueDependencyGraphResolve enqueues an async npm dependency graph resolve request.

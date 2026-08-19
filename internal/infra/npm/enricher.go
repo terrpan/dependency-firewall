@@ -85,18 +85,30 @@ func (e *MetadataEnricher) Enrich(
 	if artifact.Ecosystem != domain.EcosystemNPM {
 		return &domain.ArtifactMetadata{}, nil
 	}
-
 	if artifact.Version == "" {
 		// Cannot enrich without a specific version.
 		return &domain.ArtifactMetadata{}, nil
 	}
 
 	pkgName := buildPackageName(artifact)
-	url := e.registry + "/" + pkgName
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	pkgData, found, err := e.fetchPackageMetadata(ctx, pkgName)
 	if err != nil {
-		return nil, fmt.Errorf("%w: building request: %v", domain.ErrEnrichmentFailed, err)
+		return nil, err
+	}
+	if !found {
+		return &domain.ArtifactMetadata{}, nil
+	}
+	return e.enrichPackageVersion(ctx, artifact, pkgName, pkgData), nil
+}
+
+func (e *MetadataEnricher) fetchPackageMetadata(
+	ctx context.Context,
+	pkgName string,
+) (npmPackageResponse, bool, error) {
+	requestURL := e.registry + "/" + pkgName
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return npmPackageResponse{}, false, fmt.Errorf("%w: building request: %v", domain.ErrEnrichmentFailed, err)
 	}
 	req.Header.Set("Accept", "application/json")
 
@@ -106,7 +118,7 @@ func (e *MetadataEnricher) Enrich(
 			"package", pkgName,
 			"error", err,
 		)
-		return nil, fmt.Errorf("%w: %v", domain.ErrEnrichmentFailed, err)
+		return npmPackageResponse{}, false, fmt.Errorf("%w: %v", domain.ErrEnrichmentFailed, err)
 	}
 	defer resp.Body.Close()
 
@@ -114,78 +126,110 @@ func (e *MetadataEnricher) Enrich(
 		"package", pkgName,
 		"status", resp.StatusCode,
 	)
-
 	if resp.StatusCode == http.StatusNotFound {
 		// Package doesn't exist - not an error for enrichment purposes.
-		return &domain.ArtifactMetadata{}, nil
+		return npmPackageResponse{}, false, nil
 	}
-
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("%w: rate limited by npm registry", domain.ErrEnrichmentFailed)
+		return npmPackageResponse{}, false, fmt.Errorf("%w: rate limited by npm registry", domain.ErrEnrichmentFailed)
 	}
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: npm registry returned status %d", domain.ErrEnrichmentFailed, resp.StatusCode)
+		return npmPackageResponse{}, false, fmt.Errorf(
+			"%w: npm registry returned status %d", domain.ErrEnrichmentFailed, resp.StatusCode,
+		)
 	}
 
 	var pkgData npmPackageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pkgData); err != nil {
-		return nil, fmt.Errorf("%w: decoding response: %v", domain.ErrEnrichmentFailed, err)
+		return npmPackageResponse{}, false, fmt.Errorf("%w: decoding response: %v", domain.ErrEnrichmentFailed, err)
 	}
+	return pkgData, true, nil
+}
 
+func (e *MetadataEnricher) enrichPackageVersion(
+	ctx context.Context,
+	artifact domain.ArtifactIdentity,
+	pkgName string,
+	pkgData npmPackageResponse,
+) *domain.ArtifactMetadata {
 	meta := &domain.ArtifactMetadata{}
+	e.extractPublishTimestamp(ctx, artifact, pkgName, pkgData.Time, meta)
 
+	versionData, ok := pkgData.Versions[artifact.Version]
+	if !ok {
+		return meta
+	}
+	meta.Licenses = extractVersionLicenses(versionData)
+	e.enrichSourceRepository(ctx, pkgData, versionData, meta)
+	return meta
+}
+
+func (e *MetadataEnricher) extractPublishTimestamp(
+	ctx context.Context,
+	artifact domain.ArtifactIdentity,
+	pkgName string,
+	publishTimes map[string]string,
+	meta *domain.ArtifactMetadata,
+) {
 	// Extract the publish timestamp for the specific version.
-	if timeStr, ok := pkgData.Time[artifact.Version]; ok {
-		publishedAt, parseErr := time.Parse(time.RFC3339, timeStr)
-		if parseErr != nil {
-			e.logger.WarnContext(ctx, "failed to parse publish time",
-				"package", pkgName,
-				"version", artifact.Version,
-				"time", timeStr,
-				"error", parseErr,
-			)
-		} else {
-			meta.PublishedAt = &publishedAt
-			e.logger.InfoContext(ctx, "extracted publish time",
-				"package", pkgName,
-				"version", artifact.Version,
-				"published_at", publishedAt,
-			)
-		}
-	} else {
+	timeStr, ok := publishTimes[artifact.Version]
+	if !ok {
 		e.logger.WarnContext(ctx, "version not found in time map",
 			"package", pkgName,
 			"version", artifact.Version,
-			"available_versions", len(pkgData.Time),
+			"available_versions", len(publishTimes),
 		)
+		return
 	}
 
-	if versionData, ok := pkgData.Versions[artifact.Version]; ok {
-		meta.Licenses = extractVersionLicenses(versionData)
-		sourceRepo, scorecardUnavailableReason := resolveSourceRepository(pkgData, versionData)
-		if sourceRepo != nil {
-			meta.SourceRepository = sourceRepo
-			if e.scorecards != nil {
-				scorecardResult, lookupErr := e.scorecards.Lookup(ctx, *sourceRepo)
-				if lookupErr != nil {
-					e.logger.WarnContext(ctx, "scorecard lookup failed",
-						"repository", sourceRepo.ProjectURI(),
-						"error", lookupErr,
-					)
-					meta.Scorecard = &domain.ScorecardResult{
-						UnavailableReason: fmt.Sprintf("Scorecard data is unavailable for %s", sourceRepo.ProjectURI()),
-					}
-				} else {
-					meta.Scorecard = scorecardResult
-				}
-			}
-		} else if scorecardUnavailableReason != "" {
+	publishedAt, err := time.Parse(time.RFC3339, timeStr)
+	if err != nil {
+		e.logger.WarnContext(ctx, "failed to parse publish time",
+			"package", pkgName,
+			"version", artifact.Version,
+			"time", timeStr,
+			"error", err,
+		)
+		return
+	}
+	meta.PublishedAt = &publishedAt
+	e.logger.InfoContext(ctx, "extracted publish time",
+		"package", pkgName,
+		"version", artifact.Version,
+		"published_at", publishedAt,
+	)
+}
+
+func (e *MetadataEnricher) enrichSourceRepository(
+	ctx context.Context,
+	pkgData npmPackageResponse,
+	versionData npmPackageVersion,
+	meta *domain.ArtifactMetadata,
+) {
+	sourceRepo, scorecardUnavailableReason := resolveSourceRepository(pkgData, versionData)
+	if sourceRepo == nil {
+		if scorecardUnavailableReason != "" {
 			meta.Scorecard = &domain.ScorecardResult{UnavailableReason: scorecardUnavailableReason}
 		}
+		return
 	}
 
-	return meta, nil
+	meta.SourceRepository = sourceRepo
+	if e.scorecards == nil {
+		return
+	}
+	scorecardResult, err := e.scorecards.Lookup(ctx, *sourceRepo)
+	if err != nil {
+		e.logger.WarnContext(ctx, "scorecard lookup failed",
+			"repository", sourceRepo.ProjectURI(),
+			"error", err,
+		)
+		meta.Scorecard = &domain.ScorecardResult{
+			UnavailableReason: fmt.Sprintf("Scorecard data is unavailable for %s", sourceRepo.ProjectURI()),
+		}
+		return
+	}
+	meta.Scorecard = scorecardResult
 }
 
 // buildPackageName constructs the full npm package name from the artifact identity.

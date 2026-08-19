@@ -258,36 +258,40 @@ func (c *DiskCache) enforceLimits(_ context.Context, tenantID, upstreamID string
 	if err != nil {
 		return err
 	}
-
-	now := time.Now()
-	if c.maxAge > 0 {
-		var kept []cachedFile
-		for _, file := range files {
-			if now.Sub(file.modTime) > c.maxAge {
-				if err := removeCachedFile(file); err != nil {
-					return err
-				}
-				continue
-			}
-			kept = append(kept, file)
-		}
-		files = kept
+	files, err = c.removeExpiredFiles(files, time.Now())
+	if err != nil {
+		return err
 	}
+	return c.enforceCapacityLimits(files)
+}
 
+func (c *DiskCache) removeExpiredFiles(files []cachedFile, now time.Time) ([]cachedFile, error) {
+	if c.maxAge <= 0 {
+		return files, nil
+	}
+	kept := make([]cachedFile, 0, len(files))
+	for _, file := range files {
+		if now.Sub(file.modTime) <= c.maxAge {
+			kept = append(kept, file)
+			continue
+		}
+		if err := removeCachedFile(file); err != nil {
+			return nil, err
+		}
+	}
+	return kept, nil
+}
+
+func (c *DiskCache) enforceCapacityLimits(files []cachedFile) error {
 	if c.maxEntries <= 0 && c.maxBytes <= 0 {
 		return nil
 	}
-
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].modTime.Before(files[j].modTime)
 	})
 
-	var totalBytes int64
-	for _, file := range files {
-		totalBytes += file.size
-	}
-
-	for len(files) > 0 && ((c.maxEntries > 0 && len(files) > c.maxEntries) || (c.maxBytes > 0 && totalBytes > c.maxBytes)) {
+	totalBytes := cachedFilesSize(files)
+	for len(files) > 0 && c.capacityExceeded(len(files), totalBytes) {
 		oldest := files[0]
 		files = files[1:]
 		totalBytes -= oldest.size
@@ -295,8 +299,21 @@ func (c *DiskCache) enforceLimits(_ context.Context, tenantID, upstreamID string
 			return err
 		}
 	}
-
 	return nil
+}
+
+func cachedFilesSize(files []cachedFile) int64 {
+	var totalBytes int64
+	for _, file := range files {
+		totalBytes += file.size
+	}
+	return totalBytes
+}
+
+func (c *DiskCache) capacityExceeded(entryCount int, totalBytes int64) bool {
+	tooManyEntries := c.maxEntries > 0 && entryCount > c.maxEntries
+	tooManyBytes := c.maxBytes > 0 && totalBytes > c.maxBytes
+	return tooManyEntries || tooManyBytes
 }
 
 func (c *DiskCache) collectScopedFiles(scopeRoot string) ([]cachedFile, error) {

@@ -98,16 +98,5 @@ func (c *MetadataCache) InvalidateTenant(ctx context.Context, tenantID string) e
 }
 
 func (c *MetadataCache) currentGeneration(ctx context.Context, tenantID string) (int64, error) {
-	value, err := c.client.Do(ctx, c.client.B().Get().Key(metadataGenerationKey(tenantID)).Build()).ToString()
-	if err == nil {
-		generation, parseErr := strconv.ParseInt(value, 10, 64)
-		if parseErr != nil {
-			return 0, fmt.Errorf("parsing metadata cache generation: %w", parseErr)
-		}
-		return generation, nil
-	}
-	if valkeygo.IsValkeyNil(err) {
-		return 0, nil
-	}
-	return 0, fmt.Errorf("getting metadata cache generation: %w", err)
+	return currentCacheGeneration(ctx, c.client, metadataGenerationKey(tenantID), "metadata")
 }

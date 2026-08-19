@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
@@ -50,22 +51,7 @@ func (r *AuditEventRepository) Record(ctx context.Context, event *domain.AuditEv
 	return nil
 }
 
-// ListByTenant returns tenant-scoped audit events ordered by newest first.
-func (r *AuditEventRepository) ListByTenant(
-	ctx context.Context,
-	filter domain.AuditEventFilter,
-) ([]domain.AuditEvent, error) {
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	offset := filter.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, tenant_id, event_type, entity_type, entity_id, payload, created_at
+const listAuditEventsQuery = `SELECT id, tenant_id, event_type, entity_type, entity_id, payload, created_at
 		 FROM audit_events
 		 WHERE tenant_id = $1
 		   AND ($2 = '' OR event_type = $2)
@@ -90,7 +76,17 @@ func (r *AuditEventRepository) ListByTenant(
 		     OR COALESCE(payload->'details', '{}'::jsonb)::text ILIKE '%' || $9 || '%'
 		   )
 		 ORDER BY created_at DESC
-		 LIMIT $10 OFFSET $11`,
+		 LIMIT $10 OFFSET $11`
+
+// ListByTenant returns tenant-scoped audit events ordered by newest first.
+func (r *AuditEventRepository) ListByTenant(
+	ctx context.Context,
+	filter domain.AuditEventFilter,
+) ([]domain.AuditEvent, error) {
+	limit, offset := auditEventPage(filter)
+	rows, err := r.pool.Query(
+		ctx,
+		listAuditEventsQuery,
 		filter.TenantID,
 		string(filter.EventType),
 		string(filter.Outcome),
@@ -110,29 +106,9 @@ func (r *AuditEventRepository) ListByTenant(
 
 	var events []domain.AuditEvent
 	for rows.Next() {
-		var event domain.AuditEvent
-		var entityType *string
-		var entityID *string
-		var payloadBytes []byte
-		if err := rows.Scan(
-			&event.ID,
-			&event.TenantID,
-			&event.EventType,
-			&entityType,
-			&entityID,
-			&payloadBytes,
-			&event.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning audit event row: %w", err)
-		}
-		if entityType != nil {
-			event.EntityType = *entityType
-		}
-		if entityID != nil {
-			event.EntityID = *entityID
-		}
-		if err := decodeAuditPayload(payloadBytes, &event); err != nil {
-			return nil, fmt.Errorf("decoding audit payload: %w", err)
+		event, err := scanAuditEvent(rows)
+		if err != nil {
+			return nil, err
 		}
 		events = append(events, event)
 	}
@@ -141,6 +117,46 @@ func (r *AuditEventRepository) ListByTenant(
 	}
 
 	return events, nil
+}
+
+func auditEventPage(filter domain.AuditEventFilter) (int, int) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
+func scanAuditEvent(row pgx.Row) (domain.AuditEvent, error) {
+	var event domain.AuditEvent
+	var entityType *string
+	var entityID *string
+	var payloadBytes []byte
+	if err := row.Scan(
+		&event.ID,
+		&event.TenantID,
+		&event.EventType,
+		&entityType,
+		&entityID,
+		&payloadBytes,
+		&event.CreatedAt,
+	); err != nil {
+		return domain.AuditEvent{}, fmt.Errorf("scanning audit event row: %w", err)
+	}
+	if entityType != nil {
+		event.EntityType = *entityType
+	}
+	if entityID != nil {
+		event.EntityID = *entityID
+	}
+	if err := decodeAuditPayload(payloadBytes, &event); err != nil {
+		return domain.AuditEvent{}, fmt.Errorf("decoding audit payload: %w", err)
+	}
+	return event, nil
 }
 
 func buildAuditPayload(event *domain.AuditEvent) map[string]any {

@@ -142,6 +142,18 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	if !h.authorizeManifest(w, r, audit, decision) {
+		return
+	}
+	h.streamManifest(w, r, *upstream, audit, decision.Artifact, tenant.ID, repo)
+}
+
+func (h *RegistryHandler) authorizeManifest(
+	w http.ResponseWriter,
+	r *http.Request,
+	audit proxyflow.AuditContext,
+	decision *domain.Decision,
+) bool {
 	if decision.Outcome == domain.DecisionDeny {
 		if err := proxyflow.RecordRequestDenied(
 			r.Context(),
@@ -151,10 +163,10 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 			"oci manifest request denied",
 		); err != nil {
 			writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
-			return
+			return false
 		}
 		writeOCIError(w, r, "DENIED", "policy violation: "+decision.Reason, http.StatusForbidden)
-		return
+		return false
 	}
 	if err := proxyflow.RecordRequestAllowed(
 		r.Context(),
@@ -164,7 +176,7 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 		"oci manifest request allowed",
 	); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
-		return
+		return false
 	}
 	if err := proxyflow.RecordUpstreamFetchStarted(
 		r.Context(),
@@ -173,21 +185,31 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 		"oci manifest fetch started",
 	); err != nil {
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
-		return
+		return false
 	}
+	return true
+}
 
+func (h *RegistryHandler) streamManifest(
+	w http.ResponseWriter,
+	r *http.Request,
+	upstream domain.Upstream,
+	audit proxyflow.AuditContext,
+	artifact domain.ArtifactIdentity,
+	tenantID, repo string,
+) {
 	// Allowed — fetch from upstream and stream to client.
-	resp, err := h.upstream.FetchMetadata(r.Context(), *upstream, decision.Artifact)
+	resp, err := h.upstream.FetchMetadata(r.Context(), upstream, artifact)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
 			writeOCIError(w, r, "MANIFEST_UNKNOWN", "manifest not found", http.StatusNotFound)
 			return
 		}
-		audit.Artifact = decision.Artifact
+		audit.Artifact = artifact
 		_ = proxyflow.RecordUpstreamFetchFailed(r.Context(), h.audit, audit, "oci manifest fetch failed", err)
 		h.logger.Error("upstream manifest fetch failed",
 			"error", err,
-			"tenant_id", tenant.ID,
+			"tenant_id", tenantID,
 			"repo", repo,
 		)
 		writeOCIError(w, r, "MANIFEST_UNKNOWN", "upstream error", http.StatusBadGateway)
@@ -242,28 +264,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	allowed, err := h.access.HasRecentAllow(r.Context(), tenant.ID, artifact)
-	if err != nil {
-		h.logger.Error("failed to check manifest allow decision",
-			"error", err,
-			"tenant_id", tenant.ID,
-			"repo", repo,
-		)
-		writeOCIError(w, r, "DENIED", "policy check error", http.StatusInternalServerError)
-		return
-	}
-	if !allowed {
-		if err := proxyflow.RecordSimpleRequestDenied(
-			r.Context(),
-			h.audit,
-			audit,
-			"no manifest-level allow decision for this repository",
-			"oci blob request denied",
-		); err != nil {
-			writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
-			return
-		}
-		writeOCIError(w, r, "DENIED", "no manifest-level allow decision for this repository", http.StatusForbidden)
+	if !h.authorizeBlob(w, r, tenant.ID, repo, artifact, audit) {
 		return
 	}
 
@@ -292,7 +293,51 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
-	resp, err := h.upstream.FetchContent(r.Context(), blobUpstream, digest)
+	h.streamBlob(w, r, blobUpstream, audit, tenant.ID, repo, digest)
+}
+
+func (h *RegistryHandler) authorizeBlob(
+	w http.ResponseWriter,
+	r *http.Request,
+	tenantID, repo string,
+	artifact domain.ArtifactIdentity,
+	audit proxyflow.AuditContext,
+) bool {
+	allowed, err := h.access.HasRecentAllow(r.Context(), tenantID, artifact)
+	if err != nil {
+		h.logger.Error("failed to check manifest allow decision",
+			"error", err,
+			"tenant_id", tenantID,
+			"repo", repo,
+		)
+		writeOCIError(w, r, "DENIED", "policy check error", http.StatusInternalServerError)
+		return false
+	}
+	if allowed {
+		return true
+	}
+	if err := proxyflow.RecordSimpleRequestDenied(
+		r.Context(),
+		h.audit,
+		audit,
+		"no manifest-level allow decision for this repository",
+		"oci blob request denied",
+	); err != nil {
+		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
+		return false
+	}
+	writeOCIError(w, r, "DENIED", "no manifest-level allow decision for this repository", http.StatusForbidden)
+	return false
+}
+
+func (h *RegistryHandler) streamBlob(
+	w http.ResponseWriter,
+	r *http.Request,
+	upstream domain.Upstream,
+	audit proxyflow.AuditContext,
+	tenantID, repo, digest string,
+) {
+	resp, err := h.upstream.FetchContent(r.Context(), upstream, digest)
 	if err != nil {
 		if errors.Is(err, domain.ErrArtifactNotFound) {
 			writeOCIError(w, r, "BLOB_UNKNOWN", "blob not found", http.StatusNotFound)
@@ -301,7 +346,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		_ = proxyflow.RecordUpstreamFetchFailed(r.Context(), h.audit, audit, "oci blob fetch failed", err)
 		h.logger.Error("upstream blob fetch failed",
 			"error", err,
-			"tenant_id", tenant.ID,
+			"tenant_id", tenantID,
 			"repo", repo,
 		)
 		writeOCIError(w, r, "BLOB_UNKNOWN", "upstream error", http.StatusBadGateway)

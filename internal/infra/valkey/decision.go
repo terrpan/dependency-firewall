@@ -123,16 +123,24 @@ func (c *DecisionCache) InvalidateTenant(ctx context.Context, tenantID string) e
 }
 
 func (c *DecisionCache) currentGeneration(ctx context.Context, tenantID string) (int64, error) {
-	value, err := c.client.Do(ctx, c.client.B().Get().Key(decisionGenerationKey(tenantID)).Build()).ToString()
+	return currentCacheGeneration(ctx, c.client, decisionGenerationKey(tenantID), "decision")
+}
+
+func currentCacheGeneration(
+	ctx context.Context,
+	client valkeygo.Client,
+	generationKey, cacheName string,
+) (int64, error) {
+	value, err := client.Do(ctx, client.B().Get().Key(generationKey).Build()).ToString()
 	if err == nil {
 		generation, parseErr := strconv.ParseInt(value, 10, 64)
 		if parseErr != nil {
-			return 0, fmt.Errorf("parsing decision cache generation: %w", parseErr)
+			return 0, fmt.Errorf("parsing %s cache generation: %w", cacheName, parseErr)
 		}
 		return generation, nil
 	}
 	if valkeygo.IsValkeyNil(err) {
 		return 0, nil
 	}
-	return 0, fmt.Errorf("getting decision cache generation: %w", err)
+	return 0, fmt.Errorf("getting %s cache generation: %w", cacheName, err)
 }

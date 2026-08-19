@@ -35,104 +35,108 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 		return enabled[i].Name < enabled[j].Name
 	})
 
-	reasons := make([]domain.EvaluationReason, 0, len(enabled))
-	var warnings []string
-	var firstDenyReason string
-	hasDeny := false
+	state := evaluationState{
+		reasons: make([]domain.EvaluationReason, 0, len(enabled)),
+	}
+	for _, policy := range enabled {
+		state.evaluatePolicy(req, policy)
+	}
+	return state.decision(req)
+}
 
-	for _, p := range enabled {
-		targetMode := targetEvaluationMode(req, p.Target)
-		if targetMode == targetSkip {
-			continue
-		}
-		cond, err := conditionForType(p.Type)
-		if err != nil {
-			er := domain.EvaluationReason{
-				PolicyID:   p.ID,
-				PolicyName: p.Name,
-				Category:   domain.ReasonCategoryEvaluationError,
-				Action:     domain.PolicyActionDeny,
-				Message:    fmt.Sprintf("unknown policy type %q: %v", p.Type, err),
-			}
-			reasons = append(reasons, er)
-			if !hasDeny {
-				hasDeny = true
-				firstDenyReason = er.Message
-			}
-			continue
-		}
+type evaluationState struct {
+	reasons         []domain.EvaluationReason
+	warnings        []string
+	firstDenyReason string
+	hasDeny         bool
+}
 
-		matched, reason, err := cond.Evaluate(req, p.Config)
-		if err != nil {
-			er := domain.EvaluationReason{
-				PolicyID:   p.ID,
-				PolicyName: p.Name,
-				Category:   domain.ReasonCategoryEvaluationError,
-				Action:     domain.PolicyActionDeny,
-				Message:    fmt.Sprintf("condition evaluation error for policy %q: %v", p.Name, err),
-			}
-			reasons = append(reasons, er)
-			if !hasDeny {
-				hasDeny = true
-				firstDenyReason = er.Message
-			}
-			continue
-		}
-
-		if !matched {
-			continue
-		}
-
-		// When dry_run is enabled, record the match as a warning instead of
-		// a hard allow/deny. The decision outcome is unaffected.
-		if isWarnMode(p.Config) || targetMode == targetWarn {
-			er := domain.EvaluationReason{
-				PolicyID:   p.ID,
-				PolicyName: p.Name,
-				Category:   domain.ReasonPolicyWarning,
-				Action:     p.Action,
-				Message:    reason,
-			}
-			reasons = append(reasons, er)
-			warnings = append(warnings, fmt.Sprintf("[%s] %s", p.Name, reason))
-			continue
-		}
-
-		er := domain.EvaluationReason{
-			PolicyID:   p.ID,
-			PolicyName: p.Name,
-			Category:   domain.ReasonPolicyMatch,
-			Action:     p.Action,
-			Message:    reason,
-		}
-		reasons = append(reasons, er)
-
-		if p.Action == domain.PolicyActionDeny && !hasDeny {
-			hasDeny = true
-			firstDenyReason = reason
-		}
+func (s *evaluationState) evaluatePolicy(req domain.AccessRequest, policy domain.Policy) {
+	targetMode := targetEvaluationMode(req, policy.Target)
+	if targetMode == targetSkip {
+		return
 	}
 
+	cond, err := conditionForType(policy.Type)
+	if err != nil {
+		s.addDeny(domain.EvaluationReason{
+			PolicyID:   policy.ID,
+			PolicyName: policy.Name,
+			Category:   domain.ReasonCategoryEvaluationError,
+			Action:     domain.PolicyActionDeny,
+			Message:    fmt.Sprintf("unknown policy type %q: %v", policy.Type, err),
+		})
+		return
+	}
+
+	matched, reason, err := cond.Evaluate(req, policy.Config)
+	if err != nil {
+		s.addDeny(domain.EvaluationReason{
+			PolicyID:   policy.ID,
+			PolicyName: policy.Name,
+			Category:   domain.ReasonCategoryEvaluationError,
+			Action:     domain.PolicyActionDeny,
+			Message:    fmt.Sprintf("condition evaluation error for policy %q: %v", policy.Name, err),
+		})
+		return
+	}
+	if !matched {
+		return
+	}
+
+	// When dry_run is enabled, record the match as a warning instead of
+	// a hard allow/deny. The decision outcome is unaffected.
+	if isWarnMode(policy.Config) || targetMode == targetWarn {
+		s.reasons = append(s.reasons, domain.EvaluationReason{
+			PolicyID:   policy.ID,
+			PolicyName: policy.Name,
+			Category:   domain.ReasonPolicyWarning,
+			Action:     policy.Action,
+			Message:    reason,
+		})
+		s.warnings = append(s.warnings, fmt.Sprintf("[%s] %s", policy.Name, reason))
+		return
+	}
+
+	evaluationReason := domain.EvaluationReason{
+		PolicyID:   policy.ID,
+		PolicyName: policy.Name,
+		Category:   domain.ReasonPolicyMatch,
+		Action:     policy.Action,
+		Message:    reason,
+	}
+	s.reasons = append(s.reasons, evaluationReason)
+	if policy.Action == domain.PolicyActionDeny && !s.hasDeny {
+		s.hasDeny = true
+		s.firstDenyReason = reason
+	}
+}
+
+func (s *evaluationState) addDeny(reason domain.EvaluationReason) {
+	s.reasons = append(s.reasons, reason)
+	if s.hasDeny {
+		return
+	}
+	s.hasDeny = true
+	s.firstDenyReason = reason.Message
+}
+
+func (s *evaluationState) decision(req domain.AccessRequest) domain.Decision {
 	outcome := domain.DecisionAllow
 	userReason := "no matching policy"
 	policyID := ""
 
-	if hasDeny {
+	if s.hasDeny {
 		outcome = domain.DecisionDeny
-		userReason = firstDenyReason
-		for _, r := range reasons {
-			if r.Action == domain.PolicyActionDeny {
-				policyID = r.PolicyID
-				break
-			}
-		}
-	} else if len(reasons) > 0 {
-		userReason = reasons[0].Message
-		policyID = reasons[0].PolicyID
+		userReason = s.firstDenyReason
+		policyID = firstDenyPolicyID(s.reasons)
+	} else if len(s.reasons) > 0 {
+		userReason = s.reasons[0].Message
+		policyID = s.reasons[0].PolicyID
 	}
 
-	if len(reasons) == 0 {
-		reasons = append(reasons, domain.EvaluationReason{
+	if len(s.reasons) == 0 {
+		s.reasons = append(s.reasons, domain.EvaluationReason{
 			Category: domain.ReasonNoMatchingPolicy,
 			Message:  "no matching policy",
 		})
@@ -144,10 +148,19 @@ func (e *Evaluator) Evaluate(req domain.AccessRequest, policies []domain.Policy)
 		Outcome:     outcome,
 		PolicyID:    policyID,
 		Reason:      userReason,
-		Reasons:     reasons,
-		Warnings:    warnings,
+		Reasons:     s.reasons,
+		Warnings:    s.warnings,
 		EvaluatedAt: time.Now(),
 	}
+}
+
+func firstDenyPolicyID(reasons []domain.EvaluationReason) string {
+	for _, reason := range reasons {
+		if reason.Action == domain.PolicyActionDeny {
+			return reason.PolicyID
+		}
+	}
+	return ""
 }
 
 // isWarnMode returns true if the policy config enables dry-run evaluation.

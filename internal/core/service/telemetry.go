@@ -67,46 +67,31 @@ func isExpectedSpanOutcome(err error) bool {
 	if err == nil {
 		return false
 	}
-	switch {
-	case errors.Is(err, context.Canceled):
-		return true
-	case errors.Is(err, domain.ErrCacheMiss):
-		return true
-	case errors.Is(err, domain.ErrPolicyViolation):
-		return true
-	case errors.Is(err, domain.ErrArtifactNotFound):
-		return true
-	case errors.Is(err, domain.ErrTenantNotFound):
-		return true
-	case errors.Is(err, domain.ErrPolicyNotFound):
-		return true
-	case errors.Is(err, domain.ErrUpstreamNotFound):
-		return true
-	case errors.Is(err, domain.ErrPolicyVersionNotFound):
-		return true
-	case errors.Is(err, domain.ErrTenantNameConflict):
-		return true
-	case errors.Is(err, domain.ErrPolicyNameConflict):
-		return true
-	case errors.Is(err, domain.ErrUpstreamNameConflict):
-		return true
-	case errors.Is(err, domain.ErrUpstreamRegistryConflict):
-		return true
-	case errors.Is(err, domain.ErrPolicyDeleteEnabled):
-		return true
-	case errors.Is(err, domain.ErrPolicyInUse):
-		return true
-	case errors.Is(err, domain.ErrUpstreamInUse):
-		return true
-	case errors.Is(err, domain.ErrInvalidPolicy):
-		return true
-	case errors.Is(err, domain.ErrPolicyUpstreamIncompatible):
-		return true
-	case errors.Is(err, domain.ErrUnsupportedUpstreamCapability):
-		return true
-	case errors.Is(err, domain.ErrUpstreamPolicyConflict):
-		return true
-	default:
-		return false
+	expectedOutcomes := [...]error{
+		context.Canceled,
+		domain.ErrCacheMiss,
+		domain.ErrPolicyViolation,
+		domain.ErrArtifactNotFound,
+		domain.ErrTenantNotFound,
+		domain.ErrPolicyNotFound,
+		domain.ErrUpstreamNotFound,
+		domain.ErrPolicyVersionNotFound,
+		domain.ErrTenantNameConflict,
+		domain.ErrPolicyNameConflict,
+		domain.ErrUpstreamNameConflict,
+		domain.ErrUpstreamRegistryConflict,
+		domain.ErrPolicyDeleteEnabled,
+		domain.ErrPolicyInUse,
+		domain.ErrUpstreamInUse,
+		domain.ErrInvalidPolicy,
+		domain.ErrPolicyUpstreamIncompatible,
+		domain.ErrUnsupportedUpstreamCapability,
+		domain.ErrUpstreamPolicyConflict,
 	}
+	for _, expected := range expectedOutcomes {
+		if errors.Is(err, expected) {
+			return true
+		}
+	}
+	return false
 }

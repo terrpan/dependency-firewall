@@ -9,6 +9,26 @@
 - Configure tracing through providers and explicit construction patterns; do not mutate package-level tracer variables in tests.
 - Prefer standard library facilities unless a dependency provides clear value.
 
+### Linting and formatting
+
+`.golangci.yml` is the source of truth for Go formatters, linters, and their thresholds. Run `make fmt` before `make lint`; use `make lint-fix` for safe automatic fixes. A lint suppression must name the linter and explain why the finding is not actionable. Do not use blanket `//nolint` directives.
+
+The Go lint job runs for every pull request that changes the Go module or lint configuration. To install the same checks as local git hooks, run `make hooks-install` once per clone. This bootstraps [`lefthook`](https://github.com/evilmartians/lefthook) via `go install`, then installs the hooks. The hooks use the locally installed `golangci-lint`; CI pins the project version so upgrades are explicit and reviewable.
+
+### Web linting and formatting
+
+The `web/` directory has its own linting toolchain; it never touches files outside `web/`.
+
+- `npm --prefix web run lint` runs ESLint, Stylelint, and Prettier validation.
+- `npm --prefix web run lint:code` runs ESLint with type-aware TypeScript rules, React correctness, and JSX accessibility rules.
+- `npm --prefix web run lint:css` runs Stylelint on CSS Modules.
+- `npm --prefix web run format` writes Prettier formatting; `npm --prefix web run format:check` validates it.
+- `web/eslint.config.js`, `web/stylelint.config.js`, and `web/.prettierrc.json` are the sources of truth.
+
+Generated artifacts under `web/src/lib/api/generated/` and the work-in-progress `web/src/pages/OrganizationsPage.*` files are excluded from linting and formatting until their API contract exists.
+
+The web CI job and the lefthook `web-lint` command run `npm --prefix web run lint` for every change under `web/`.
+
 ## Layering standards
 
 - Handlers only parse requests and render responses.

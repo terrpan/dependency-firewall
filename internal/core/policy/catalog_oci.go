@@ -6,17 +6,12 @@ import (
 )
 
 func blockMutableTagPolicyDefinition() policyDefinition {
-	return definePolicy(
+	return defineDenyPolicyV1(
 		domain.PolicyTypeDescriptor{
-			Type:                    domain.PolicyTypeBlockMutableTag,
-			Summary:                 "Block mutable OCI tags",
-			Description:             "Matches OCI artifacts requested by mutable tags such as latest or dev.",
-			Help:                    "Use this to require immutable image references. Best for OCI manifests and tag-based pulls.",
-			CurrentSchemaVersion:    1,
-			SupportedSchemaVersions: []int{1},
-			SupportedActions:        []domain.PolicyAction{domain.PolicyActionDeny},
-			SupportedEcosystems:     []domain.EcosystemType{domain.EcosystemOCI},
-			RequiredCapabilities:    []domain.UpstreamCapability{domain.UpstreamCapabilityManifestDigestLookup},
+			Type:        domain.PolicyTypeBlockMutableTag,
+			Summary:     "Block mutable OCI tags",
+			Description: "Matches OCI artifacts requested by mutable tags such as latest or dev.",
+			Help:        "Use this to require immutable image references. Best for OCI manifests and tag-based pulls.",
 			Example: `- name: block-latest-tag
   type: block_mutable_tag
   schema_version: 1
@@ -27,8 +22,9 @@ func blockMutableTagPolicyDefinition() policyDefinition {
       - latest`,
 		},
 		condition.BlockMutableTag{},
+		domain.EcosystemOCI,
+		domain.UpstreamCapabilityManifestDigestLookup,
 		false,
-		configTypeMatcher[*domain.BlockMutableTagPolicyConfig],
-		configSchema(1, func() domain.PolicyConfig { return &domain.BlockMutableTagPolicyConfig{} }),
+		func() *domain.BlockMutableTagPolicyConfig { return &domain.BlockMutableTagPolicyConfig{} },
 	)
 }

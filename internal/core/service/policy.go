@@ -40,17 +40,7 @@ func (s *PolicyService) ListTypes() []domain.PolicyTypeDescriptor {
 
 // Create creates a policy for a tenant.
 func (s *PolicyService) Create(ctx context.Context, policyDef *domain.Policy) error {
-	if policyDef.SchemaVersion == 0 {
-		normalizedSchemaVersion, err := policy.NormalizeSchemaVersion(policyDef.Type, policyDef.SchemaVersion)
-		if err != nil {
-			return err
-		}
-		policyDef.SchemaVersion = normalizedSchemaVersion
-	}
-	if err := policy.ValidatePolicy(*policyDef); err != nil {
-		return err
-	}
-	if err := s.validateUpstreamScope(ctx, policyDef.TenantID, policyDef.UpstreamID, policyDef.Type); err != nil {
+	if err := s.validatePolicyMutation(ctx, policyDef); err != nil {
 		return err
 	}
 	if err := s.repo.Create(ctx, policyDef); err != nil {
@@ -116,17 +106,7 @@ func (s *PolicyService) ListVersions(ctx context.Context, tenantID, policyID str
 
 // Update updates a policy for a tenant.
 func (s *PolicyService) Update(ctx context.Context, policyDef *domain.Policy) error {
-	if policyDef.SchemaVersion == 0 {
-		normalizedSchemaVersion, err := policy.NormalizeSchemaVersion(policyDef.Type, policyDef.SchemaVersion)
-		if err != nil {
-			return err
-		}
-		policyDef.SchemaVersion = normalizedSchemaVersion
-	}
-	if err := policy.ValidatePolicy(*policyDef); err != nil {
-		return err
-	}
-	if err := s.validateUpstreamScope(ctx, policyDef.TenantID, policyDef.UpstreamID, policyDef.Type); err != nil {
+	if err := s.validatePolicyMutation(ctx, policyDef); err != nil {
 		return err
 	}
 	if err := s.repo.Update(ctx, policyDef); err != nil {
@@ -193,6 +173,34 @@ func (s *PolicyService) Delete(ctx context.Context, tenantID, id string, force b
 // ImportPolicies persists typed policy definitions for a tenant. The tenant
 // argument is authoritative and overrides tenant IDs on imported policies.
 func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, imported []domain.Policy) (int, error) {
+	policies, err := s.prepareImportedPolicies(ctx, tenantID, imported)
+	if err != nil {
+		return 0, err
+	}
+
+	existingByName, err := s.existingPoliciesByName(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+
+	mutated, failedName, persistErr := s.persistImportedPolicies(ctx, policies, existingByName)
+	if persistErr != nil {
+		return 0, s.importPersistenceError(ctx, tenantID, failedName, persistErr, mutated)
+	}
+	if mutated {
+		if err := s.finalizeTenantMutation(ctx, tenantID); err != nil {
+			return 0, fmt.Errorf("finalizing imported policies: %w", err)
+		}
+	}
+
+	return len(policies), nil
+}
+
+func (s *PolicyService) prepareImportedPolicies(
+	ctx context.Context,
+	tenantID string,
+	imported []domain.Policy,
+) ([]domain.Policy, error) {
 	policies := make([]domain.Policy, len(imported))
 	for i := range imported {
 		policies[i] = imported[i]
@@ -201,71 +209,104 @@ func (s *PolicyService) ImportPolicies(ctx context.Context, tenantID string, imp
 			policies[i].Version = 1
 		}
 		if err := s.validateUpstreamScope(ctx, tenantID, policies[i].UpstreamID, policies[i].Type); err != nil {
-			return 0, fmt.Errorf("validating imported policy %q upstream: %w", policies[i].Name, err)
+			return nil, fmt.Errorf("validating imported policy %q upstream: %w", policies[i].Name, err)
 		}
 	}
-
 	if err := policy.ValidatePolicies(policies); err != nil {
-		return 0, fmt.Errorf("validating imported policies: %w", err)
+		return nil, fmt.Errorf("validating imported policies: %w", err)
 	}
+	return policies, nil
+}
 
+func (s *PolicyService) existingPoliciesByName(
+	ctx context.Context,
+	tenantID string,
+) (map[string]domain.Policy, error) {
 	existingPolicies, err := s.repo.ListByTenant(ctx, tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("listing existing policies for import: %w", err)
+		return nil, fmt.Errorf("listing existing policies for import: %w", err)
 	}
 
 	existingByName := make(map[string]domain.Policy, len(existingPolicies))
 	for i := range existingPolicies {
 		existingByName[existingPolicies[i].Name] = existingPolicies[i]
 	}
+	return existingByName, nil
+}
 
+func (s *PolicyService) persistImportedPolicies(
+	ctx context.Context,
+	policies []domain.Policy,
+	existingByName map[string]domain.Policy,
+) (bool, string, error) {
 	mutated := false
 	for i := range policies {
-		persistErr := func() error {
-			existing, found := existingByName[policies[i].Name]
-			if !found {
-				if err := s.repo.Create(ctx, &policies[i]); err != nil {
-					return err
-				}
-				existingByName[policies[i].Name] = policies[i]
-				return nil
-			}
-
-			policies[i].ID = existing.ID
-			if err := s.repo.Update(ctx, &policies[i]); err != nil {
-				return err
-			}
-			existingByName[policies[i].Name] = policies[i]
-			return nil
-		}()
-		if persistErr != nil {
-			if mutated {
-				if finalizeErr := s.finalizeTenantMutation(ctx, tenantID); finalizeErr != nil {
-					return 0, fmt.Errorf(
-						"persisting imported policy %q: %w; finalizing partial import: %v",
-						policies[i].Name,
-						persistErr,
-						finalizeErr,
-					)
-				}
-				return 0, fmt.Errorf(
-					"persisting imported policy %q: %w; partial import already recorded a new policy revision and invalidated cached decisions",
-					policies[i].Name,
-					persistErr,
-				)
-			}
-			return 0, fmt.Errorf("persisting imported policy %q: %w", policies[i].Name, persistErr)
+		if err := s.persistImportedPolicy(ctx, &policies[i], existingByName); err != nil {
+			return mutated, policies[i].Name, err
 		}
 		mutated = true
 	}
+	return mutated, "", nil
+}
 
-	if mutated {
-		if err := s.finalizeTenantMutation(ctx, tenantID); err != nil {
-			return 0, fmt.Errorf("finalizing imported policies: %w", err)
+func (s *PolicyService) persistImportedPolicy(
+	ctx context.Context,
+	policyDef *domain.Policy,
+	existingByName map[string]domain.Policy,
+) error {
+	existing, found := existingByName[policyDef.Name]
+	if !found {
+		if err := s.repo.Create(ctx, policyDef); err != nil {
+			return err
 		}
+		existingByName[policyDef.Name] = *policyDef
+		return nil
 	}
 
-	return len(policies), nil
+	policyDef.ID = existing.ID
+	if err := s.repo.Update(ctx, policyDef); err != nil {
+		return err
+	}
+	existingByName[policyDef.Name] = *policyDef
+	return nil
+}
+
+func (s *PolicyService) importPersistenceError(
+	ctx context.Context,
+	tenantID, policyName string,
+	persistErr error,
+	mutated bool,
+) error {
+	if !mutated {
+		return fmt.Errorf("persisting imported policy %q: %w", policyName, persistErr)
+	}
+	if finalizeErr := s.finalizeTenantMutation(ctx, tenantID); finalizeErr != nil {
+		return fmt.Errorf(
+			"persisting imported policy %q: %w; finalizing partial import: %v",
+			policyName,
+			persistErr,
+			finalizeErr,
+		)
+	}
+	return fmt.Errorf(
+		"persisting imported policy %q: %w; partial import already recorded a new policy revision and invalidated cached decisions",
+		policyName,
+		persistErr,
+	)
+}
+
+func (s *PolicyService) validatePolicyMutation(ctx context.Context, policyDef *domain.Policy) error {
+	if policyDef.SchemaVersion == 0 {
+		normalizedSchemaVersion, err := policy.NormalizeSchemaVersion(policyDef.Type, policyDef.SchemaVersion)
+		if err != nil {
+			return err
+		}
+		policyDef.SchemaVersion = normalizedSchemaVersion
+	}
+	if err := policy.ValidatePolicy(*policyDef); err != nil {
+		return err
+	}
+	return s.validateUpstreamScope(ctx, policyDef.TenantID, policyDef.UpstreamID, policyDef.Type)
 }
 
 func (s *PolicyService) validateUpstreamScope(

@@ -1,4 +1,6 @@
-.PHONY: help build build-worker push mtls-certs up down restart logs logs-control-plane logs-proxy logs-dependency-graph-worker ps clean status test test-integration test-all test-coverage fmt lint vet tidy all
+.PHONY: help build build-worker push mtls-certs up down restart logs logs-control-plane logs-proxy logs-dependency-graph-worker ps clean status test test-integration test-all test-coverage fmt lint lint-fix lefthook hooks-install vet tidy all
+
+LEFTHOOK_VERSION ?= v1.13.6
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -69,11 +71,20 @@ test-all: ## Run all tests with race detector and integration tag
 test-coverage: ## Run tests with coverage
 	go test ./... -cover
 
-fmt: ## Format code
-	go fmt ./...
+fmt: ## Format Go code with the configured golangci-lint formatters
+	golangci-lint fmt ./...
 
-lint: ## Run linters
-	golangci-lint run
+lint: ## Run all configured Go linters
+	golangci-lint run ./...
+
+lint-fix: ## Apply safe automatic fixes, then report remaining lint findings
+	golangci-lint run --fix ./...
+
+lefthook: ## Ensure the lefthook binary is installed
+	@command -v lefthook >/dev/null 2>&1 || go install github.com/evilmartians/lefthook@$(LEFTHOOK_VERSION)
+
+hooks-install: lefthook ## Install lefthook git hooks
+	@lefthook install
 
 vet: ## Run go vet
 	go vet ./...

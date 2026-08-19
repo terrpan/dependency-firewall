@@ -42,13 +42,27 @@ func ParsePackageLock(
 
 	root = rootWithFullName(root)
 	paths := sortedPackagePaths(lock.Packages)
+	pathNodeIDs, nodesByKey, err := buildDependencyGraphNodes(root, lock.Packages, paths)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	edges := buildDependencyGraphEdges(lock.Packages, paths, pathNodeIDs, nodesByKey)
+	nodes := finalizeDependencyGraphNodes(root.CacheKey(), nodesByKey, edges)
+	sortDependencyGraphEdges(edges)
+	return nodes, edges, graphHash(nodes, edges), nil
+}
+
+func buildDependencyGraphNodes(
+	root domain.ArtifactIdentity,
+	packages map[string]lockPackage,
+	paths []string,
+) (map[string]string, map[string]*domain.DependencyGraphNode, error) {
 	pathNodeIDs := make(map[string]string, len(paths))
 	nodesByKey := make(map[string]*domain.DependencyGraphNode, len(paths))
-
 	for _, lockPath := range paths {
-		artifact, err := artifactForLockPackage(root, lockPath, lock.Packages[lockPath])
+		artifact, err := artifactForLockPackage(root, lockPath, packages[lockPath])
 		if err != nil {
-			return nil, nil, "", err
+			return nil, nil, err
 		}
 		key := artifact.CacheKey()
 		node, ok := nodesByKey[key]
@@ -62,14 +76,21 @@ func ParsePackageLock(
 		}
 		pathNodeIDs[lockPath] = node.ID
 	}
+	return pathNodeIDs, nodesByKey, nil
+}
 
+func buildDependencyGraphEdges(
+	packages map[string]lockPackage,
+	paths []string,
+	pathNodeIDs map[string]string,
+	nodesByKey map[string]*domain.DependencyGraphNode,
+) []domain.DependencyGraphEdge {
 	edgeKeys := map[string]struct{}{}
 	var edges []domain.DependencyGraphEdge
 	for _, lockPath := range paths {
 		parentID := pathNodeIDs[lockPath]
-		pkg := lock.Packages[lockPath]
-		for depName, depType := range dependencyEntries(pkg) {
-			childPath, ok := resolveDependencyPath(lock.Packages, lockPath, depName)
+		for depName, depType := range dependencyEntries(packages[lockPath]) {
+			childPath, ok := resolveDependencyPath(packages, lockPath, depName)
 			if !ok {
 				continue
 			}
@@ -89,16 +110,27 @@ func ParsePackageLock(
 			}
 		}
 	}
+	return edges
+}
 
+func finalizeDependencyGraphNodes(
+	rootID string,
+	nodesByKey map[string]*domain.DependencyGraphNode,
+	edges []domain.DependencyGraphEdge,
+) []domain.DependencyGraphNode {
 	nodes := make([]domain.DependencyGraphNode, 0, len(nodesByKey))
 	for _, node := range nodesByKey {
 		node.DependencyTypes = uniqueDependencyTypes(node.DependencyTypes)
 		nodes = append(nodes, *node)
 	}
-	computeDepths(root.CacheKey(), nodes, edges)
+	computeDepths(rootID, nodes, edges)
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodes[i].ID < nodes[j].ID
 	})
+	return nodes
+}
+
+func sortDependencyGraphEdges(edges []domain.DependencyGraphEdge) {
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].ParentNodeID != edges[j].ParentNodeID {
 			return edges[i].ParentNodeID < edges[j].ParentNodeID
@@ -108,9 +140,6 @@ func ParsePackageLock(
 		}
 		return edges[i].DependencyType < edges[j].DependencyType
 	})
-
-	hash := graphHash(nodes, edges)
-	return nodes, edges, hash, nil
 }
 
 func rootWithFullName(root domain.ArtifactIdentity) domain.ArtifactIdentity {

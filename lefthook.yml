@@ -1,0 +1,14 @@
+pre-commit:
+  commands:
+    golangci-lint:
+      run: make lint
+      glob:
+        - "**/*.go"
+        - "go.mod"
+        - "go.sum"
+        - ".golangci.yml"
+        - "Makefile"
+        - "lefthook.yml"
+    web-lint:
+      run: npm --prefix web run lint
+      glob: "web/**"

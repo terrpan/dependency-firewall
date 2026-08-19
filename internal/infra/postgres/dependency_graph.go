@@ -259,14 +259,42 @@ func (r *DependencyGraphRepository) CompleteResolve(
 	if err != nil {
 		return err
 	}
+	if err := clearDependencyGraph(ctx, tx, rootID); err != nil {
+		return err
+	}
+	nodeIDs, err := insertDependencyGraphNodes(ctx, tx, req, rootID, nodes)
+	if err != nil {
+		return err
+	}
+	if err := insertDependencyGraphEdges(ctx, tx, rootID, nodeIDs, edges); err != nil {
+		return err
+	}
+	if err := markDependencyGraphComplete(ctx, tx, rootID, graphHash); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing dependency graph completion: %w", err)
+	}
+	return nil
+}
 
+func clearDependencyGraph(ctx context.Context, tx pgx.Tx, rootID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM dependency_context_summaries WHERE root_id = $1`, rootID); err != nil {
 		return fmt.Errorf("clearing dependency context summaries: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM dependency_graph_nodes WHERE root_id = $1`, rootID); err != nil {
 		return fmt.Errorf("clearing dependency graph nodes: %w", err)
 	}
+	return nil
+}
 
+func insertDependencyGraphNodes(
+	ctx context.Context,
+	tx pgx.Tx,
+	req domain.DependencyGraphResolveRequest,
+	rootID string,
+	nodes []domain.DependencyGraphNode,
+) (map[string]string, error) {
 	nodeIDs := make(map[string]string, len(nodes))
 	for i := range nodes {
 		node := nodes[i]
@@ -288,7 +316,7 @@ func (r *DependencyGraphRepository) CompleteResolve(
 			depTypes,
 		).Scan(&nodeID)
 		if err != nil {
-			return fmt.Errorf("inserting dependency graph node: %w", err)
+			return nil, fmt.Errorf("inserting dependency graph node: %w", err)
 		}
 		key := node.ID
 		if key == "" {
@@ -298,10 +326,19 @@ func (r *DependencyGraphRepository) CompleteResolve(
 
 		dependencyContext := dependencyContextForNode(rootID, node).Normalize()
 		if err := insertDependencyContextSummary(ctx, tx, req, rootID, node.Artifact, dependencyContext); err != nil {
-			return err
+			return nil, err
 		}
 	}
+	return nodeIDs, nil
+}
 
+func insertDependencyGraphEdges(
+	ctx context.Context,
+	tx pgx.Tx,
+	rootID string,
+	nodeIDs map[string]string,
+	edges []domain.DependencyGraphEdge,
+) error {
 	for i := range edges {
 		edge := edges[i]
 		parentID, ok := nodeIDs[edge.ParentNodeID]
@@ -321,7 +358,10 @@ func (r *DependencyGraphRepository) CompleteResolve(
 			return fmt.Errorf("inserting dependency graph edge: %w", err)
 		}
 	}
+	return nil
+}
 
+func markDependencyGraphComplete(ctx context.Context, tx pgx.Tx, rootID, graphHash string) error {
 	if _, err := tx.Exec(ctx,
 		`UPDATE dependency_graph_roots
 		 SET status = 'complete', graph_hash = $1, error = NULL, updated_at = now(), resolved_at = now()
@@ -329,10 +369,6 @@ func (r *DependencyGraphRepository) CompleteResolve(
 		graphHash, rootID,
 	); err != nil {
 		return fmt.Errorf("marking dependency graph complete: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing dependency graph completion: %w", err)
 	}
 	return nil
 }

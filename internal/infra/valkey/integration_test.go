@@ -57,7 +57,7 @@ func TestConnect_realValkeyEmitsOpenTelemetrySpans(t *testing.T) {
 	operationCtx, rootSpan := provider.Tracer("integration-test").Start(ctx, "root")
 	require.NoError(t, HealthCheck(operationCtx, client))
 	require.NoError(t, cache.Set(operationCtx, decision, time.Minute))
-	cached, err := cache.Get(operationCtx, decision.TenantID, artifact)
+	cached, err := cache.Get(operationCtx, decision.TenantID, artifact, "")
 	require.NoError(t, err)
 	require.NotNil(t, cached)
 	assert.Equal(t, domain.DecisionAllow, cached.Outcome)
@@ -105,7 +105,7 @@ func TestDecisionCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, decision, time.Minute))
 
-		cached, err := cache.Get(ctx, decision.TenantID, decision.Artifact)
+		cached, err := cache.Get(ctx, decision.TenantID, decision.Artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		assert.Equal(t, decision, cached)
@@ -128,7 +128,7 @@ func TestDecisionCache_realValkey(t *testing.T) {
 		require.NoError(t, cache.Set(ctx, decision, time.Minute))
 		require.NoError(t, cache.Invalidate(ctx, decision.TenantID, decision.Artifact))
 
-		_, err := cache.Get(ctx, decision.TenantID, decision.Artifact)
+		_, err := cache.Get(ctx, decision.TenantID, decision.Artifact, "")
 		require.ErrorIs(t, err, domain.ErrCacheMiss)
 	})
 
@@ -149,10 +149,10 @@ func TestDecisionCache_realValkey(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), generationAfter)
 
-		_, err = cache.Get(ctx, tenantOneDecision.TenantID, tenantOneDecision.Artifact)
+		_, err = cache.Get(ctx, tenantOneDecision.TenantID, tenantOneDecision.Artifact, "")
 		require.ErrorIs(t, err, domain.ErrCacheMiss)
 
-		cachedOtherTenant, err := cache.Get(ctx, tenantTwoDecision.TenantID, tenantTwoDecision.Artifact)
+		cachedOtherTenant, err := cache.Get(ctx, tenantTwoDecision.TenantID, tenantTwoDecision.Artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cachedOtherTenant)
 		assert.Equal(t, tenantTwoDecision, cachedOtherTenant)
@@ -160,7 +160,7 @@ func TestDecisionCache_realValkey(t *testing.T) {
 		reloadedDecision := testDecision(tenantOneDecision.TenantID, domain.DecisionDeny)
 		require.NoError(t, cache.Set(ctx, reloadedDecision, time.Minute))
 
-		cachedReloaded, err := cache.Get(ctx, reloadedDecision.TenantID, reloadedDecision.Artifact)
+		cachedReloaded, err := cache.Get(ctx, reloadedDecision.TenantID, reloadedDecision.Artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cachedReloaded)
 		assert.Equal(t, reloadedDecision, cachedReloaded)
@@ -171,12 +171,12 @@ func TestDecisionCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, decision, 150*time.Millisecond))
 
-		cached, err := cache.Get(ctx, decision.TenantID, decision.Artifact)
+		cached, err := cache.Get(ctx, decision.TenantID, decision.Artifact, "")
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 
 		require.Eventually(t, func() bool {
-			_, err := cache.Get(ctx, decision.TenantID, decision.Artifact)
+			_, err := cache.Get(ctx, decision.TenantID, decision.Artifact, "")
 			return err == domain.ErrCacheMiss
 		}, 3*time.Second, 25*time.Millisecond)
 	})
@@ -233,7 +233,7 @@ func TestMetadataCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, "tenant-round-trip", artifact, metadata, time.Minute))
 
-		cached, err := cache.Get(ctx, "tenant-round-trip", artifact, "")
+		cached, err := cache.Get(ctx, "tenant-round-trip", artifact)
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		require.NotNil(t, cached.PublishedAt)
@@ -262,7 +262,7 @@ func TestMetadataCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.Set(ctx, "tenant-generation", artifact, firstMetadata, time.Minute))
 
-		cached, err := cache.Get(ctx, "tenant-generation", artifact, "")
+		cached, err := cache.Get(ctx, "tenant-generation", artifact)
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		require.NotNil(t, cached.MaxCVSS)
@@ -270,12 +270,12 @@ func TestMetadataCache_realValkey(t *testing.T) {
 
 		require.NoError(t, cache.InvalidateTenant(ctx, "tenant-generation"))
 
-		_, err = cache.Get(ctx, "tenant-generation", artifact, "")
+		_, err = cache.Get(ctx, "tenant-generation", artifact)
 		require.ErrorIs(t, err, domain.ErrCacheMiss)
 
 		require.NoError(t, cache.Set(ctx, "tenant-generation", artifact, secondMetadata, time.Minute))
 
-		cached, err = cache.Get(ctx, "tenant-generation", artifact, "")
+		cached, err = cache.Get(ctx, "tenant-generation", artifact)
 		require.NoError(t, err)
 		require.NotNil(t, cached)
 		require.NotNil(t, cached.MaxCVSS)
@@ -301,7 +301,7 @@ func TestMetadataCache_realValkey(t *testing.T) {
 		)
 
 		require.Eventually(t, func() bool {
-			_, err := cache.Get(ctx, "tenant-ttl", artifact, "")
+			_, err := cache.Get(ctx, "tenant-ttl", artifact)
 			return err != nil && err == domain.ErrCacheMiss
 		}, 5*time.Second, 25*time.Millisecond)
 	})
