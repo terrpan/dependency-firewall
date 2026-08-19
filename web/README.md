@@ -21,12 +21,20 @@ Audit events are available at `/api/v1/audit/events` but do not have a UI route.
 npm ci
 npm run dev
 npm run generate:api
-npm run lint
+npm run lint            # code + CSS + format check
+npm run lint:code       # ESLint
+npm run lint:css        # Stylelint
+npm run format          # Prettier --write
+npm run format:check    # Prettier --check
 npm run build
 npm run test:e2e
 ```
 
 Run `generate:api` only when the Go control-plane contract or exported policy metadata changes; documentation-only changes must not regenerate the snapshot or TypeScript bindings.
+
+## Linting and formatting
+
+ESLint, Stylelint, and Prettier are configured for this directory only. They will not touch files outside `web/`. Run `npm run lint` before committing web changes; it runs ESLint, Stylelint, and Prettier validation in one command.
 
 ## Local development
 

@@ -1,10 +1,4 @@
-import {
-  dependencyGraphRootFixtures,
-  expect,
-  installApi,
-  installAuth,
-  test,
-} from './fixtures'
+import { dependencyGraphRootFixtures, expect, installApi, installAuth, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await installAuth(page)
@@ -12,8 +6,14 @@ test.beforeEach(async ({ page }) => {
 
 test('graph inventory defaults to a resolved root and explains failed roots', async ({ page }) => {
   const failedRoot = {
-    id: 'root-failed', tenant_id: 'tenant-acme', upstream_id: 'npm', package_name: 'legacy-app', version: '2.0.0',
-    status: 'failed', error: 'Package manifest could not be resolved.', created_at: '2026-08-08T09:00:00Z',
+    id: 'root-failed',
+    tenant_id: 'tenant-acme',
+    upstream_id: 'npm',
+    package_name: 'legacy-app',
+    version: '2.0.0',
+    status: 'failed',
+    error: 'Package manifest could not be resolved.',
+    created_at: '2026-08-08T09:00:00Z',
     updated_at: '2026-08-08T09:02:00Z',
   }
   await installApi(page, { dependencyGraphRoots: [failedRoot, ...dependencyGraphRootFixtures] })
@@ -50,5 +50,7 @@ test('empty and failed graph inventories offer direct recovery', async ({ page }
   await expect(page.getByRole('button', { name: 'Refresh' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByText('No dependency graphs yet')).toBeVisible()
-  await expect(page.getByText('Graphs appear automatically after an npm client routes an install through Dependency Firewall')).toBeVisible()
+  await expect(
+    page.getByText('Graphs appear automatically after an npm client routes an install through Dependency Firewall'),
+  ).toBeVisible()
 })

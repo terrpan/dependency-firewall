@@ -28,10 +28,7 @@ export function matchesEvaluationFilter(evaluation: Evaluation, filter: Evaluati
   return Boolean(evaluation.cached_at)
 }
 
-export function matchesEvaluationFilters(
-  evaluation: Evaluation,
-  filters: readonly EvaluationFilter[],
-): boolean {
+export function matchesEvaluationFilters(evaluation: Evaluation, filters: readonly EvaluationFilter[]): boolean {
   return filters.every((filter) => matchesEvaluationFilter(evaluation, filter))
 }
 

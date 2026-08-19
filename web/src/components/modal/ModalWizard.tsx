@@ -117,10 +117,7 @@ export function ModalWizard({
                         {stepContent}
                       </button>
                     ) : (
-                      <div
-                        aria-current={index === activeStep ? 'step' : undefined}
-                        className={stepSurfaceClassName}
-                      >
+                      <div aria-current={index === activeStep ? 'step' : undefined} className={stepSurfaceClassName}>
                         {stepContent}
                       </div>
                     )}

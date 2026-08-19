@@ -82,8 +82,7 @@ export function TenantProvider({ children }: PropsWithChildren) {
   }, [refetch])
 
   const status = getTenantStatus(tenantId, isPending, isError, tenants.length)
-  const errorMessage =
-    error instanceof Error ? error.message : 'Unable to load tenants right now.'
+  const errorMessage = error instanceof Error ? error.message : 'Unable to load tenants right now.'
 
   const value = useMemo(
     () => ({

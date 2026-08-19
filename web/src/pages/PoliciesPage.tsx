@@ -31,14 +31,8 @@ import {
   validatePolicyDraft,
   type PolicyDraftState,
 } from '../features/policies/draft.ts'
-import {
-  matchesPolicySearch,
-  sortPolicies,
-} from '../features/policies/display.ts'
-import {
-  matchesPolicyFilter,
-  type PolicyFilter,
-} from '../features/policies/filters.ts'
+import { matchesPolicySearch, sortPolicies } from '../features/policies/display.ts'
+import { matchesPolicyFilter, type PolicyFilter } from '../features/policies/filters.ts'
 import type { PolicyDetailTab } from '../features/policies/PolicyDetailModal.tsx'
 import { PolicyListPanel } from '../features/policies/PolicyListPanel.tsx'
 import {
@@ -167,7 +161,7 @@ export function PoliciesPage() {
   )
 
   const selectedDescriptor = useMemo(
-    () => (draft.type ? descriptors.find((descriptor) => descriptor.type === draft.type) ?? null : null),
+    () => (draft.type ? (descriptors.find((descriptor) => descriptor.type === draft.type) ?? null) : null),
     [descriptors, draft.type],
   )
 
@@ -194,15 +188,13 @@ export function PoliciesPage() {
     [descriptors, upstreams],
   )
   const compatiblePolicyTypes = useMemo(
-    () => (selectedUpstream ? compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? [] : []),
+    () => (selectedUpstream ? (compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? []) : []),
     [compatiblePolicyTypesByUpstream, selectedUpstream],
   )
   const compatibleUpstreams = useMemo(() => {
     const selectedPolicyType = draft.type
     return selectedPolicyType
-      ? upstreams.filter((upstream) =>
-          upstreamSupportsPolicyType(upstream, selectedPolicyType, selectedDescriptor),
-        )
+      ? upstreams.filter((upstream) => upstreamSupportsPolicyType(upstream, selectedPolicyType, selectedDescriptor))
       : upstreams
   }, [draft.type, selectedDescriptor, upstreams])
   const searchedPolicies = useMemo(
@@ -297,10 +289,7 @@ export function PoliciesPage() {
     if (!normalizedDraft.upstreamId.trim()) {
       return 'Choose the upstream this policy applies to.'
     }
-    if (
-      draft.type &&
-      !compatibleUpstreams.some((upstream) => upstream.id === normalizedDraft.upstreamId.trim())
-    ) {
+    if (draft.type && !compatibleUpstreams.some((upstream) => upstream.id === normalizedDraft.upstreamId.trim())) {
       return 'Choose an upstream that supports the selected policy type.'
     }
     return null
@@ -318,14 +307,8 @@ export function PoliciesPage() {
     () => (scopedPolicyError ? [scopedPolicyError, ...validationErrors] : validationErrors),
     [scopedPolicyError, validationErrors],
   )
-  const jsonPreview = useMemo(
-    () => formatPolicyDraftJsonPreview(previewPolicy),
-    [previewPolicy],
-  )
-  const yamlPreview = useMemo(
-    () => formatPolicyDraftYamlPreview(tenantId, previewPolicy),
-    [previewPolicy, tenantId],
-  )
+  const jsonPreview = useMemo(() => formatPolicyDraftJsonPreview(previewPolicy), [previewPolicy])
+  const yamlPreview = useMemo(() => formatPolicyDraftYamlPreview(tenantId, previewPolicy), [previewPolicy, tenantId])
   const currentPolicyDiffPreview = useMemo(
     () =>
       diffFormat === 'json'
@@ -347,10 +330,7 @@ export function PoliciesPage() {
         : [],
     [comparisonPolicyDiffPreview, currentPolicyDiffPreview, selectedComparisonVersion, selectedPolicy],
   )
-  const policyDiffHasChanges = useMemo(
-    () => policyDiffLines.some((line) => line.type !== 'context'),
-    [policyDiffLines],
-  )
+  const policyDiffHasChanges = useMemo(() => policyDiffLines.some((line) => line.type !== 'context'), [policyDiffLines])
 
   function updatePolicyCache(nextPolicy: TypedPolicy) {
     if (!tenantId) {
@@ -410,10 +390,7 @@ export function PoliciesPage() {
       return asTypedPolicy(updatedPolicy)
     },
     onSuccess: (updatedPolicy) => {
-      notifySuccess(
-        'Policy updated',
-        `${updatedPolicy.name} is now ${updatedPolicy.enabled ? 'enabled' : 'disabled'}.`,
-      )
+      notifySuccess('Policy updated', `${updatedPolicy.name} is now ${updatedPolicy.enabled ? 'enabled' : 'disabled'}.`)
       updatePolicyCache(updatedPolicy)
 
       if (editingPolicyId === updatedPolicy.id) {
@@ -486,20 +463,14 @@ export function PoliciesPage() {
     () => policies.filter((policy) => policy.enabled && isPolicyDryRun(policy)).length,
     [policies],
   )
-  const disabledPoliciesCount = useMemo(
-    () => policies.filter((policy) => !policy.enabled).length,
-    [policies],
-  )
+  const disabledPoliciesCount = useMemo(() => policies.filter((policy) => !policy.enabled).length, [policies])
   const isEditingPolicy = editingPolicyId !== null
-  const hasCreateDraftInProgress = !isEditingPolicy && (draft.type !== null || draft.name.trim().length > 0 || wizardStep > 0)
+  const hasCreateDraftInProgress =
+    !isEditingPolicy && (draft.type !== null || draft.name.trim().length > 0 || wizardStep > 0)
   const canOpenCreateModal = Boolean(tenantId) && !upstreamsQuery.isPending && upstreams.length > 0
   const canAdvanceWizard =
     wizardStep < policyWizardSteps.length - 1 &&
-    (wizardStep === 0
-      ? Boolean(normalizedDraft.upstreamId.trim())
-      : wizardStep === 1
-        ? Boolean(draft.type)
-        : true)
+    (wizardStep === 0 ? Boolean(normalizedDraft.upstreamId.trim()) : wizardStep === 1 ? Boolean(draft.type) : true)
 
   async function refreshAll() {
     await Promise.all([
@@ -680,10 +651,7 @@ export function PoliciesPage() {
     if (step === 1) {
       if (!draft.type) {
         nextErrors.type = 'Choose a policy type.'
-      } else if (
-        selectedUpstream &&
-        !upstreamSupportsPolicyType(selectedUpstream, draft.type, selectedDescriptor)
-      ) {
+      } else if (selectedUpstream && !upstreamSupportsPolicyType(selectedUpstream, draft.type, selectedDescriptor)) {
         nextErrors.type = 'Choose a policy type that matches the selected upstream.'
       }
     }
@@ -801,9 +769,7 @@ export function PoliciesPage() {
 
   async function handleTogglePolicy(policy: TypedPolicy) {
     const nextEnabled = !policy.enabled
-    const confirmed = window.confirm(
-      `${nextEnabled ? 'Enable' : 'Disable'} policy "${policy.name}"?`,
-    )
+    const confirmed = window.confirm(`${nextEnabled ? 'Enable' : 'Disable'} policy "${policy.name}"?`)
     if (!confirmed) {
       return
     }
@@ -858,25 +824,36 @@ export function PoliciesPage() {
   }
 
   return (
-    <section className={policyClass("page")}>
+    <section className={policyClass('page')}>
       <PageHeader
         eyebrow="Policy control plane"
         title="Policies"
         summary="See what each rule does, where it applies, and whether it is enforcing."
-        actions={<>
-          <span className={policyClass("status-pill status-pill-neutral")}>{policies.length} policies</span>
-          <span
-            className={policyClass('status-pill', enforcingPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral')}
-          >
-            {enforcingPoliciesCount} enforcing
-          </span>
-          {dryRunPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-warning")}>{dryRunPoliciesCount} dry run</span> : null}
-          {disabledPoliciesCount > 0 ? <span className={policyClass("status-pill status-pill-neutral")}>{disabledPoliciesCount} disabled</span> : null}
-          {policyTypesQuery.isError ? <span className={policyClass("status-pill status-pill-neutral")}>Fallback metadata</span> : null}
-        </>}
+        actions={
+          <>
+            <span className={policyClass('status-pill status-pill-neutral')}>{policies.length} policies</span>
+            <span
+              className={policyClass(
+                'status-pill',
+                enforcingPoliciesCount > 0 ? 'status-pill-success' : 'status-pill-neutral',
+              )}
+            >
+              {enforcingPoliciesCount} enforcing
+            </span>
+            {dryRunPoliciesCount > 0 ? (
+              <span className={policyClass('status-pill status-pill-warning')}>{dryRunPoliciesCount} dry run</span>
+            ) : null}
+            {disabledPoliciesCount > 0 ? (
+              <span className={policyClass('status-pill status-pill-neutral')}>{disabledPoliciesCount} disabled</span>
+            ) : null}
+            {policyTypesQuery.isError ? (
+              <span className={policyClass('status-pill status-pill-neutral')}>Fallback metadata</span>
+            ) : null}
+          </>
+        }
       />
 
-      <div className={policyClass("policies-layout")}>
+      <div className={policyClass('policies-layout')}>
         <PolicyListPanel
           activeFilters={activeFilters}
           canOpenCreateModal={canOpenCreateModal}
@@ -887,7 +864,9 @@ export function PoliciesPage() {
             !versionsQuery.isFetching
           }
           deleteErrorMessage={deleteErrorMessage}
-          deletePendingPolicyId={deletePolicyMutation.isPending ? deletePolicyMutation.variables?.policy.id ?? null : null}
+          deletePendingPolicyId={
+            deletePolicyMutation.isPending ? (deletePolicyMutation.variables?.policy.id ?? null) : null
+          }
           filterCounts={filterCounts}
           filteredPolicies={filteredPolicies}
           hasCreateDraftInProgress={hasCreateDraftInProgress}
@@ -911,7 +890,9 @@ export function PoliciesPage() {
           policiesErrorMessage={policiesQuery.isError ? policiesQuery.error.message : null}
           policySearch={policySearch}
           selectedPolicyId={selectedPolicyId}
-          togglePendingPolicyId={togglePolicyMutation.isPending ? togglePolicyMutation.variables?.policy.id ?? null : null}
+          togglePendingPolicyId={
+            togglePolicyMutation.isPending ? (togglePolicyMutation.variables?.policy.id ?? null) : null
+          }
           upstreamsByID={upstreamsByID}
           upstreamsCount={upstreams.length}
         />
@@ -921,7 +902,9 @@ export function PoliciesPage() {
         <Suspense fallback={null}>
           <PolicyDetailModal
             deleteErrorMessage={deleteErrorMessage}
-            deletePendingPolicyId={deletePolicyMutation.isPending ? deletePolicyMutation.variables?.policy.id ?? null : null}
+            deletePendingPolicyId={
+              deletePolicyMutation.isPending ? (deletePolicyMutation.variables?.policy.id ?? null) : null
+            }
             detailTab={policyDetailTab}
             hasOpenDiff={Boolean(selectedComparisonVersion)}
             isDeleteError={deletePolicyMutation.isError}
@@ -938,7 +921,9 @@ export function PoliciesPage() {
             onTogglePolicy={(policy) => void handleTogglePolicy(policy)}
             policy={selectedPolicy}
             rollbackErrorMessage={rollbackPolicyMutation.isError ? rollbackPolicyMutation.error.message : null}
-            togglePendingPolicyId={togglePolicyMutation.isPending ? togglePolicyMutation.variables?.policy.id ?? null : null}
+            togglePendingPolicyId={
+              togglePolicyMutation.isPending ? (togglePolicyMutation.variables?.policy.id ?? null) : null
+            }
             upstreamsByID={upstreamsByID}
             versions={selectedPolicyVersions}
             versionsErrorMessage={versionsQuery.isError ? versionsQuery.error.message : null}

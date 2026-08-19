@@ -81,8 +81,10 @@ export const policyDraftDefinitions: Record<PolicyType, DraftDefinition> = {
   },
   scorecard: {
     displayName: 'OpenSSF Scorecard',
-    summary: 'Deny npm artifacts when the source repository Scorecard falls below the top-level score threshold, one or more named check thresholds, or both.',
-    description: 'Uses npm repository metadata plus hosted Scorecard results. Configure the top-level Scorecard score, named check minimums, and how the policy behaves when Scorecard data or specific checks are unavailable.',
+    summary:
+      'Deny npm artifacts when the source repository Scorecard falls below the top-level score threshold, one or more named check thresholds, or both.',
+    description:
+      'Uses npm repository metadata plus hosted Scorecard results. Configure the top-level Scorecard score, named check minimums, and how the policy behaves when Scorecard data or specific checks are unavailable.',
     defaultPriority: 15,
     numberField: 'min_score',
     numberLabel: 'Minimum overall Scorecard score (optional)',
@@ -106,7 +108,8 @@ export const policyDraftDefinitions: Record<PolicyType, DraftDefinition> = {
   license_allowlist: {
     displayName: 'License allowlist',
     summary: 'Deny artifacts unless all declared licenses are part of an approved SPDX list.',
-    description: 'This is the strict approved-license policy and should remain a deny rule, with configurable handling for unlicensed packages and unavailable metadata.',
+    description:
+      'This is the strict approved-license policy and should remain a deny rule, with configurable handling for unlicensed packages and unavailable metadata.',
     defaultPriority: 30,
     listField: 'licenses',
     listLabel: 'Approved licenses',
@@ -153,10 +156,7 @@ function getFallbackActions(type: PolicyType): PolicyAction[] {
   return fallbackActionMap[type]
 }
 
-export function getSupportedActions(
-  type: PolicyType,
-  descriptor?: PolicyTypeDescriptor | null,
-): PolicyAction[] {
+export function getSupportedActions(type: PolicyType, descriptor?: PolicyTypeDescriptor | null): PolicyAction[] {
   const supportedActions = descriptor?.supported_actions?.filter(
     (action): action is PolicyAction => action === 'allow' || action === 'deny',
   )
@@ -174,11 +174,11 @@ export function createFallbackPolicyTypeDescriptor(type: PolicyType): PolicyType
     type === 'block_mutable_tag'
       ? ['oci']
       : type === 'cvss_threshold' ||
-        type === 'minimum_age' ||
-        type === 'maximum_age' ||
-        type === 'scorecard' ||
-        type === 'license' ||
-        type === 'license_allowlist'
+          type === 'minimum_age' ||
+          type === 'maximum_age' ||
+          type === 'scorecard' ||
+          type === 'license' ||
+          type === 'license_allowlist'
         ? ['npm']
         : ['npm', 'oci']
   const requiredCapabilities =

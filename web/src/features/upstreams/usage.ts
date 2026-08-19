@@ -19,10 +19,7 @@ export function buildUpstreamUsageGuide(
   const firewallURL = new URL(firewallRootUrl)
 
   if (upstream.ecosystem === 'npm') {
-    const registryUrl = joinUrlPath(
-      firewallRootUrl,
-      `/npm/t/${tenantId ?? '<tenant-id>'}/u/${upstream.id}/`,
-    )
+    const registryUrl = joinUrlPath(firewallRootUrl, `/npm/t/${tenantId ?? '<tenant-id>'}/u/${upstream.id}/`)
     return {
       title: 'Use with npm',
       summary: 'Point npm at this upstream-specific firewall route so installs resolve through the selected upstream.',
@@ -44,7 +41,8 @@ export function buildUpstreamUsageGuide(
 
   return {
     title: 'Use with Docker',
-    summary: 'Pull through this upstream-specific firewall hostname so Docker traffic resolves to the selected OCI upstream.',
+    summary:
+      'Pull through this upstream-specific firewall hostname so Docker traffic resolves to the selected OCI upstream.',
     primaryLabel: 'docker pull',
     primaryCode: `docker pull ${upstreamHost}/library/nginx:1.25.3`,
     secondaryLabel: 'Optional mirror config',

@@ -57,7 +57,10 @@ export function SearchFilterBar<T extends string>({
 }: SearchFilterBarProps<T>) {
   return (
     <div className={styles.toolbar}>
-      <label className={`${styles.search}${searchFieldClassName ? ` ${searchFieldClassName}` : ''}`} htmlFor={searchInputId}>
+      <label
+        className={`${styles.search}${searchFieldClassName ? ` ${searchFieldClassName}` : ''}`}
+        htmlFor={searchInputId}
+      >
         <span>{searchLabel}</span>
         <Input
           id={searchInputId}

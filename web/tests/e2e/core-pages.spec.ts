@@ -1,6 +1,9 @@
 import { expect, installApi, installAuth, test } from './fixtures'
 
-test.beforeEach(async ({ page }) => { await installAuth(page); await installApi(page) })
+test.beforeEach(async ({ page }) => {
+  await installAuth(page)
+  await installApi(page)
+})
 
 test('uses one page-header hierarchy across every route', async ({ page }) => {
   const routes = [
@@ -40,7 +43,9 @@ test('uses one page-header hierarchy across every route', async ({ page }) => {
       await page.goto('/policies')
       const heading = page.getByRole('heading', { name: 'Policies', exact: true })
       await expect(heading).toBeVisible()
-      await expect.poll(() => heading.evaluate((element) => getComputedStyle(element.closest('header')!).display)).toBe('grid')
+      await expect
+        .poll(() => heading.evaluate((element) => getComputedStyle(element.closest('header')!).display))
+        .toBe('grid')
     }
   }
 })
@@ -93,7 +98,7 @@ test('uses consistent colors for equivalent actions', async ({ page }) => {
   await page.getByRole('button', { name: 'Review details' }).click()
   const createTenant = page.getByRole('button', { name: 'Create tenant' })
   await page.mouse.move(0, 0)
-  const primaryColors = await createTenant.evaluate(element => {
+  const primaryColors = await createTenant.evaluate((element) => {
     const style = getComputedStyle(element)
     return { background: style.backgroundColor, border: style.borderColor, color: style.color }
   })
@@ -101,20 +106,24 @@ test('uses consistent colors for equivalent actions', async ({ page }) => {
   await page.goto('/upstreams')
   const newUpstream = page.getByRole('button', { name: 'New upstream' })
   await expect(newUpstream).toBeVisible()
-  await expect(newUpstream.evaluate(element => {
-    const style = getComputedStyle(element)
-    return { background: style.backgroundColor, border: style.borderColor, color: style.color }
-  })).resolves.toEqual(primaryColors)
+  await expect(
+    newUpstream.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundColor, border: style.borderColor, color: style.color }
+    }),
+  ).resolves.toEqual(primaryColors)
 
   const refresh = page.getByRole('button', { name: 'Refresh' })
-  const neutralColors = await refresh.evaluate(element => {
+  const neutralColors = await refresh.evaluate((element) => {
     const style = getComputedStyle(element)
     return { background: style.backgroundColor, border: style.borderColor, color: style.color }
   })
   await newUpstream.click()
   const cancel = page.getByRole('button', { name: 'Cancel' })
-  await expect(cancel.evaluate(element => {
-    const style = getComputedStyle(element)
-    return { background: style.backgroundColor, border: style.borderColor, color: style.color }
-  })).resolves.toEqual(neutralColors)
+  await expect(
+    cancel.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundColor, border: style.borderColor, color: style.color }
+    }),
+  ).resolves.toEqual(neutralColors)
 })

@@ -32,11 +32,7 @@ export function mergeHeaders(...sources: RequestHeaders[]): Headers {
   return headers
 }
 
-export function buildRequestUrl(
-  baseUrl: string,
-  path: string,
-  query?: Record<string, QueryValue>,
-): string {
+export function buildRequestUrl(baseUrl: string, path: string, query?: Record<string, QueryValue>): string {
   const url = new URL(`${trimTrailingSlash(baseUrl)}${withLeadingSlash(path)}`, 'http://localhost')
 
   for (const [key, value] of Object.entries(query ?? {})) {

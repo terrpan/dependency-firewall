@@ -156,7 +156,11 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
 
     if (!response.ok) {
       const responseBody = await readResponseBody(response)
-      recordSpanError(span, responseBody instanceof Error ? responseBody : undefined, `Request failed with status ${response.status}`)
+      recordSpanError(
+        span,
+        responseBody instanceof Error ? responseBody : undefined,
+        `Request failed with status ${response.status}`,
+      )
       span.end()
       throw new ApiError({
         message: getErrorMessage(responseBody, `Request failed with status ${response.status}`),
@@ -271,7 +275,7 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
         return request<Policy, CreatePolicyRequest>({
           method: 'POST',
           path: '/policies',
-          body: body as CreatePolicyRequest,
+          body: body,
           contentType: 'application/json',
           tenantScoped: true,
           ...options,
@@ -289,7 +293,7 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
         return request<Policy, UpdatePolicyRequest>({
           method: 'PUT',
           path: `/policies/${id}`,
-          body: body as UpdatePolicyRequest,
+          body: body,
           contentType: 'application/json',
           tenantScoped: true,
           ...options,
@@ -326,13 +330,10 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
       listTypes(options?: RequestOptions) {
         return request<PolicyTypeDescriptor[]>({ method: 'GET', path: '/policy-types', ...options })
       },
-      importDocument(
-        body: PolicyImportBody,
-        options?: RequestOptions & { contentType?: PolicyImportContentType },
-      ) {
-        const contentType = options?.contentType ?? (typeof body === 'string' || body instanceof Uint8Array
-          ? 'application/x-yaml'
-          : 'application/json')
+      importDocument(body: PolicyImportBody, options?: RequestOptions & { contentType?: PolicyImportContentType }) {
+        const contentType =
+          options?.contentType ??
+          (typeof body === 'string' || body instanceof Uint8Array ? 'application/x-yaml' : 'application/json')
 
         return request<PolicyImportResult, PolicyImportBody>({
           method: 'POST',

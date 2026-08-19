@@ -1,10 +1,4 @@
-import {
-  expect,
-  installApi,
-  installAuth,
-  test,
-  upstreamOverviewFixtures,
-} from './fixtures'
+import { expect, installApi, installAuth, test, upstreamOverviewFixtures } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await installAuth(page)
@@ -33,17 +27,19 @@ test('upstream inventory leads from readiness to safe client setup', async ({ pa
   await expect(page.getByText('oci-private', { exact: true })).toBeVisible()
 
   const requestRemoval = page.getByRole('button', { name: 'Remove upstream', exact: true })
-  const destructiveColors = await requestRemoval.evaluate(element => {
+  const destructiveColors = await requestRemoval.evaluate((element) => {
     const style = getComputedStyle(element)
     return { background: style.backgroundColor, border: style.borderColor, color: style.color }
   })
   await requestRemoval.click()
   const confirmation = page.getByRole('alert').filter({ hasText: 'Remove Private containers?' })
   await expect(confirmation).toBeVisible()
-  await expect(confirmation.getByRole('button', { name: 'Remove upstream', exact: true }).evaluate(element => {
-    const style = getComputedStyle(element)
-    return { background: style.backgroundColor, border: style.borderColor, color: style.color }
-  })).resolves.toEqual(destructiveColors)
+  await expect(
+    confirmation.getByRole('button', { name: 'Remove upstream', exact: true }).evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundColor, border: style.borderColor, color: style.color }
+    }),
+  ).resolves.toEqual(destructiveColors)
   await confirmation.getByRole('button', { name: 'Cancel' }).click()
   await expect(confirmation).not.toBeVisible()
 })

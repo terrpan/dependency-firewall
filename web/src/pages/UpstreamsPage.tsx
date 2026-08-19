@@ -18,11 +18,7 @@ import {
   type UpstreamEcosystem,
 } from '../features/upstreams/api.ts'
 import { CreateUpstreamModal } from '../features/upstreams/CreateUpstreamModal.tsx'
-import {
-  UpstreamDetailsPanel,
-  UpstreamUsagePanel,
-  UpstreamsListPanel,
-} from '../features/upstreams/components.tsx'
+import { UpstreamDetailsPanel, UpstreamUsagePanel, UpstreamsListPanel } from '../features/upstreams/components.tsx'
 import { toggleUpstreamDraftCapability, updateUpstreamDraftField } from '../features/upstreams/draft.ts'
 import {
   formatUpstreamCapabilities,
@@ -88,14 +84,8 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
 
     return buildUpstreamUsageGuide(selectedUpstream, tenantId, firewallRootUrl)
   }, [selectedUpstream, tenantId])
-  const selectedUpstreamCapabilities = useMemo(
-    () => formatUpstreamCapabilities(selectedUpstream),
-    [selectedUpstream],
-  )
-  const selectedUpstreamPolicyTypes = useMemo(
-    () => formatUpstreamPolicyTypes(selectedUpstream),
-    [selectedUpstream],
-  )
+  const selectedUpstreamCapabilities = useMemo(() => formatUpstreamCapabilities(selectedUpstream), [selectedUpstream])
+  const selectedUpstreamPolicyTypes = useMemo(() => formatUpstreamPolicyTypes(selectedUpstream), [selectedUpstream])
   const createStepCount = upstreamEcosystemSupportsAuth(draft.ecosystem) ? 3 : 2
   const createReviewStep = createStepCount - 1
 
@@ -168,9 +158,7 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
       return upstream
     },
     onSuccess: async (deletedUpstream) => {
-      const remainingUpstreams = sortUpstreams(
-        upstreams.filter((upstream) => upstream.id !== deletedUpstream.id),
-      )
+      const remainingUpstreams = sortUpstreams(upstreams.filter((upstream) => upstream.id !== deletedUpstream.id))
 
       queryClient.setQueryData<Upstream[]>(upstreamsQueryKey(tenantId), remainingUpstreams)
       await queryClient.invalidateQueries({ queryKey: upstreamsQueryKey(tenantId) })
@@ -182,11 +170,11 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
     },
   })
 
-  const listErrorMessage = getErrorMessage(
-    upstreamsQuery.error,
-    'Unable to load upstreams right now.',
+  const listErrorMessage = getErrorMessage(upstreamsQuery.error, 'Unable to load upstreams right now.')
+  const createErrorMessage = getErrorMessage(
+    createMutation.error,
+    'Unable to create the upstream with the current values.',
   )
-  const createErrorMessage = getErrorMessage(createMutation.error, 'Unable to create the upstream with the current values.')
 
   const openCreateModal = useCallback(() => {
     createMutation.reset()
@@ -279,35 +267,47 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
   }
 
   return (
-    <section className={upstreamClass("page")}>
+    <section className={upstreamClass('page')}>
       <PageHeader
         eyebrow="Registry configuration"
         title="Upstreams"
-        summary={<>Connect package sources for {tenantName ?? 'this tenant'}, then copy the client setup that routes installs through the firewall.</>}
-        actions={<>
-          <span className={upstreamClass("status-pill status-pill-neutral")}>
-            {upstreamsQuery.isPending
-              ? 'Loading sources'
-              : upstreamsQuery.isError
-                ? 'Sources unavailable'
-                : `${upstreams.length} ${upstreams.length === 1 ? 'source' : 'sources'}`}
-          </span>
-          {upstreams.length > 0 ? (
-            <button className={upstreamClass("primary-button")} disabled={!tenantId || createMutation.isPending} onClick={openCreateModal} type="button">
-              New upstream
-            </button>
-          ) : null}
-          {!upstreamsQuery.isError ? (
-            <button
-              className={upstreamClass("upstreams-secondary-button")}
-              disabled={upstreamsQuery.isPending || createMutation.isPending || deleteMutation.isPending}
-              onClick={() => void upstreamsQuery.refetch()}
-              type="button"
-            >
-              Refresh
-            </button>
-          ) : null}
-        </>}
+        summary={
+          <>
+            Connect package sources for {tenantName ?? 'this tenant'}, then copy the client setup that routes installs
+            through the firewall.
+          </>
+        }
+        actions={
+          <>
+            <span className={upstreamClass('status-pill status-pill-neutral')}>
+              {upstreamsQuery.isPending
+                ? 'Loading sources'
+                : upstreamsQuery.isError
+                  ? 'Sources unavailable'
+                  : `${upstreams.length} ${upstreams.length === 1 ? 'source' : 'sources'}`}
+            </span>
+            {upstreams.length > 0 ? (
+              <button
+                className={upstreamClass('primary-button')}
+                disabled={!tenantId || createMutation.isPending}
+                onClick={openCreateModal}
+                type="button"
+              >
+                New upstream
+              </button>
+            ) : null}
+            {!upstreamsQuery.isError ? (
+              <button
+                className={upstreamClass('upstreams-secondary-button')}
+                disabled={upstreamsQuery.isPending || createMutation.isPending || deleteMutation.isPending}
+                onClick={() => void upstreamsQuery.refetch()}
+                type="button"
+              >
+                Refresh
+              </button>
+            ) : null}
+          </>
+        }
       />
 
       <div className={upstreamClass('upstreams-layout', !selectedUpstream && 'upstreams-layout-empty')}>
@@ -325,22 +325,20 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
         />
 
         {selectedUpstream ? (
-          <div className={upstreamClass("upstreams-stack")}>
-          <UpstreamUsagePanel
-            copiedUsageKey={copiedUsageKey}
-            copyErrorMessage={copyErrorMessage}
-            onCopyUsage={(code, key) => void handleCopyUsage(code, key)}
-            upstream={selectedUpstream}
-            usage={selectedUpstreamUsage}
-          />
+          <div className={upstreamClass('upstreams-stack')}>
+            <UpstreamUsagePanel
+              copiedUsageKey={copiedUsageKey}
+              copyErrorMessage={copyErrorMessage}
+              onCopyUsage={(code, key) => void handleCopyUsage(code, key)}
+              upstream={selectedUpstream}
+              usage={selectedUpstreamUsage}
+            />
 
             <UpstreamDetailsPanel
               capabilities={selectedUpstreamCapabilities}
               formatTimestamp={formatUpstreamTimestamp}
               isConfirmingDelete={deleteConfirmationId === selectedUpstream.id}
-              isDeleting={Boolean(
-                deleteMutation.isPending && deleteMutation.variables?.id === selectedUpstream.id
-              )}
+              isDeleting={Boolean(deleteMutation.isPending && deleteMutation.variables?.id === selectedUpstream.id)}
               onCancelDelete={() => setDeleteConfirmationId(null)}
               onConfirmDelete={(upstream) => deleteMutation.mutate(upstream)}
               onRequestDelete={(upstream) => setDeleteConfirmationId(upstream.id)}
@@ -376,10 +374,6 @@ export function UpstreamsPage() {
   const { activeTenant, tenantId } = useTenant()
 
   return (
-    <UpstreamsPageContent
-      key={tenantId ?? 'no-tenant'}
-      tenantId={tenantId}
-      tenantName={activeTenant?.name ?? null}
-    />
+    <UpstreamsPageContent key={tenantId ?? 'no-tenant'} tenantId={tenantId} tenantName={activeTenant?.name ?? null} />
   )
 }

@@ -113,8 +113,7 @@ export function ModalDialog({
       return
     }
 
-    restoreFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
     lockBodyScroll()
 
@@ -194,6 +193,7 @@ export function ModalDialog({
 
   return createPortal(
     <div
+      aria-label="Close dialog"
       className={styles.overlay}
       onClick={(event) => {
         if (!dismissible || !closeOnOverlayClick || event.target !== event.currentTarget) {
@@ -202,6 +202,17 @@ export function ModalDialog({
 
         onClose()
       }}
+      onKeyDown={(event) => {
+        if (!dismissible || !closeOnOverlayClick) {
+          return
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClose()
+        }
+      }}
+      role="button"
+      tabIndex={0}
     >
       <div
         aria-describedby={description ? descriptionId : undefined}
@@ -230,12 +241,7 @@ export function ModalDialog({
             </div>
           </div>
           {dismissible ? (
-            <button
-              aria-label={closeLabel}
-              className={styles.closeButton}
-              onClick={onClose}
-              type="button"
-            >
+            <button aria-label={closeLabel} className={styles.closeButton} onClick={onClose} type="button">
               ×
             </button>
           ) : null}

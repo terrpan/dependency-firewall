@@ -1,12 +1,78 @@
-.header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
-.header > div:first-child { display:grid; gap:.5rem; max-width:72ch; }
-.header h2 { margin:0; font-size:clamp(1.9rem,2.8vw,2.7rem); letter-spacing:-.05em; line-height:1.03; }
-.eyebrow { margin:0; color:var(--color-action); font-size:.76rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
-.summary { max-width:70ch; margin:0; color:var(--color-text-muted); line-height:1.65; }
-.actions { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-.actions { justify-content:flex-end; }
-.list { display:grid; gap:0; margin:0; padding:0; list-style:none; border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-surface); overflow:hidden; }
-.list > * { padding:1rem; border-bottom:1px solid var(--color-border); } .list > *:last-child { border-bottom:0; }
-.state { display:grid; justify-items:center; gap:.65rem; padding:2rem; text-align:center; color:var(--color-text-muted); }
-.state h3 { margin:0; color:var(--color-text); }
-@media(max-width:1100px){.header{display:grid}.actions{justify-content:flex-start}}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.header > div:first-child {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 72ch;
+}
+.header h2 {
+  margin: 0;
+  font-size: clamp(1.9rem, 2.8vw, 2.7rem);
+  letter-spacing: -0.05em;
+  line-height: 1.03;
+}
+.eyebrow {
+  margin: 0;
+  color: var(--color-action);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.summary {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.65;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.actions {
+  justify-content: flex-end;
+}
+.list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.list > * {
+  padding: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.list > *:last-child {
+  border-bottom: 0;
+}
+.state {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+.state h3 {
+  margin: 0;
+  color: var(--color-text);
+}
+@media (max-width: 1100px) {
+  .header {
+    display: grid;
+  }
+  .actions {
+    justify-content: flex-start;
+  }
+}

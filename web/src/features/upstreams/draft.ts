@@ -20,8 +20,7 @@ export function updateUpstreamDraftField(
 
   const nextEcosystem = value as UpstreamEcosystem
   const currentBaseUrl = draft.baseUrl.trim()
-  const shouldUseExample =
-    !currentBaseUrl || currentBaseUrl === upstreamBaseUrlExamples[draft.ecosystem]
+  const shouldUseExample = !currentBaseUrl || currentBaseUrl === upstreamBaseUrlExamples[draft.ecosystem]
 
   return {
     ...draft,

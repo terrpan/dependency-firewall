@@ -15,10 +15,7 @@ import type {
   TypedPolicyVersion,
   VulnerabilitySeverity,
 } from '../../lib/api'
-import {
-  getDefinition,
-  getSupportedActions,
-} from './draftDefinitions'
+import { getDefinition, getSupportedActions } from './draftDefinitions'
 import {
   formatScorecardThresholds,
   parseDelimitedValues,
@@ -93,10 +90,7 @@ export function createEmptyPolicyDraft(): PolicyDraftState {
   }
 }
 
-export function createPolicyDraftForType(
-  type: PolicyType,
-  descriptor?: PolicyTypeDescriptor | null,
-): PolicyDraftState {
+export function createPolicyDraftForType(type: PolicyType, descriptor?: PolicyTypeDescriptor | null): PolicyDraftState {
   const definition = getDefinition(type)
   const supportedActions = getSupportedActions(type, descriptor)
 
@@ -110,8 +104,7 @@ export function createPolicyDraftForType(
     enabled: true,
     useCVSSThreshold: type === 'cvss_threshold',
     useMinimumSeverity: false,
-    numericValue:
-      definition.numberDefault === undefined ? '' : String(definition.numberDefault),
+    numericValue: definition.numberDefault === undefined ? '' : String(definition.numberDefault),
     minimumSeverity: '',
     listValue: definition.listDefault?.join('\n') ?? '',
     excludePackages: '',
@@ -144,12 +137,11 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
     listValue: '',
     excludePackages: '',
     dryRun: Boolean(policy.config.dry_run),
-    unlicensedBehavior:
-      policy.type === 'license_allowlist' ? policy.config.unlicensed_behavior ?? 'deny' : 'deny',
+    unlicensedBehavior: policy.type === 'license_allowlist' ? (policy.config.unlicensed_behavior ?? 'deny') : 'deny',
     unavailableMetadataBehavior:
-      policy.type === 'license_allowlist' ? policy.config.unavailable_metadata_behavior ?? 'deny' : 'deny',
+      policy.type === 'license_allowlist' ? (policy.config.unavailable_metadata_behavior ?? 'deny') : 'deny',
     scorecardUnavailableBehavior:
-      policy.type === 'scorecard' ? policy.config.unavailable_scorecard_behavior ?? 'deny' : 'deny',
+      policy.type === 'scorecard' ? (policy.config.unavailable_scorecard_behavior ?? 'deny') : 'deny',
     targetEnabled: Boolean(target),
     targetDependencyScopes: target?.dependency_scope ?? [],
     targetDependencyTypes: target?.dependency_types ?? [],
@@ -185,8 +177,7 @@ export function createPolicyDraftFromPolicy(policy: PolicyRecord): PolicyDraftSt
     case 'scorecard':
       return {
         ...baseDraft,
-        numericValue:
-          policy.config.min_score === undefined ? '' : String(policy.config.min_score),
+        numericValue: policy.config.min_score === undefined ? '' : String(policy.config.min_score),
         listValue: formatScorecardThresholds(policy.config.checks),
       }
     case 'license':
@@ -239,11 +230,7 @@ function normalizePolicyTarget(target: PolicyRecord['target']): PolicyTarget | u
   }
 }
 
-function resolvePriority(
-  draft: PolicyDraftState,
-  type: PolicyType,
-  mode: PreviewMode,
-): number {
+function resolvePriority(draft: PolicyDraftState, type: PolicyType, mode: PreviewMode): number {
   const definition = getDefinition(type)
   const parsed = parseInteger(draft.priority)
 
@@ -285,11 +272,7 @@ function resolveName(draft: PolicyDraftState, type: PolicyType, mode: PreviewMod
   throw new Error('Name is required.')
 }
 
-function resolveNumberValue(
-  draft: PolicyDraftState,
-  type: PolicyType,
-  mode: PreviewMode,
-): number {
+function resolveNumberValue(draft: PolicyDraftState, type: PolicyType, mode: PreviewMode): number {
   const definition = getDefinition(type)
   const parsed = parseNumber(draft.numericValue)
 
@@ -304,11 +287,7 @@ function resolveNumberValue(
   throw new Error(`${definition.numberLabel ?? 'Config value'} is required.`)
 }
 
-function resolveListValue(
-  draft: PolicyDraftState,
-  type: PolicyType,
-  mode: PreviewMode,
-): string[] {
+function resolveListValue(draft: PolicyDraftState, type: PolicyType, mode: PreviewMode): string[] {
   const definition = getDefinition(type)
   const values = parseDelimitedValues(draft.listValue)
 
@@ -328,10 +307,7 @@ function resolveOptionalNumberValue(value: string): number | null {
   return parsed === null ? null : parsed
 }
 
-function maybeIncludeDryRun<TConfig extends { dry_run?: boolean }>(
-  config: TConfig,
-  draft: PolicyDraftState,
-): TConfig {
+function maybeIncludeDryRun<TConfig extends { dry_run?: boolean }>(config: TConfig, draft: PolicyDraftState): TConfig {
   if (draft.dryRun) {
     config.dry_run = true
   }
@@ -413,9 +389,7 @@ function buildConfig(
       const checks = parseScorecardThresholds(draft.listValue)
       const defaultMinScore = getDefinition(type).numberDefault ?? null
       const effectiveMinScore =
-        minScore === null && mode === 'preview' && Object.keys(checks).length === 0
-          ? defaultMinScore
-          : minScore
+        minScore === null && mode === 'preview' && Object.keys(checks).length === 0 ? defaultMinScore : minScore
 
       if (effectiveMinScore === null && Object.keys(checks).length === 0) {
         throw new Error('Configure an overall score, one or more check minimums, or both.')
@@ -493,7 +467,7 @@ function buildPolicyInput(
   }
 
   const supportedActions = getSupportedActions(draft.type, descriptor)
-  const action = supportedActions.includes(draft.action) ? draft.action : supportedActions[0] ?? 'deny'
+  const action = supportedActions.includes(draft.action) ? draft.action : (supportedActions[0] ?? 'deny')
 
   const name = resolveName(draft, draft.type, mode)
   const schemaVersion = resolveSchemaVersion(draft, mode)
@@ -516,7 +490,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['cvss_threshold'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode),
       }
     case 'minimum_age':
       return {
@@ -560,7 +534,7 @@ function buildPolicyInput(
         schema_version: schemaVersion,
         priority,
         enabled,
-        config: buildConfig(draft, draft.type, schemaVersion, mode) as PolicyConfigByType['scorecard'],
+        config: buildConfig(draft, draft.type, schemaVersion, mode),
       }
     case 'license':
       return {
@@ -655,10 +629,7 @@ export function buildPolicyDraftInput(
   return input
 }
 
-export function validatePolicyDraft(
-  draft: PolicyDraftState,
-  descriptor?: PolicyTypeDescriptor | null,
-): string[] {
+export function validatePolicyDraft(draft: PolicyDraftState, descriptor?: PolicyTypeDescriptor | null): string[] {
   try {
     buildPolicyDraftInput(draft, descriptor)
     return []
@@ -741,11 +712,7 @@ function formatYamlValue(value: unknown, indent = 0): string {
 }
 
 export function formatPolicyDraftJsonPreview(policy: PolicyUpsertInput | null): string {
-  return JSON.stringify(
-    policy ?? { message: 'Select a policy type to generate the JSON preview.' },
-    null,
-    2,
-  )
+  return JSON.stringify(policy ?? { message: 'Select a policy type to generate the JSON preview.' }, null, 2)
 }
 
 function buildPolicyRecordPreview(policy: PolicyRecord): PolicyUpsertInput {
@@ -833,10 +800,7 @@ export function formatPolicyRecordJsonPreview(policy: PolicyRecord | null): stri
   )
 }
 
-export function formatPolicyDraftYamlPreview(
-  tenantId: string | null,
-  policy: PolicyUpsertInput | null,
-): string {
+export function formatPolicyDraftYamlPreview(tenantId: string | null, policy: PolicyUpsertInput | null): string {
   return formatYamlValue({
     tenant_id: tenantId ?? 'tenant-id',
     policies: policy ? [policy] : [],

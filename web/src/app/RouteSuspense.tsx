@@ -4,7 +4,7 @@ import { PageHeader } from '../ui/index.ts'
 
 function RouteLoadingFallback() {
   return (
-    <section className={applicationClass("page")}>
+    <section className={applicationClass('page')}>
       <PageHeader eyebrow="Loading" title="Loading page" summary="Preparing the requested view." />
     </section>
   )

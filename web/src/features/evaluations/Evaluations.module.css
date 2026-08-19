@@ -171,14 +171,14 @@
   gap: 6px;
   padding: 14px 16px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid rgb(148, 163, 184, 12%);
   background: var(--surface-subtle);
 }
 
 .detail-grid dd {
   margin: 0;
   color: var(--text-strong);
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .tag {
@@ -220,5 +220,4 @@
   .evaluation-header {
     flex-direction: column;
   }
-
 }

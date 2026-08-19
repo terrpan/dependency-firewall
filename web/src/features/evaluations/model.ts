@@ -92,9 +92,7 @@ export function formatArtifact(artifact: Evaluation['artifact']): string {
 }
 
 export function formatPolicyReference(evaluation: Evaluation): string {
-  const primaryReason = evaluation.reasons?.find(
-    (reason) => nonEmpty(reason.policy_name) || nonEmpty(reason.policy_id),
-  )
+  const primaryReason = evaluation.reasons?.find((reason) => nonEmpty(reason.policy_name) || nonEmpty(reason.policy_id))
 
   return (
     nonEmpty(primaryReason?.policy_name) ??
@@ -144,11 +142,7 @@ function normalizeStatus(value: string): string {
 }
 
 export function getOutcomeTone(outcome: string): Tone {
-  return normalizeStatus(outcome) === 'deny'
-    ? 'danger'
-    : normalizeStatus(outcome) === 'allow'
-      ? 'success'
-      : 'default'
+  return normalizeStatus(outcome) === 'deny' ? 'danger' : normalizeStatus(outcome) === 'allow' ? 'success' : 'default'
 }
 
 export function summarizeEvaluations(evaluations: readonly Evaluation[]): EvaluationSummary {

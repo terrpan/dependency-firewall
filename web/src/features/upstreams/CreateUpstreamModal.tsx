@@ -118,22 +118,28 @@ export function CreateUpstreamModal({
       : 'Review details'
 
   const footer = (
-    <ModalWizardActions leading={<Button disabled={isPending} onClick={onClose}>Cancel</Button>}>
-        {currentStep > 0 ? (
-          <Button disabled={isPending} onClick={onBack}>
-            Back
-          </Button>
-        ) : null}
+    <ModalWizardActions
+      leading={
+        <Button disabled={isPending} onClick={onClose}>
+          Cancel
+        </Button>
+      }
+    >
+      {currentStep > 0 ? (
+        <Button disabled={isPending} onClick={onBack}>
+          Back
+        </Button>
+      ) : null}
 
-        {!isReviewStep ? (
-          <Button variant="primary" disabled={!tenantId || isPending} form="create-upstream-form" type="submit">
-            {nextLabel}
-          </Button>
-        ) : (
-          <Button variant="primary" disabled={isPending || !tenantId} form="create-upstream-form" type="submit">
-            {isPending ? 'Creating...' : 'Create upstream'}
-          </Button>
-        )}
+      {!isReviewStep ? (
+        <Button variant="primary" disabled={!tenantId || isPending} form="create-upstream-form" type="submit">
+          {nextLabel}
+        </Button>
+      ) : (
+        <Button variant="primary" disabled={isPending || !tenantId} form="create-upstream-form" type="submit">
+          {isPending ? 'Creating...' : 'Create upstream'}
+        </Button>
+      )}
     </ModalWizardActions>
   )
 
@@ -154,17 +160,21 @@ export function CreateUpstreamModal({
       steps={wizardSteps}
       title="Create upstream"
     >
-      <form className={upstreamClass("upstreams-form upstreams-modal-form")} id="create-upstream-form" onSubmit={onSubmit}>
+      <form
+        className={upstreamClass('upstreams-form upstreams-modal-form')}
+        id="create-upstream-form"
+        onSubmit={onSubmit}
+      >
         {isError ? (
-          <div className={upstreamClass("upstreams-feedback upstreams-feedback-error")} role="alert">
+          <div className={upstreamClass('upstreams-feedback upstreams-feedback-error')} role="alert">
             <strong>Unable to create upstream</strong>
             <p>{createErrorMessage}</p>
           </div>
         ) : null}
 
         {activeStep.id === 'connection' ? (
-          <div className={upstreamClass("upstreams-wizard-section")}>
-            <div className={upstreamClass("upstreams-wizard-copy")}>
+          <div className={upstreamClass('upstreams-wizard-section')}>
+            <div className={upstreamClass('upstreams-wizard-copy')}>
               <h3>Connection details</h3>
             </div>
 
@@ -179,11 +189,15 @@ export function CreateUpstreamModal({
                 ref={initialFocusRef}
                 value={draft.name}
               />
-              <p className={upstreamClass("upstreams-field-hint")}>Use a short name your team will recognize in policy and audit views.</p>
-              {draftErrors.name ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.name}</p> : null}
+              <p className={upstreamClass('upstreams-field-hint')}>
+                Use a short name your team will recognize in policy and audit views.
+              </p>
+              {draftErrors.name ? <p className={upstreamClass('upstreams-field-error')}>{draftErrors.name}</p> : null}
             </div>
 
-            <div className={upstreamClass('upstreams-field', Boolean(draftErrors.ecosystem) && 'upstreams-field-invalid')}>
+            <div
+              className={upstreamClass('upstreams-field', Boolean(draftErrors.ecosystem) && 'upstreams-field-invalid')}
+            >
               <label htmlFor="upstream-ecosystem">Ecosystem</label>
               <select
                 aria-invalid={Boolean(draftErrors.ecosystem)}
@@ -199,11 +213,13 @@ export function CreateUpstreamModal({
                 ))}
               </select>
               {draftErrors.ecosystem ? (
-                <p className={upstreamClass("upstreams-field-error")}>{draftErrors.ecosystem}</p>
+                <p className={upstreamClass('upstreams-field-error')}>{draftErrors.ecosystem}</p>
               ) : null}
             </div>
 
-            <div className={upstreamClass('upstreams-field', Boolean(draftErrors.baseUrl) && 'upstreams-field-invalid')}>
+            <div
+              className={upstreamClass('upstreams-field', Boolean(draftErrors.baseUrl) && 'upstreams-field-invalid')}
+            >
               <label htmlFor="upstream-base-url">Base URL</label>
               <input
                 aria-invalid={Boolean(draftErrors.baseUrl)}
@@ -213,23 +229,26 @@ export function CreateUpstreamModal({
                 placeholder={upstreamBaseUrlExamples[draft.ecosystem]}
                 value={draft.baseUrl}
               />
-              <p className={upstreamClass("upstreams-field-hint")}>Enter the HTTPS registry origin, without a package or image path.</p>
+              <p className={upstreamClass('upstreams-field-hint')}>
+                Enter the HTTPS registry origin, without a package or image path.
+              </p>
               {draftErrors.baseUrl ? (
-                <p className={upstreamClass("upstreams-field-error")}>{draftErrors.baseUrl}</p>
+                <p className={upstreamClass('upstreams-field-error')}>{draftErrors.baseUrl}</p>
               ) : null}
             </div>
 
-            <fieldset className={upstreamClass("upstreams-capability-group")}>
+            <fieldset className={upstreamClass('upstreams-capability-group')}>
               <legend>Capability profile</legend>
-              <p className={upstreamClass("upstreams-field-hint")}>
+              <p className={upstreamClass('upstreams-field-hint')}>
                 Keep only the capabilities this registry can provide. They determine which policy types are available.
               </p>
-              <div className={upstreamClass("upstreams-capability-list")}>
+              <div className={upstreamClass('upstreams-capability-list')}>
                 {getUpstreamCapabilityDefinitions(draft.ecosystem).map((capability) => {
                   const checked = draft.capabilities.includes(capability.id)
                   return (
-                    <label key={capability.id} className={upstreamClass("upstreams-capability-option")}>
+                    <label key={capability.id} className={upstreamClass('upstreams-capability-option')}>
                       <input
+                        aria-label={capability.label}
                         checked={checked}
                         onChange={(event) => onCapabilityToggle(capability.id, event.target.checked)}
                         type="checkbox"
@@ -245,12 +264,18 @@ export function CreateUpstreamModal({
             </fieldset>
           </div>
         ) : isAuthStep ? (
-          <div className={upstreamClass("upstreams-wizard-section")}>
-            <div className={upstreamClass("upstreams-wizard-copy")}>
+          <div className={upstreamClass('upstreams-wizard-section')}>
+            <div className={upstreamClass('upstreams-wizard-copy')}>
               <h3>Authentication</h3>
             </div>
 
-            <div className={upstreamClass('upstreams-field', 'upstreams-auth-type-field', Boolean(draftErrors.authType) && 'upstreams-field-invalid')}>
+            <div
+              className={upstreamClass(
+                'upstreams-field',
+                'upstreams-auth-type-field',
+                Boolean(draftErrors.authType) && 'upstreams-field-invalid',
+              )}
+            >
               <label htmlFor="upstream-auth-type">Registry authentication</label>
               <select
                 aria-invalid={Boolean(draftErrors.authType)}
@@ -265,12 +290,19 @@ export function CreateUpstreamModal({
                   </option>
                 ))}
               </select>
-              {draftErrors.authType ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authType}</p> : null}
+              {draftErrors.authType ? (
+                <p className={upstreamClass('upstreams-field-error')}>{draftErrors.authType}</p>
+              ) : null}
             </div>
 
             {draft.authType === 'basic' ? (
-              <div className={upstreamClass("upstreams-auth-detail-fields")}>
-                <div className={upstreamClass('upstreams-field', Boolean(draftErrors.authUsername) && 'upstreams-field-invalid')}>
+              <div className={upstreamClass('upstreams-auth-detail-fields')}>
+                <div
+                  className={upstreamClass(
+                    'upstreams-field',
+                    Boolean(draftErrors.authUsername) && 'upstreams-field-invalid',
+                  )}
+                >
                   <label htmlFor="upstream-auth-username">Username</label>
                   <input
                     aria-invalid={Boolean(draftErrors.authUsername)}
@@ -281,11 +313,16 @@ export function CreateUpstreamModal({
                     value={draft.authUsername}
                   />
                   {draftErrors.authUsername ? (
-                    <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authUsername}</p>
+                    <p className={upstreamClass('upstreams-field-error')}>{draftErrors.authUsername}</p>
                   ) : null}
                 </div>
 
-                <div className={upstreamClass('upstreams-field', Boolean(draftErrors.authPassword) && 'upstreams-field-invalid')}>
+                <div
+                  className={upstreamClass(
+                    'upstreams-field',
+                    Boolean(draftErrors.authPassword) && 'upstreams-field-invalid',
+                  )}
+                >
                   <label htmlFor="upstream-auth-password">Password or PAT</label>
                   <input
                     aria-invalid={Boolean(draftErrors.authPassword)}
@@ -297,15 +334,20 @@ export function CreateUpstreamModal({
                     value={draft.authPassword}
                   />
                   {draftErrors.authPassword ? (
-                    <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authPassword}</p>
+                    <p className={upstreamClass('upstreams-field-error')}>{draftErrors.authPassword}</p>
                   ) : null}
                 </div>
               </div>
             ) : null}
 
             {draft.authType === 'bearer_token' ? (
-              <div className={upstreamClass("upstreams-auth-detail-fields")}>
-                <div className={upstreamClass('upstreams-field', Boolean(draftErrors.authToken) && 'upstreams-field-invalid')}>
+              <div className={upstreamClass('upstreams-auth-detail-fields')}>
+                <div
+                  className={upstreamClass(
+                    'upstreams-field',
+                    Boolean(draftErrors.authToken) && 'upstreams-field-invalid',
+                  )}
+                >
                   <label htmlFor="upstream-auth-token">Bearer token</label>
                   <input
                     aria-invalid={Boolean(draftErrors.authToken)}
@@ -316,24 +358,30 @@ export function CreateUpstreamModal({
                     type="password"
                     value={draft.authToken}
                   />
-                  {draftErrors.authToken ? <p className={upstreamClass("upstreams-field-error")}>{draftErrors.authToken}</p> : null}
+                  {draftErrors.authToken ? (
+                    <p className={upstreamClass('upstreams-field-error')}>{draftErrors.authToken}</p>
+                  ) : null}
                 </div>
               </div>
             ) : null}
           </div>
         ) : (
-          <div className={upstreamClass("upstreams-wizard-section")}>
-            <div className={upstreamClass("upstreams-wizard-copy")}>
+          <div className={upstreamClass('upstreams-wizard-section')}>
+            <div className={upstreamClass('upstreams-wizard-copy')}>
               <h3>Review upstream</h3>
             </div>
 
-            <div className={upstreamClass("upstreams-review-card")}>
-              <dl className={upstreamClass("upstreams-detail upstreams-review-list")}>
+            <div className={upstreamClass('upstreams-review-card')}>
+              <dl className={upstreamClass('upstreams-detail upstreams-review-list')}>
                 <div>
                   <dt>Tenant</dt>
                   <dd>
                     {tenantName ?? 'No tenant selected'}
-                    {tenantId ? <small><code>{tenantId}</code></small> : null}
+                    {tenantId ? (
+                      <small>
+                        <code>{tenantId}</code>
+                      </small>
+                    ) : null}
                   </dd>
                 </div>
                 <div>

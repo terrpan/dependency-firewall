@@ -8,7 +8,11 @@ test('makes the active workspace and tenant switching explicit', async ({ page }
   await installApi(page, { tenants: tenantOverviewFixtures })
   await page.goto('/tenants')
 
-  await expect(page.getByText('Choose which tenant to operate in. Upstreams, policies, decisions, and dependency graphs stay inside that workspace.')).toBeVisible()
+  await expect(
+    page.getByText(
+      'Choose which tenant to operate in. Upstreams, policies, decisions, and dependency graphs stay inside that workspace.',
+    ),
+  ).toBeVisible()
   const list = page.getByRole('list', { name: 'Tenant workspaces' })
   const acme = list.getByRole('listitem').filter({ hasText: 'Acme Engineering' })
   const platform = list.getByRole('listitem').filter({ hasText: 'Platform Engineering' })
@@ -20,7 +24,9 @@ test('makes the active workspace and tenant switching explicit', async ({ page }
   await platform.getByRole('button', { name: 'Switch to Platform Engineering' }).click()
   await expect(platform).toContainText('Active workspace')
   await expect(acme.getByRole('button', { name: 'Switch to Acme Engineering' })).toBeVisible()
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('dependency-firewall.tenant-id'))).toBe('tenant-platform')
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('dependency-firewall.tenant-id')))
+    .toBe('tenant-platform')
 })
 
 test('guides first tenant creation through the shared wizard', async ({ page }) => {

@@ -7,18 +7,14 @@ export type Health = JsonContent<paths['/healthz']['get']['responses'][200]['con
 export type Tenant = NonNullable<
   paths['/api/v1/tenants']['get']['responses'][200]['content']['application/json']
 >[number]
-export type CreateTenantRequest =
-  paths['/api/v1/tenants']['post']['requestBody']['content']['application/json']
-export type UpdateTenantRequest =
-  paths['/api/v1/tenants/{id}']['put']['requestBody']['content']['application/json']
+export type CreateTenantRequest = paths['/api/v1/tenants']['post']['requestBody']['content']['application/json']
+export type UpdateTenantRequest = paths['/api/v1/tenants/{id}']['put']['requestBody']['content']['application/json']
 
 export type Upstream = NonNullable<
   paths['/api/v1/upstreams']['get']['responses'][200]['content']['application/json']
 >[number]
-export type CreateUpstreamRequest =
-  paths['/api/v1/upstreams']['post']['requestBody']['content']['application/json']
-export type UpdateUpstreamRequest =
-  paths['/api/v1/upstreams/{id}']['put']['requestBody']['content']['application/json']
+export type CreateUpstreamRequest = paths['/api/v1/upstreams']['post']['requestBody']['content']['application/json']
+export type UpdateUpstreamRequest = paths['/api/v1/upstreams/{id}']['put']['requestBody']['content']['application/json']
 
 export type Policy = NonNullable<
   paths['/api/v1/policies']['get']['responses'][200]['content']['application/json']
@@ -29,10 +25,8 @@ export type PolicyVersion = NonNullable<
 export type PolicyTypeDescriptor = NonNullable<
   paths['/api/v1/policy-types']['get']['responses'][200]['content']['application/json']
 >[number]
-export type CreatePolicyRequest =
-  paths['/api/v1/policies']['post']['requestBody']['content']['application/json']
-export type UpdatePolicyRequest =
-  paths['/api/v1/policies/{id}']['put']['requestBody']['content']['application/json']
+export type CreatePolicyRequest = paths['/api/v1/policies']['post']['requestBody']['content']['application/json']
+export type UpdatePolicyRequest = paths['/api/v1/policies/{id}']['put']['requestBody']['content']['application/json']
 export type RollbackPolicyRequest =
   paths['/api/v1/policies/{id}/rollback']['post']['requestBody']['content']['application/json']
 export type PolicyImportResult =
@@ -145,12 +139,13 @@ export type PolicyConfigByType = {
 
 export type TypedPolicyConfig = PolicyConfigByType[PolicyType]
 
-type TypedEntity<T extends { type: string; config: unknown }> = Omit<T, 'type' | 'config'> & {
-  [K in PolicyType]: {
-    type: K
-    config: PolicyConfigByType[K]
-  }
-}[PolicyType]
+type TypedEntity<T extends { type: string; config: unknown }> = Omit<T, 'type' | 'config'> &
+  {
+    [K in PolicyType]: {
+      type: K
+      config: PolicyConfigByType[K]
+    }
+  }[PolicyType]
 
 export type TypedPolicy = TypedEntity<Policy>
 export type TypedPolicyVersion = TypedEntity<PolicyVersion>
@@ -164,20 +159,17 @@ export type PolicyUpsertBase = {
   target?: PolicyTarget
 }
 
-export type PolicyUpsertInput = PolicyUpsertBase & {
-  [K in PolicyType]: {
-    type: K
-    action: PolicyAction
-    config: PolicyConfigByType[K]
-  }
-}[PolicyType]
+export type PolicyUpsertInput = PolicyUpsertBase &
+  {
+    [K in PolicyType]: {
+      type: K
+      action: PolicyAction
+      config: PolicyConfigByType[K]
+    }
+  }[PolicyType]
 
 export type PolicyImportContentType =
-  | 'application/json'
-  | 'application/x-yaml'
-  | 'application/yaml'
-  | 'text/yaml'
-  | 'text/x-yaml'
+  'application/json' | 'application/x-yaml' | 'application/yaml' | 'text/yaml' | 'text/x-yaml'
 
 export type PolicyImportDocument = {
   tenant_id?: string
