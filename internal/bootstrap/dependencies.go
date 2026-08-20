@@ -32,12 +32,6 @@ type dependencies struct {
 	valkeyClient valkeygo.Client
 
 	tenantRepo           port.TenantRepository
-	tenantIdentityLinks  port.TenantIdentityLinkRepository
-	principalRepo        port.PrincipalRepository
-	organizationRepo     port.OrganizationRepository
-	organizationMembers  port.OrganizationMembershipRepository
-	teamRepo             port.TeamRepository
-	teamMembers          port.TeamMembershipRepository
 	policyRepo           port.PolicyRepository
 	policyRevisionRepo   port.PolicyRevisionRepository
 	decisionRepo         port.DecisionRepository
@@ -135,12 +129,6 @@ func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
 		return err
 	}
 	d.tenantRepo = postgres.NewTenantRepository(d.pool)
-	d.tenantIdentityLinks = postgres.NewTenantIdentityLinkRepository(d.pool)
-	d.principalRepo = postgres.NewPrincipalRepository(d.pool)
-	d.organizationRepo = postgres.NewOrganizationRepository(d.pool)
-	d.organizationMembers = postgres.NewOrganizationMembershipRepository(d.pool)
-	d.teamRepo = postgres.NewTeamRepository(d.pool)
-	d.teamMembers = postgres.NewTeamMembershipRepository(d.pool)
 	d.policyRepo = postgres.NewPolicyRepository(d.pool)
 	d.policyRevisionRepo = postgres.NewPolicyRevisionRepository(d.pool)
 	d.decisionRepo = postgres.NewDecisionRepository(d.pool)

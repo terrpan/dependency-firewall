@@ -18,54 +18,6 @@ type TenantRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// TenantIdentityLinkRepository maps a verified external account to one Tenant.
-type TenantIdentityLinkRepository interface {
-	GetByExternalID(ctx context.Context, provider, externalID string) (*domain.TenantIdentityLink, error)
-	Create(ctx context.Context, link *domain.TenantIdentityLink) error
-}
-
-// PrincipalRepository manages local identity projections and provider links.
-type PrincipalRepository interface {
-	GetByID(ctx context.Context, id string) (*domain.Principal, error)
-	GetByIdentity(ctx context.Context, provider, externalSubject string) (*domain.Principal, error)
-	Create(ctx context.Context, principal *domain.Principal) error
-	Update(ctx context.Context, principal *domain.Principal) error
-	LinkIdentity(ctx context.Context, identity *domain.PrincipalIdentity) error
-}
-
-// OrganizationRepository manages Tenant-owned operational Organizations.
-type OrganizationRepository interface {
-	GetByID(ctx context.Context, tenantID, id string) (*domain.Organization, error)
-	GetDefault(ctx context.Context, tenantID string) (*domain.Organization, error)
-	ListByTenant(ctx context.Context, tenantID string) ([]domain.Organization, error)
-	Create(ctx context.Context, organization *domain.Organization) error
-	Update(ctx context.Context, organization *domain.Organization) error
-}
-
-// OrganizationMembershipRepository manages local Organization role assignments.
-type OrganizationMembershipRepository interface {
-	Get(ctx context.Context, tenantID, organizationID, principalID string) (*domain.OrganizationMembership, error)
-	ListByPrincipal(ctx context.Context, tenantID, principalID string) ([]domain.OrganizationMembership, error)
-	Upsert(ctx context.Context, membership *domain.OrganizationMembership) error
-	Delete(ctx context.Context, tenantID, organizationID, principalID string) error
-}
-
-// TeamRepository manages Teams inside one Tenant Organization.
-type TeamRepository interface {
-	GetByID(ctx context.Context, tenantID, organizationID, id string) (*domain.Team, error)
-	ListByOrganization(ctx context.Context, tenantID, organizationID string) ([]domain.Team, error)
-	Create(ctx context.Context, team *domain.Team) error
-	Update(ctx context.Context, team *domain.Team) error
-}
-
-// TeamMembershipRepository manages Team membership without granting a role.
-type TeamMembershipRepository interface {
-	IsMember(ctx context.Context, tenantID, organizationID, teamID, principalID string) (bool, error)
-	ListByPrincipal(ctx context.Context, tenantID, organizationID, principalID string) ([]domain.TeamMembership, error)
-	Upsert(ctx context.Context, membership *domain.TeamMembership) error
-	Delete(ctx context.Context, tenantID, organizationID, teamID, principalID string) error
-}
-
 // PolicyRepository manages policy persistence.
 type PolicyRepository interface {
 	GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error)

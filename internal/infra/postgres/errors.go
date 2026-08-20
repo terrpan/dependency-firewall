@@ -21,8 +21,3 @@ func mapConstraintError(err error, constraints map[string]error) error {
 
 	return err
 }
-
-func isConstraint(err error, constraint string) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.ConstraintName == constraint
-}
