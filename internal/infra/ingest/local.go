@@ -64,6 +64,19 @@ func (r *LocalDecisionRepository) HasRecentAllow(
 	return r.service.HasRecentAllow(ctx, tenantID, ecosystem, namespace, name)
 }
 
+// HasRecentAllowInScope performs the has recent allow in scope operation.
+func (r *LocalDecisionRepository) HasRecentAllowInScope(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
+	if r == nil || r.service == nil {
+		return false, fmt.Errorf("checking scoped recent allow: service unavailable")
+	}
+	return r.service.HasRecentAllowInScope(ctx, scope, ecosystem, namespace, name)
+}
+
 // LocalAuditEventRecorder adapts an in-process ProxyIngestService to the audit recorder port.
 type LocalAuditEventRecorder struct {
 	service *service.ProxyIngestService

@@ -25,12 +25,41 @@ func NewAccessRequest(
 	upstream domain.Upstream,
 	artifact domain.ArtifactIdentity,
 ) domain.AccessRequest {
+	scope := AccessScope(ctx, tenantID)
+	credentialID := ""
+	if credential, ok := middleware.CredentialFromContext(ctx); ok {
+		credentialID = credential.ID
+	}
 	return domain.AccessRequest{
-		TenantID:  tenantID,
-		RequestID: RequestIDFromContext(ctx),
-		Artifact:  artifact,
-		Upstream:  upstream,
-		Timestamp: time.Now(),
+		TenantID:       scope.TenantID,
+		OrganizationID: scope.OrganizationID,
+		TeamID:         scope.TeamID,
+		CredentialID:   credentialID,
+		RequestID:      RequestIDFromContext(ctx),
+		Artifact:       artifact,
+		Upstream:       upstream,
+		Timestamp:      time.Now(),
+	}
+}
+
+// AccessScope derives the operational scope exclusively from an authenticated
+// data-plane credential. Client-supplied Organization and Team selectors are
+// deliberately not part of this API.
+func AccessScope(ctx context.Context, tenantID string) domain.AuthorizationScope {
+	credential, ok := middleware.CredentialFromContext(ctx)
+	if !ok {
+		return domain.AuthorizationScope{TenantID: tenantID}
+	}
+	// The middleware only places a verifier in context after comparing its
+	// Tenant ID with the routed Tenant. Keep this check here as a second
+	// boundary so a forged context cannot widen a request's scope.
+	if credential.TenantID != "" && credential.TenantID != tenantID {
+		return domain.AuthorizationScope{TenantID: tenantID}
+	}
+	return domain.AuthorizationScope{
+		TenantID:       tenantID,
+		OrganizationID: credential.OrganizationID,
+		TeamID:         credential.TeamID,
 	}
 }
 
@@ -43,6 +72,23 @@ func ResolveUpstream(
 	tenantID string,
 	ecosystem domain.EcosystemType,
 ) (*domain.Upstream, error) {
+	scope := AccessScope(ctx, tenantID)
+	if scoped, ok := upstreams.(port.ScopedUpstreamRepository); ok {
+		if upstreamID, found := middleware.UpstreamIDFromContext(ctx); found && upstreamID != "" {
+			upstream, err := scoped.GetVisibleByID(ctx, scope, upstreamID)
+			if err != nil {
+				return nil, err
+			}
+			if upstream.Ecosystem != ecosystem {
+				return nil, domain.ErrUpstreamNotFound
+			}
+			return upstream, nil
+		}
+		return scoped.ResolveVisibleByEcosystem(ctx, scope, ecosystem)
+	}
+	if scope.OrganizationID != "" || scope.TeamID != "" {
+		return nil, domain.ErrUpstreamNotFound
+	}
 	if upstreamID, ok := middleware.UpstreamIDFromContext(ctx); ok && upstreamID != "" {
 		upstream, err := upstreams.GetByID(ctx, tenantID, upstreamID)
 		if err != nil {

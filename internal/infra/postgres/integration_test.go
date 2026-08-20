@@ -261,15 +261,23 @@ func TestMigrations_ResourceScopesPreserveIDsAndBackfillOperationalScope(t *test
 		 VALUES ($1, $2, 'npmjs', 'npm', 'https://registry.example.test', ARRAY['publish_time']::text[])`,
 		upstreamID, tenantID)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx,
+	_, err = pool.Exec(
+		ctx,
 		`INSERT INTO policies (id, tenant_id, upstream_id, name, type, action, schema_version, config, priority, enabled)
 		 VALUES ($1, $2, $3, 'legacy-policy', 'namespace_blocklist', 'deny', 1, '{}', 10, true)`,
-		policyID, tenantID, upstreamID)
+		policyID,
+		tenantID,
+		upstreamID,
+	)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx,
+	_, err = pool.Exec(
+		ctx,
 		`INSERT INTO policy_versions (id, policy_id, version, upstream_id, name, type, action, schema_version, config, priority, enabled)
 		 VALUES ($1, $2, 1, $3, 'legacy-policy', 'namespace_blocklist', 'deny', 1, '{}', 10, true)`,
-		versionID, policyID, upstreamID)
+		versionID,
+		policyID,
+		upstreamID,
+	)
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx,
 		`INSERT INTO artifacts (id, tenant_id, ecosystem, namespace, name, version, digest)
@@ -432,8 +440,16 @@ func TestMigrations_ResourceScopeConstraintsRejectForgedAncestry(t *testing.T) {
 	tenantB := createTestTenant(t, ctx, pool, "scope-constraints-b")
 	organizationRepo := postgres.NewOrganizationRepository(pool)
 	teamRepo := postgres.NewTeamRepository(pool)
-	organizationA := &domain.Organization{TenantID: tenantA.ID, Name: "Engineering", Status: domain.OrganizationStatusActive}
-	organizationB := &domain.Organization{TenantID: tenantB.ID, Name: "Finance", Status: domain.OrganizationStatusActive}
+	organizationA := &domain.Organization{
+		TenantID: tenantA.ID,
+		Name:     "Engineering",
+		Status:   domain.OrganizationStatusActive,
+	}
+	organizationB := &domain.Organization{
+		TenantID: tenantB.ID,
+		Name:     "Finance",
+		Status:   domain.OrganizationStatusActive,
+	}
 	require.NoError(t, organizationRepo.Create(ctx, organizationA))
 	require.NoError(t, organizationRepo.Create(ctx, organizationB))
 	teamA := &domain.Team{TenantID: tenantA.ID, OrganizationID: organizationA.ID, Name: "Platform"}
@@ -703,12 +719,28 @@ func TestSessionBootstrapRepository_IsAtomicIdempotentAndRaceSafe(t *testing.T) 
 	assert.Equal(t, concurrentResults[0].Principal.ID, concurrentResults[1].Principal.ID)
 
 	var tenantLinks, principalIdentities, organizations int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM tenant_identity_links WHERE provider = 'clerk' AND external_id IN ('org_bootstrap', 'org_concurrent')`).Scan(&tenantLinks))
-	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM principal_identities WHERE provider = 'clerk' AND external_subject IN ('user_bootstrap', 'user_concurrent')`).Scan(&principalIdentities))
-	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM organizations WHERE tenant_id IN ($1, $2)`, first.Tenant.ID, concurrentResults[0].Tenant.ID).Scan(&organizations))
+	require.NoError(
+		t,
+		pool.QueryRow(ctx, `SELECT count(*) FROM tenant_identity_links WHERE provider = 'clerk' AND external_id IN ('org_bootstrap', 'org_concurrent')`).
+			Scan(&tenantLinks),
+	)
+	require.NoError(
+		t,
+		pool.QueryRow(ctx, `SELECT count(*) FROM principal_identities WHERE provider = 'clerk' AND external_subject IN ('user_bootstrap', 'user_concurrent')`).
+			Scan(&principalIdentities),
+	)
+	require.NoError(
+		t,
+		pool.QueryRow(ctx, `SELECT count(*) FROM organizations WHERE tenant_id IN ($1, $2)`, first.Tenant.ID, concurrentResults[0].Tenant.ID).
+			Scan(&organizations),
+	)
 	assert.Equal(t, 2, tenantLinks)
 	assert.Equal(t, 2, principalIdentities)
-	assert.Zero(t, organizations, "new accounts enter first-Organization onboarding; only migrated Tenants receive generated defaults")
+	assert.Zero(
+		t,
+		organizations,
+		"new accounts enter first-Organization onboarding; only migrated Tenants receive generated defaults",
+	)
 }
 
 func TestHierarchyRepositories_EnforceTenantAndOrganizationScope(t *testing.T) {
@@ -1342,8 +1374,16 @@ func TestScopedPolicyAndUpstreamRepositories_EnforceOperationalVisibility(t *tes
 	tenant := createTestTenant(t, ctx, pool, "scoped-resources")
 
 	organizationRepo := postgres.NewOrganizationRepository(pool)
-	organizationOne := &domain.Organization{TenantID: tenant.ID, Name: "Engineering", Status: domain.OrganizationStatusActive}
-	organizationTwo := &domain.Organization{TenantID: tenant.ID, Name: "Finance", Status: domain.OrganizationStatusActive}
+	organizationOne := &domain.Organization{
+		TenantID: tenant.ID,
+		Name:     "Engineering",
+		Status:   domain.OrganizationStatusActive,
+	}
+	organizationTwo := &domain.Organization{
+		TenantID: tenant.ID,
+		Name:     "Finance",
+		Status:   domain.OrganizationStatusActive,
+	}
 	require.NoError(t, organizationRepo.Create(ctx, organizationOne))
 	require.NoError(t, organizationRepo.Create(ctx, organizationTwo))
 	teamRepo := postgres.NewTeamRepository(pool)
@@ -1379,7 +1419,11 @@ func TestScopedPolicyAndUpstreamRepositories_EnforceOperationalVisibility(t *tes
 	})
 	require.NoError(t, err)
 	require.Len(t, effective, 2)
-	assert.ElementsMatch(t, []string{accountPolicy.ID, organizationOnePolicy.ID}, []string{effective[0].ID, effective[1].ID})
+	assert.ElementsMatch(
+		t,
+		[]string{accountPolicy.ID, organizationOnePolicy.ID},
+		[]string{effective[0].ID, effective[1].ID},
+	)
 	_, err = policyRepo.GetEffectiveByID(ctx, domain.AuthorizationScope{
 		TenantID:       tenant.ID,
 		OrganizationID: organizationTwo.ID,
@@ -1428,7 +1472,11 @@ func TestScopedPolicyAndUpstreamRepositories_EnforceOperationalVisibility(t *tes
 	})
 	require.NoError(t, err)
 	require.Len(t, visible, 3)
-	assert.ElementsMatch(t, []string{tenantUpstream.ID, organizationUpstream.ID, teamOneUpstream.ID}, []string{visible[0].ID, visible[1].ID, visible[2].ID})
+	assert.ElementsMatch(
+		t,
+		[]string{tenantUpstream.ID, organizationUpstream.ID, teamOneUpstream.ID},
+		[]string{visible[0].ID, visible[1].ID, visible[2].ID},
+	)
 	_, err = upstreamRepo.GetVisibleByID(ctx, domain.AuthorizationScope{
 		TenantID:       tenant.ID,
 		OrganizationID: organizationOne.ID,

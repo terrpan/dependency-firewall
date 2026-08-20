@@ -70,7 +70,11 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 }
 
 // GetByEcosystem returns the active upstream for a tenant's ecosystem.
-func (r *UpstreamRepository) GetByEcosystem(ctx context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+func (r *UpstreamRepository) GetByEcosystem(
+	ctx context.Context,
+	tenantID string,
+	eco domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return r.ResolveVisibleByEcosystem(ctx, domain.AuthorizationScope{TenantID: tenantID}, eco)
 }
 
@@ -196,7 +200,23 @@ func (r *UpstreamRepository) listByQuery(
 		var authUsername sql.NullString
 		var authSecret sql.NullString
 		var authUpdatedAt sql.NullTime
-		if err := rows.Scan(&u.ID, &u.TenantID, &organizationID, &teamID, &u.ScopeKind, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authSecret, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&u.ID,
+			&u.TenantID,
+			&organizationID,
+			&teamID,
+			&u.ScopeKind,
+			&u.Name,
+			&u.Ecosystem,
+			&u.BaseURL,
+			&capabilities,
+			&authType,
+			&authUsername,
+			&authSecret,
+			&authUpdatedAt,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning upstream row: %w", err)
 		}
 		u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)
@@ -235,7 +255,22 @@ func (r *UpstreamRepository) ListBundleByTenant(ctx context.Context, tenantID st
 		var authType string
 		var authUsername sql.NullString
 		var authUpdatedAt sql.NullTime
-		if err := rows.Scan(&u.ID, &u.TenantID, &organizationID, &teamID, &u.ScopeKind, &u.Name, &u.Ecosystem, &u.BaseURL, &capabilities, &authType, &authUsername, &authUpdatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&u.ID,
+			&u.TenantID,
+			&organizationID,
+			&teamID,
+			&u.ScopeKind,
+			&u.Name,
+			&u.Ecosystem,
+			&u.BaseURL,
+			&capabilities,
+			&authType,
+			&authUsername,
+			&authUpdatedAt,
+			&u.CreatedAt,
+			&u.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scanning bundle upstream row: %w", err)
 		}
 		u.Capabilities = domain.ParseUpstreamCapabilities(capabilities)

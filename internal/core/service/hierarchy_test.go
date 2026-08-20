@@ -56,14 +56,22 @@ type hierarchyOrganizationMembers struct {
 func orgMemberKey(organizationID, principalID string) string {
 	return organizationID + ":" + principalID
 }
-func (r *hierarchyOrganizationMembers) Get(_ context.Context, tenantID, organizationID, principalID string) (*domain.OrganizationMembership, error) {
+
+func (r *hierarchyOrganizationMembers) Get(
+	_ context.Context,
+	tenantID, organizationID, principalID string,
+) (*domain.OrganizationMembership, error) {
 	item, ok := r.items[orgMemberKey(organizationID, principalID)]
 	if !ok || item.TenantID != tenantID {
 		return nil, domain.ErrOrganizationMembershipNotFound
 	}
 	return &item, nil
 }
-func (r *hierarchyOrganizationMembers) ListByPrincipal(_ context.Context, tenantID, principalID string) ([]domain.OrganizationMembership, error) {
+
+func (r *hierarchyOrganizationMembers) ListByPrincipal(
+	_ context.Context,
+	tenantID, principalID string,
+) ([]domain.OrganizationMembership, error) {
 	items := make([]domain.OrganizationMembership, 0)
 	for _, item := range r.items {
 		if item.TenantID == tenantID && item.PrincipalID == principalID {
@@ -94,7 +102,11 @@ func (r *hierarchyTeamRepo) GetByID(_ context.Context, tenantID, organizationID,
 	}
 	return &item, nil
 }
-func (r *hierarchyTeamRepo) ListByOrganization(_ context.Context, tenantID, organizationID string) ([]domain.Team, error) {
+
+func (r *hierarchyTeamRepo) ListByOrganization(
+	_ context.Context,
+	tenantID, organizationID string,
+) ([]domain.Team, error) {
 	items := make([]domain.Team, 0)
 	for _, item := range r.items {
 		if item.TenantID == tenantID && item.OrganizationID == organizationID {
@@ -118,11 +130,19 @@ type hierarchyTeamMembers struct {
 }
 
 func teamMemberKey(teamID, principalID string) string { return teamID + ":" + principalID }
-func (r *hierarchyTeamMembers) IsMember(_ context.Context, tenantID, organizationID, teamID, principalID string) (bool, error) {
+
+func (r *hierarchyTeamMembers) IsMember(
+	_ context.Context,
+	tenantID, organizationID, teamID, principalID string,
+) (bool, error) {
 	item, ok := r.items[teamMemberKey(teamID, principalID)]
 	return ok && item.TenantID == tenantID && item.OrganizationID == organizationID, nil
 }
-func (r *hierarchyTeamMembers) ListByPrincipal(_ context.Context, tenantID, organizationID, principalID string) ([]domain.TeamMembership, error) {
+
+func (r *hierarchyTeamMembers) ListByPrincipal(
+	_ context.Context,
+	tenantID, organizationID, principalID string,
+) ([]domain.TeamMembership, error) {
 	items := make([]domain.TeamMembership, 0)
 	for _, item := range r.items {
 		if item.TenantID == tenantID && item.OrganizationID == organizationID && item.PrincipalID == principalID {
@@ -157,7 +177,11 @@ func (r *hierarchyPrincipalRepo) GetByID(_ context.Context, id string) (*domain.
 	}
 	return &item, nil
 }
-func (r *hierarchyPrincipalRepo) GetByIdentity(_ context.Context, provider, externalSubject string) (*domain.Principal, error) {
+
+func (r *hierarchyPrincipalRepo) GetByIdentity(
+	_ context.Context,
+	provider, externalSubject string,
+) (*domain.Principal, error) {
 	for principalID, identity := range r.identities {
 		if identity.Provider == provider && identity.ExternalSubject == externalSubject {
 			return r.GetByID(context.Background(), principalID)
@@ -165,7 +189,11 @@ func (r *hierarchyPrincipalRepo) GetByIdentity(_ context.Context, provider, exte
 	}
 	return nil, domain.ErrPrincipalNotFound
 }
-func (r *hierarchyPrincipalRepo) GetIdentity(_ context.Context, principalID, provider string) (*domain.PrincipalIdentity, error) {
+
+func (r *hierarchyPrincipalRepo) GetIdentity(
+	_ context.Context,
+	principalID, provider string,
+) (*domain.PrincipalIdentity, error) {
 	item, ok := r.identities[principalID]
 	if !ok || item.Provider != provider {
 		return nil, domain.ErrPrincipalNotFound
@@ -191,20 +219,33 @@ func (v *hierarchyMembershipVerifier) VerifyTenantMembership(context.Context, st
 	return nil
 }
 
-func hierarchyServiceFixture(role domain.OrganizationRole, verifier TenantMembershipVerifier) (*HierarchyService, domain.AuthenticatedPrincipal, *hierarchyTeamMembers) {
+func hierarchyServiceFixture(
+	role domain.OrganizationRole,
+	verifier TenantMembershipVerifier,
+) (*HierarchyService, domain.AuthenticatedPrincipal, *hierarchyTeamMembers) {
 	organizations := &hierarchyOrganizationRepo{items: map[string]domain.Organization{
 		"org-a": {ID: "org-a", TenantID: "tenant-a", Name: "A", Status: domain.OrganizationStatusActive},
 		"org-b": {ID: "org-b", TenantID: "tenant-b", Name: "B", Status: domain.OrganizationStatusActive},
 	}}
 	orgMembers := &hierarchyOrganizationMembers{items: map[string]domain.OrganizationMembership{
-		orgMemberKey("org-a", "actor"): {TenantID: "tenant-a", OrganizationID: "org-a", PrincipalID: "actor", Role: role},
+		orgMemberKey("org-a", "actor"): {
+			TenantID:       "tenant-a",
+			OrganizationID: "org-a",
+			PrincipalID:    "actor",
+			Role:           role,
+		},
 	}}
 	teams := &hierarchyTeamRepo{items: map[string]domain.Team{
 		"team-a": {ID: "team-a", TenantID: "tenant-a", OrganizationID: "org-a", Name: "A"},
 		"team-b": {ID: "team-b", TenantID: "tenant-a", OrganizationID: "org-a", Name: "B"},
 	}}
 	teamMembers := &hierarchyTeamMembers{items: map[string]domain.TeamMembership{
-		teamMemberKey("team-a", "actor"): {TenantID: "tenant-a", OrganizationID: "org-a", TeamID: "team-a", PrincipalID: "actor"},
+		teamMemberKey("team-a", "actor"): {
+			TenantID:       "tenant-a",
+			OrganizationID: "org-a",
+			TeamID:         "team-a",
+			PrincipalID:    "actor",
+		},
 	}}
 	principals := &hierarchyPrincipalRepo{
 		items: map[string]domain.Principal{
@@ -226,7 +267,10 @@ func hierarchyServiceFixture(role domain.OrganizationRole, verifier TenantMember
 }
 
 func TestHierarchyService_FiltersAssignedOrganizationsAndTeams(t *testing.T) {
-	service, actor, _ := hierarchyServiceFixture(domain.OrganizationRoleViewer, &hierarchyMembershipVerifier{allowed: true})
+	service, actor, _ := hierarchyServiceFixture(
+		domain.OrganizationRoleViewer,
+		&hierarchyMembershipVerifier{allowed: true},
+	)
 
 	organizations, err := service.ListOrganizations(context.Background(), actor)
 	require.NoError(t, err)
@@ -268,7 +312,10 @@ func TestHierarchyService_AssignmentFailsClosedWithoutProviderVerification(t *te
 }
 
 func TestHierarchyService_HidesCrossTenantOrganization(t *testing.T) {
-	service, actor, _ := hierarchyServiceFixture(domain.OrganizationRoleViewer, &hierarchyMembershipVerifier{allowed: true})
+	service, actor, _ := hierarchyServiceFixture(
+		domain.OrganizationRoleViewer,
+		&hierarchyMembershipVerifier{allowed: true},
+	)
 	_, err := service.GetOrganization(context.Background(), actor, "org-b")
 	var denial *domain.AuthorizationError
 	require.ErrorAs(t, err, &denial)

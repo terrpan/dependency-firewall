@@ -12,10 +12,29 @@ func TestPolicyScopeValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "account", policy: Policy{ScopeKind: PolicyScopeAccount, WaiverMode: PolicyWaiverNone}},
-		{name: "Organization", policy: Policy{ScopeKind: PolicyScopeOrganization, OrganizationID: "org-1", WaiverMode: PolicyWaiverApprovalRequired}},
-		{name: "account with Organization", policy: Policy{ScopeKind: PolicyScopeAccount, OrganizationID: "org-1", WaiverMode: PolicyWaiverNone}, wantErr: true},
-		{name: "Organization missing ancestor", policy: Policy{ScopeKind: PolicyScopeOrganization, WaiverMode: PolicyWaiverNone}, wantErr: true},
-		{name: "unsupported waiver mode", policy: Policy{ScopeKind: PolicyScopeAccount, WaiverMode: "automatic"}, wantErr: true},
+		{
+			name: "Organization",
+			policy: Policy{
+				ScopeKind:      PolicyScopeOrganization,
+				OrganizationID: "org-1",
+				WaiverMode:     PolicyWaiverApprovalRequired,
+			},
+		},
+		{
+			name:    "account with Organization",
+			policy:  Policy{ScopeKind: PolicyScopeAccount, OrganizationID: "org-1", WaiverMode: PolicyWaiverNone},
+			wantErr: true,
+		},
+		{
+			name:    "Organization missing ancestor",
+			policy:  Policy{ScopeKind: PolicyScopeOrganization, WaiverMode: PolicyWaiverNone},
+			wantErr: true,
+		},
+		{
+			name:    "unsupported waiver mode",
+			policy:  Policy{ScopeKind: PolicyScopeAccount, WaiverMode: "automatic"},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -38,11 +57,29 @@ func TestUpstreamScopeValidation(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "Tenant shared", upstream: Upstream{ScopeKind: UpstreamScopeTenantShared}},
-		{name: "Organization shared", upstream: Upstream{ScopeKind: UpstreamScopeOrganizationShared, OrganizationID: "org-1"}},
-		{name: "Team local", upstream: Upstream{ScopeKind: UpstreamScopeTeamLocal, OrganizationID: "org-1", TeamID: "team-1"}},
-		{name: "Tenant shared with Organization", upstream: Upstream{ScopeKind: UpstreamScopeTenantShared, OrganizationID: "org-1"}, wantErr: true},
-		{name: "Organization shared with Team", upstream: Upstream{ScopeKind: UpstreamScopeOrganizationShared, OrganizationID: "org-1", TeamID: "team-1"}, wantErr: true},
-		{name: "Team missing Organization", upstream: Upstream{ScopeKind: UpstreamScopeTeamLocal, TeamID: "team-1"}, wantErr: true},
+		{
+			name:     "Organization shared",
+			upstream: Upstream{ScopeKind: UpstreamScopeOrganizationShared, OrganizationID: "org-1"},
+		},
+		{
+			name:     "Team local",
+			upstream: Upstream{ScopeKind: UpstreamScopeTeamLocal, OrganizationID: "org-1", TeamID: "team-1"},
+		},
+		{
+			name:     "Tenant shared with Organization",
+			upstream: Upstream{ScopeKind: UpstreamScopeTenantShared, OrganizationID: "org-1"},
+			wantErr:  true,
+		},
+		{
+			name:     "Organization shared with Team",
+			upstream: Upstream{ScopeKind: UpstreamScopeOrganizationShared, OrganizationID: "org-1", TeamID: "team-1"},
+			wantErr:  true,
+		},
+		{
+			name:     "Team missing Organization",
+			upstream: Upstream{ScopeKind: UpstreamScopeTeamLocal, TeamID: "team-1"},
+			wantErr:  true,
+		},
 	}
 
 	for _, test := range tests {

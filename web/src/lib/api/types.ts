@@ -4,6 +4,22 @@ type JsonContent<T> = T extends { 'application/json': infer Content } ? Content 
 
 export type Health = JsonContent<paths['/healthz']['get']['responses'][200]['content']>
 
+export type Session = paths['/api/v1/session']['get']['responses'][200]['content']['application/json']
+export type BootstrapSession =
+  paths['/api/v1/session/bootstrap']['post']['responses'][200]['content']['application/json']
+export type Organization = NonNullable<
+  paths['/api/v1/organizations']['get']['responses'][200]['content']['application/json']
+>[number]
+export type CreateOrganizationRequest =
+  paths['/api/v1/organizations']['post']['requestBody']['content']['application/json']
+export type Team = NonNullable<
+  paths['/api/v1/organizations/{organization_id}/teams']['get']['responses'][200]['content']['application/json']
+>[number]
+export type CreateTeamRequest =
+  paths['/api/v1/organizations/{organization_id}/teams']['post']['requestBody']['content']['application/json']
+export type UpdateTeamRequest =
+  paths['/api/v1/organizations/{organization_id}/teams/{team_id}']['patch']['requestBody']['content']['application/json']
+
 export type Tenant = NonNullable<
   paths['/api/v1/tenants']['get']['responses'][200]['content']['application/json']
 >[number]

@@ -60,10 +60,12 @@ type ListDecisionsByTenantResponse struct {
 }
 
 type HasRecentAllowRequest struct {
-	TenantID  string               `json:"tenant_id"`
-	Ecosystem domain.EcosystemType `json:"ecosystem"`
-	Namespace string               `json:"namespace"`
-	Name      string               `json:"name"`
+	TenantID       string               `json:"tenant_id"`
+	OrganizationID string               `json:"organization_id,omitempty"`
+	TeamID         string               `json:"team_id,omitempty"`
+	Ecosystem      domain.EcosystemType `json:"ecosystem"`
+	Namespace      string               `json:"namespace"`
+	Name           string               `json:"name"`
 }
 
 type HasRecentAllowResponse struct {
@@ -135,6 +137,10 @@ type DependencyGraphResolveQueuedEvent struct{}
 type Decision struct {
 	ID                string                    `json:"id"`
 	TenantID          string                    `json:"tenant_id"`
+	OrganizationID    string                    `json:"organization_id,omitempty"`
+	TeamID            string                    `json:"team_id,omitempty"`
+	UpstreamID        string                    `json:"upstream_id,omitempty"`
+	CredentialID      string                    `json:"credential_id,omitempty"`
 	Artifact          ArtifactIdentity          `json:"artifact"`
 	Outcome           domain.DecisionOutcome    `json:"outcome"`
 	PolicyID          string                    `json:"policy_id"`
@@ -172,20 +178,23 @@ type Upstream struct {
 }
 
 type AuditEvent struct {
-	ID            string                 `json:"id"`
-	TenantID      string                 `json:"tenant_id"`
-	CorrelationID string                 `json:"correlation_id"`
-	EventType     domain.AuditEventType  `json:"event_type"`
-	Source        string                 `json:"source"`
-	EntityType    string                 `json:"entity_type"`
-	EntityID      string                 `json:"entity_id"`
-	UpstreamID    string                 `json:"upstream_id"`
-	PolicyID      string                 `json:"policy_id"`
-	Outcome       domain.DecisionOutcome `json:"outcome"`
-	Artifact      ArtifactIdentity       `json:"artifact"`
-	Message       string                 `json:"message"`
-	Payload       map[string]any         `json:"payload"`
-	CreatedAt     string                 `json:"created_at,omitempty"`
+	ID             string                 `json:"id"`
+	TenantID       string                 `json:"tenant_id"`
+	OrganizationID string                 `json:"organization_id,omitempty"`
+	TeamID         string                 `json:"team_id,omitempty"`
+	CredentialID   string                 `json:"credential_id,omitempty"`
+	CorrelationID  string                 `json:"correlation_id"`
+	EventType      domain.AuditEventType  `json:"event_type"`
+	Source         string                 `json:"source"`
+	EntityType     string                 `json:"entity_type"`
+	EntityID       string                 `json:"entity_id"`
+	UpstreamID     string                 `json:"upstream_id"`
+	PolicyID       string                 `json:"policy_id"`
+	Outcome        domain.DecisionOutcome `json:"outcome"`
+	Artifact       ArtifactIdentity       `json:"artifact"`
+	Message        string                 `json:"message"`
+	Payload        map[string]any         `json:"payload"`
+	CreatedAt      string                 `json:"created_at,omitempty"`
 }
 
 // TenantIDFromRequest returns the tenant id carried by ingest gRPC requests.
@@ -222,6 +231,10 @@ func FromDomainDecision(decision *domain.Decision) Decision {
 	result := Decision{
 		ID:                decision.ID,
 		TenantID:          decision.TenantID,
+		OrganizationID:    decision.OrganizationID,
+		TeamID:            decision.TeamID,
+		UpstreamID:        decision.UpstreamID,
+		CredentialID:      decision.CredentialID,
 		Artifact:          FromDomainArtifactIdentity(decision.Artifact),
 		Outcome:           decision.Outcome,
 		PolicyID:          decision.PolicyID,
@@ -250,6 +263,10 @@ func (d Decision) ToDomain() (*domain.Decision, error) {
 	result := &domain.Decision{
 		ID:                d.ID,
 		TenantID:          d.TenantID,
+		OrganizationID:    d.OrganizationID,
+		TeamID:            d.TeamID,
+		UpstreamID:        d.UpstreamID,
+		CredentialID:      d.CredentialID,
 		Artifact:          d.Artifact.ToDomain(),
 		Outcome:           d.Outcome,
 		PolicyID:          d.PolicyID,
@@ -343,20 +360,23 @@ func (u Upstream) ToDomain() domain.Upstream {
 
 func FromDomainAuditEvent(event *domain.AuditEvent) AuditEvent {
 	return AuditEvent{
-		ID:            event.ID,
-		TenantID:      event.TenantID,
-		CorrelationID: event.CorrelationID,
-		EventType:     event.EventType,
-		Source:        event.Source,
-		EntityType:    event.EntityType,
-		EntityID:      event.EntityID,
-		UpstreamID:    event.UpstreamID,
-		PolicyID:      event.PolicyID,
-		Outcome:       event.Outcome,
-		Artifact:      FromDomainArtifactIdentity(event.Artifact),
-		Message:       event.Message,
-		Payload:       cloneMap(event.Payload),
-		CreatedAt:     formatTime(event.CreatedAt),
+		ID:             event.ID,
+		TenantID:       event.TenantID,
+		OrganizationID: event.OrganizationID,
+		TeamID:         event.TeamID,
+		CredentialID:   event.CredentialID,
+		CorrelationID:  event.CorrelationID,
+		EventType:      event.EventType,
+		Source:         event.Source,
+		EntityType:     event.EntityType,
+		EntityID:       event.EntityID,
+		UpstreamID:     event.UpstreamID,
+		PolicyID:       event.PolicyID,
+		Outcome:        event.Outcome,
+		Artifact:       FromDomainArtifactIdentity(event.Artifact),
+		Message:        event.Message,
+		Payload:        cloneMap(event.Payload),
+		CreatedAt:      formatTime(event.CreatedAt),
 	}
 }
 
@@ -366,20 +386,23 @@ func (e AuditEvent) ToDomain() (*domain.AuditEvent, error) {
 		return nil, fmt.Errorf("parsing created_at: %w", err)
 	}
 	return &domain.AuditEvent{
-		ID:            e.ID,
-		TenantID:      e.TenantID,
-		CorrelationID: e.CorrelationID,
-		EventType:     e.EventType,
-		Source:        e.Source,
-		EntityType:    e.EntityType,
-		EntityID:      e.EntityID,
-		UpstreamID:    e.UpstreamID,
-		PolicyID:      e.PolicyID,
-		Outcome:       e.Outcome,
-		Artifact:      e.Artifact.ToDomain(),
-		Message:       e.Message,
-		Payload:       cloneMap(e.Payload),
-		CreatedAt:     createdAt,
+		ID:             e.ID,
+		TenantID:       e.TenantID,
+		OrganizationID: e.OrganizationID,
+		TeamID:         e.TeamID,
+		CredentialID:   e.CredentialID,
+		CorrelationID:  e.CorrelationID,
+		EventType:      e.EventType,
+		Source:         e.Source,
+		EntityType:     e.EntityType,
+		EntityID:       e.EntityID,
+		UpstreamID:     e.UpstreamID,
+		PolicyID:       e.PolicyID,
+		Outcome:        e.Outcome,
+		Artifact:       e.Artifact.ToDomain(),
+		Message:        e.Message,
+		Payload:        cloneMap(e.Payload),
+		CreatedAt:      createdAt,
 	}, nil
 }
 
@@ -466,6 +489,28 @@ func HasRecentAllow(
 		response,
 		grpc.ForceCodec(jsonCodec{}),
 	); err != nil {
+		return false, MapClientError(err)
+	}
+	return response.Allowed, nil
+}
+
+func HasRecentAllowInScope(
+	ctx context.Context,
+	conn grpc.ClientConnInterface,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
+	response := &HasRecentAllowResponse{}
+	request := &HasRecentAllowRequest{
+		TenantID:       scope.TenantID,
+		OrganizationID: scope.OrganizationID,
+		TeamID:         scope.TeamID,
+		Ecosystem:      ecosystem,
+		Namespace:      namespace,
+		Name:           name,
+	}
+	if err := conn.Invoke(ctx, HasRecentAllowMethod, request, response, grpc.ForceCodec(jsonCodec{})); err != nil {
 		return false, MapClientError(err)
 	}
 	return response.Allowed, nil

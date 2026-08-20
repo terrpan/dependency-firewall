@@ -7,6 +7,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// PermissionCatalogVersion and its sibling constants enumerate the supported values.
 const PermissionCatalogVersion = 1
 
 var allPermissions = []domain.Permission{
@@ -83,6 +84,7 @@ func without(permissions []domain.Permission, excluded domain.Permission) []doma
 	return result
 }
 
+// AuthorizationService models an authorization service.
 type AuthorizationService struct {
 	organizations authorizationOrganizationGetter
 	memberships   authorizationMembershipGetter
@@ -106,6 +108,7 @@ type authorizationTeamMembershipChecker interface {
 	IsMember(ctx context.Context, tenantID, organizationID, teamID, principalID string) (bool, error)
 }
 
+// NewAuthorizationService constructs a new AuthorizationService.
 func NewAuthorizationService(
 	organizations authorizationOrganizationGetter,
 	memberships authorizationMembershipGetter,
@@ -120,6 +123,9 @@ func NewAuthorizationService(
 	}
 }
 
+// Authorize checks whether a principal may perform an operation in the requested scope.
+//
+//nolint:gocognit,gocyclo,funlen // authorization branches by scope and role
 func (s *AuthorizationService) Authorize(
 	ctx context.Context,
 	principal domain.AuthenticatedPrincipal,
@@ -133,7 +139,8 @@ func (s *AuthorizationService) Authorize(
 		return deny(domain.AuthorizationDenialTenantMismatch)
 	}
 
-	tenantAdministrator := principal.TenantRole == domain.TenantRoleOwner || principal.TenantRole == domain.TenantRoleAdmin
+	tenantAdministrator := principal.TenantRole == domain.TenantRoleOwner ||
+		principal.TenantRole == domain.TenantRoleAdmin
 	permissions := copyPermissions(tenantRolePermissions[principal.TenantRole])
 	organizationAdministrator := false
 	var organizationRole domain.OrganizationRole
@@ -180,7 +187,13 @@ func (s *AuthorizationService) Authorize(
 			return err
 		}
 		if !tenantAdministrator && !organizationAdministrator {
-			member, err := s.teamMembers.IsMember(ctx, scope.TenantID, scope.OrganizationID, scope.TeamID, principal.Principal.ID)
+			member, err := s.teamMembers.IsMember(
+				ctx,
+				scope.TenantID,
+				scope.OrganizationID,
+				scope.TeamID,
+				principal.Principal.ID,
+			)
 			if err != nil {
 				return err
 			}
@@ -217,10 +230,12 @@ func deny(reason domain.AuthorizationDenialReason) error {
 	return &domain.AuthorizationError{Reason: reason}
 }
 
+// PermissionsForTenantRole returns the permissions granted for the given role.
 func PermissionsForTenantRole(role domain.TenantRole) []domain.Permission {
 	return sortedPermissions(tenantRolePermissions[role])
 }
 
+// PermissionsForOrganizationRole returns the permissions granted for the given role.
 func PermissionsForOrganizationRole(role domain.OrganizationRole) []domain.Permission {
 	return sortedPermissions(organizationRolePermissions[role])
 }

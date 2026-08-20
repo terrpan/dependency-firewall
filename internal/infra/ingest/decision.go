@@ -62,3 +62,16 @@ func (r *DecisionRepository) HasRecentAllow(
 	}
 	return r.client.HasRecentAllow(ctx, tenantID, ecosystem, namespace, name)
 }
+
+// HasRecentAllowInScope performs the has recent allow in scope operation.
+func (r *DecisionRepository) HasRecentAllowInScope(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, fmt.Errorf("checking scoped recent allow: client unavailable")
+	}
+	return r.client.HasRecentAllowInScope(ctx, scope, ecosystem, namespace, name)
+}

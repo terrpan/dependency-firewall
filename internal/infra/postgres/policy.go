@@ -141,27 +141,9 @@ func collectPolicies(rows pgx.Rows, err error) ([]domain.Policy, error) {
 
 // Create inserts a new policy and its initial version.
 func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) error {
-	policy.NormalizeScope()
-	if err := policy.ValidateScope(); err != nil {
-		return err
-	}
-	if policy.SchemaVersion == 0 {
-		normalizedSchemaVersion, err := corepolicy.NormalizeSchemaVersion(policy.Type, policy.SchemaVersion)
-		if err != nil {
-			return err
-		}
-		policy.SchemaVersion = normalizedSchemaVersion
-	}
-	if err := corepolicy.ValidatePolicy(*policy); err != nil {
-		return err
-	}
-	configJSON, err := json.Marshal(policy.Config)
+	configJSON, targetJSON, err := preparePolicyForWrite(policy)
 	if err != nil {
-		return fmt.Errorf("marshalling policy config: %w", err)
-	}
-	targetJSON, err := json.Marshal(policy.Target)
-	if err != nil {
-		return fmt.Errorf("marshalling policy target: %w", err)
+		return err
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -196,13 +178,63 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 		return fmt.Errorf("inserting policy: %w", err)
 	}
 
-	_, err = tx.Exec(ctx,
+	if err := insertPolicyVersionRow(ctx, tx, policy, policy.Version, configJSON, targetJSON); err != nil {
+		return fmt.Errorf("inserting initial policy version: %w", err)
+	}
+	if err := prunePolicyVersions(ctx, tx, policy.ID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing policy creation: %w", err)
+	}
+	return nil
+}
+
+// preparePolicyForWrite normalizes and validates a policy before it is
+// persisted, returning the marshalled config and target JSON shared by the
+// policies and policy_versions inserts.
+func preparePolicyForWrite(policy *domain.Policy) (configJSON, targetJSON []byte, err error) {
+	policy.NormalizeScope()
+	if err := policy.ValidateScope(); err != nil {
+		return nil, nil, err
+	}
+	if policy.SchemaVersion == 0 {
+		normalizedSchemaVersion, err := corepolicy.NormalizeSchemaVersion(policy.Type, policy.SchemaVersion)
+		if err != nil {
+			return nil, nil, err
+		}
+		policy.SchemaVersion = normalizedSchemaVersion
+	}
+	if err := corepolicy.ValidatePolicy(*policy); err != nil {
+		return nil, nil, err
+	}
+	configJSON, err = json.Marshal(policy.Config)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling policy config: %w", err)
+	}
+	targetJSON, err = json.Marshal(policy.Target)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshalling policy target: %w", err)
+	}
+	return configJSON, targetJSON, nil
+}
+
+// insertPolicyVersionRow records one retained policy_versions snapshot.
+func insertPolicyVersionRow(
+	ctx context.Context,
+	tx pgx.Tx,
+	policy *domain.Policy,
+	version int,
+	configJSON, targetJSON []byte,
+) error {
+	_, err := tx.Exec(ctx,
 		`INSERT INTO policy_versions
 		    (tenant_id, policy_id, version, organization_id, scope_kind, waiver_mode, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		policy.TenantID,
 		policy.ID,
-		policy.Version,
+		version,
 		nullableString(policy.OrganizationID),
 		policy.ScopeKind,
 		policy.WaiverMode,
@@ -216,42 +248,14 @@ func (r *PolicyRepository) Create(ctx context.Context, policy *domain.Policy) er
 		policy.Priority,
 		policy.Enabled,
 	)
-	if err != nil {
-		return fmt.Errorf("inserting initial policy version: %w", err)
-	}
-	if err := prunePolicyVersions(ctx, tx, policy.ID); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("committing policy creation: %w", err)
-	}
-	return nil
+	return err
 }
 
 // Update modifies an existing policy and records a new version.
 func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) error {
-	policy.NormalizeScope()
-	if err := policy.ValidateScope(); err != nil {
-		return err
-	}
-	if policy.SchemaVersion == 0 {
-		normalizedSchemaVersion, err := corepolicy.NormalizeSchemaVersion(policy.Type, policy.SchemaVersion)
-		if err != nil {
-			return err
-		}
-		policy.SchemaVersion = normalizedSchemaVersion
-	}
-	if err := corepolicy.ValidatePolicy(*policy); err != nil {
-		return err
-	}
-	configJSON, err := json.Marshal(policy.Config)
+	configJSON, targetJSON, err := preparePolicyForWrite(policy)
 	if err != nil {
-		return fmt.Errorf("marshalling policy config: %w", err)
-	}
-	targetJSON, err := json.Marshal(policy.Target)
-	if err != nil {
-		return fmt.Errorf("marshalling policy target: %w", err)
+		return err
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -296,27 +300,7 @@ func (r *PolicyRepository) Update(ctx context.Context, policy *domain.Policy) er
 	}
 	policy.Version = newVersion
 
-	_, err = tx.Exec(ctx,
-		`INSERT INTO policy_versions
-		    (tenant_id, policy_id, version, organization_id, scope_kind, waiver_mode, upstream_id, name, type, action, schema_version, config, target, priority, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-		policy.TenantID,
-		policy.ID,
-		newVersion,
-		nullableString(policy.OrganizationID),
-		policy.ScopeKind,
-		policy.WaiverMode,
-		nullableString(policy.UpstreamID),
-		policy.Name,
-		policy.Type,
-		policy.Action,
-		policy.SchemaVersion,
-		configJSON,
-		nullableJSON(targetJSON, policy.Target != nil),
-		policy.Priority,
-		policy.Enabled,
-	)
-	if err != nil {
+	if err := insertPolicyVersionRow(ctx, tx, policy, newVersion, configJSON, targetJSON); err != nil {
 		return fmt.Errorf("inserting policy version: %w", err)
 	}
 	if err := prunePolicyVersions(ctx, tx, policy.ID); err != nil {

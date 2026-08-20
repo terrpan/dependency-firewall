@@ -54,6 +54,7 @@ func (r *PolicyRepository) ListByTenant(ctx context.Context, tenantID string) ([
 	return policies, nil
 }
 
+// GetEffectiveByID performs the get effective by id operation.
 func (r *PolicyRepository) GetEffectiveByID(
 	ctx context.Context,
 	scope domain.AuthorizationScope,
@@ -71,10 +72,12 @@ func (r *PolicyRepository) GetEffectiveByID(
 	return nil, domain.ErrPolicyNotFound
 }
 
+// ListAccount performs the list account operation.
 func (r *PolicyRepository) ListAccount(ctx context.Context, tenantID string) ([]domain.Policy, error) {
 	return r.ListByTenant(ctx, tenantID)
 }
 
+// ListByOrganization performs the list by organization operation.
 func (r *PolicyRepository) ListByOrganization(
 	ctx context.Context,
 	tenantID string,
@@ -83,6 +86,7 @@ func (r *PolicyRepository) ListByOrganization(
 	return r.listPolicies(ctx, domain.AuthorizationScope{TenantID: tenantID, OrganizationID: organizationID}, false)
 }
 
+// ListEffective performs the list effective operation.
 func (r *PolicyRepository) ListEffective(
 	ctx context.Context,
 	scope domain.AuthorizationScope,
@@ -104,7 +108,8 @@ func (r *PolicyRepository) listPolicies(
 		policyDef := bundle.Policies[i]
 		policyDef.NormalizeScope()
 		isAccount := includeAccount && policyDef.ScopeKind == domain.PolicyScopeAccount
-		isOrganization := policyDef.ScopeKind == domain.PolicyScopeOrganization && policyDef.OrganizationID == scope.OrganizationID
+		isOrganization := policyDef.ScopeKind == domain.PolicyScopeOrganization &&
+			policyDef.OrganizationID == scope.OrganizationID
 		if isAccount || isOrganization {
 			policies = append(policies, policyDef)
 		}
@@ -171,10 +176,15 @@ func (r *UpstreamRepository) GetByID(ctx context.Context, tenantID, id string) (
 }
 
 // GetByEcosystem returns the active upstream for the requested ecosystem from the tenant bundle.
-func (r *UpstreamRepository) GetByEcosystem(ctx context.Context, tenantID string, eco domain.EcosystemType) (*domain.Upstream, error) {
+func (r *UpstreamRepository) GetByEcosystem(
+	ctx context.Context,
+	tenantID string,
+	eco domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return r.ResolveVisibleByEcosystem(ctx, domain.AuthorizationScope{TenantID: tenantID}, eco)
 }
 
+// ResolveVisibleByEcosystem performs the resolve visible by ecosystem operation.
 func (r *UpstreamRepository) ResolveVisibleByEcosystem(
 	ctx context.Context,
 	scope domain.AuthorizationScope,
@@ -206,6 +216,7 @@ func (r *UpstreamRepository) ListByTenant(ctx context.Context, tenantID string) 
 	return r.ListVisible(ctx, domain.AuthorizationScope{TenantID: tenantID})
 }
 
+// GetVisibleByID performs the get visible by id operation.
 func (r *UpstreamRepository) GetVisibleByID(
 	ctx context.Context,
 	scope domain.AuthorizationScope,
@@ -223,6 +234,7 @@ func (r *UpstreamRepository) GetVisibleByID(
 	return nil, domain.ErrUpstreamNotFound
 }
 
+// ListVisible performs the list visible operation.
 func (r *UpstreamRepository) ListVisible(
 	ctx context.Context,
 	scope domain.AuthorizationScope,

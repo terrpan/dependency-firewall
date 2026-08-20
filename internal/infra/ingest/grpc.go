@@ -75,6 +75,16 @@ func (c *GRPCClient) HasRecentAllow(
 	return ingestwire.HasRecentAllow(ctx, c.conn, tenantID, ecosystem, namespace, name)
 }
 
+// HasRecentAllowInScope performs the has recent allow in scope operation.
+func (c *GRPCClient) HasRecentAllowInScope(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
+	return ingestwire.HasRecentAllowInScope(ctx, c.conn, scope, ecosystem, namespace, name)
+}
+
 // RecordAuditEvent persists one audit event through the control-plane ingestion service.
 func (c *GRPCClient) RecordAuditEvent(ctx context.Context, event *domain.AuditEvent) error {
 	persisted, err := ingestwire.RecordAuditEvent(ctx, c.conn, event)

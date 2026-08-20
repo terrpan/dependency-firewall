@@ -101,9 +101,11 @@ type DependencyGraphResolveRequest struct {
 
 // DependencyContextSummaryKey scopes a cached context summary.
 type DependencyContextSummaryKey struct {
-	TenantID   string
-	UpstreamID string
-	Artifact   ArtifactIdentity
+	TenantID       string
+	OrganizationID string
+	TeamID         string
+	UpstreamID     string
+	Artifact       ArtifactIdentity
 }
 
 // NewUnknownDependencyContext returns the stable unknown graph context.

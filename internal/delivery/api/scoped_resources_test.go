@@ -33,7 +33,10 @@ func (m *mockPolicyRepo) ListAccount(ctx context.Context, tenantID string) ([]do
 	return result, nil
 }
 
-func (m *mockPolicyRepo) ListByOrganization(ctx context.Context, tenantID, organizationID string) ([]domain.Policy, error) {
+func (m *mockPolicyRepo) ListByOrganization(
+	ctx context.Context,
+	tenantID, organizationID string,
+) ([]domain.Policy, error) {
 	policies, err := m.ListByTenant(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -63,7 +66,11 @@ func (m *mockPolicyRepo) ListEffective(ctx context.Context, scope domain.Authori
 	return append(account, organization...), nil
 }
 
-func (m *mockPolicyRepo) GetEffectiveByID(ctx context.Context, scope domain.AuthorizationScope, id string) (*domain.Policy, error) {
+func (m *mockPolicyRepo) GetEffectiveByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Policy, error) {
 	policies, err := m.ListEffective(ctx, scope)
 	if err != nil {
 		return nil, err
@@ -76,7 +83,10 @@ func (m *mockPolicyRepo) GetEffectiveByID(ctx context.Context, scope domain.Auth
 	return nil, domain.ErrPolicyNotFound
 }
 
-func (m *mockUpstreamRepo) ListVisible(ctx context.Context, scope domain.AuthorizationScope) ([]domain.Upstream, error) {
+func (m *mockUpstreamRepo) ListVisible(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+) ([]domain.Upstream, error) {
 	upstreams, err := m.ListByTenant(ctx, scope.TenantID)
 	if err != nil {
 		return nil, err
@@ -93,7 +103,11 @@ func (m *mockUpstreamRepo) ListVisible(ctx context.Context, scope domain.Authori
 	return result, nil
 }
 
-func (m *mockUpstreamRepo) GetVisibleByID(ctx context.Context, scope domain.AuthorizationScope, id string) (*domain.Upstream, error) {
+func (m *mockUpstreamRepo) GetVisibleByID(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Upstream, error) {
 	upstreams, err := m.ListVisible(ctx, scope)
 	if err != nil {
 		return nil, err
@@ -106,7 +120,11 @@ func (m *mockUpstreamRepo) GetVisibleByID(ctx context.Context, scope domain.Auth
 	return nil, domain.ErrUpstreamNotFound
 }
 
-func (m *mockUpstreamRepo) ResolveVisibleByEcosystem(ctx context.Context, scope domain.AuthorizationScope, ecosystem domain.EcosystemType) (*domain.Upstream, error) {
+func (m *mockUpstreamRepo) ResolveVisibleByEcosystem(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+) (*domain.Upstream, error) {
 	upstreams, err := m.ListVisible(ctx, scope)
 	if err != nil {
 		return nil, err
@@ -131,7 +149,12 @@ func (m *mockUpstreamRepo) ResolveVisibleByEcosystem(ctx context.Context, scope 
 type scopedAPIAuthenticator struct{}
 
 func (scopedAPIAuthenticator) Authenticate(context.Context, string) (domain.VerifiedIdentity, error) {
-	return domain.VerifiedIdentity{Provider: "test", Subject: "user-1", ExternalAccountID: "account-1", TenantRole: domain.TenantRoleAdmin}, nil
+	return domain.VerifiedIdentity{
+		Provider:          "test",
+		Subject:           "user-1",
+		ExternalAccountID: "account-1",
+		TenantRole:        domain.TenantRoleAdmin,
+	}, nil
 }
 
 type scopedAPIResolver struct{ principal domain.AuthenticatedPrincipal }
@@ -142,13 +165,21 @@ func (r scopedAPIResolver) Resolve(context.Context, domain.VerifiedIdentity) (do
 
 type scopedAPIAuthorizer struct{}
 
-func (scopedAPIAuthorizer) Authorize(context.Context, domain.AuthenticatedPrincipal, domain.Permission, domain.AuthorizationScope) error {
+func (scopedAPIAuthorizer) Authorize(
+	context.Context,
+	domain.AuthenticatedPrincipal,
+	domain.Permission,
+	domain.AuthorizationScope,
+) error {
 	return nil
 }
 
 type scopedAPIMembershipVerifier struct{}
 
-func (scopedAPIMembershipVerifier) FreshTenantRole(context.Context, domain.VerifiedIdentity) (domain.TenantRole, error) {
+func (scopedAPIMembershipVerifier) FreshTenantRole(
+	context.Context,
+	domain.VerifiedIdentity,
+) (domain.TenantRole, error) {
 	return domain.TenantRoleAdmin, nil
 }
 
@@ -167,11 +198,30 @@ func TestScopedResourceRoutes_DeriveTenantAndHideOtherOwnershipScopes(t *testing
 
 	mux := http.NewServeMux()
 	api := NewControlPlaneAPI(mux, "test")
-	principal := domain.AuthenticatedPrincipal{Principal: domain.Principal{ID: "principal-1", Status: domain.PrincipalStatusActive}, TenantID: "tenant-1", TenantRole: domain.TenantRoleAdmin}
-	api.UseMiddleware(middleware.HumanAuthentication(api, scopedAPIAuthenticator{}, scopedAPIResolver{principal: principal}, authorizer, scopedAPIMembershipVerifier{}, func(operationID string) (middleware.HumanOperationPolicy, bool) {
-		policy, ok := ControlPlaneOperationPolicy(operationID)
-		return middleware.HumanOperationPolicy{AuthenticationRequired: policy.AuthenticationRequired, Permission: policy.Permission, Bootstrap: policy.Bootstrap, FreshMembership: policy.FreshMembership, ScopedAuthorization: policy.ScopedAuthorization}, ok
-	}))
+	principal := domain.AuthenticatedPrincipal{
+		Principal:  domain.Principal{ID: "principal-1", Status: domain.PrincipalStatusActive},
+		TenantID:   "tenant-1",
+		TenantRole: domain.TenantRoleAdmin,
+	}
+	api.UseMiddleware(
+		middleware.HumanAuthentication(
+			api,
+			scopedAPIAuthenticator{},
+			scopedAPIResolver{principal: principal},
+			authorizer,
+			scopedAPIMembershipVerifier{},
+			func(operationID string) (middleware.HumanOperationPolicy, bool) {
+				policy, ok := ControlPlaneOperationPolicy(operationID)
+				return middleware.HumanOperationPolicy{
+					AuthenticationRequired: policy.AuthenticationRequired,
+					Permission:             policy.Permission,
+					Bootstrap:              policy.Bootstrap,
+					FreshMembership:        policy.FreshMembership,
+					ScopedAuthorization:    policy.ScopedAuthorization,
+				}, ok
+			},
+		),
+	)
 	handler.RegisterHumaRoutes(api)
 
 	policyPath := "/api/v1/organizations/organization-1/policies"
@@ -197,14 +247,21 @@ func TestScopedResourceRoutes_DeriveTenantAndHideOtherOwnershipScopes(t *testing
 	assert.Equal(t, "organization-1", policyResponse.OrganizationID)
 	assert.Equal(t, domain.PolicyScopeOrganization, policyResponse.Scope)
 	assert.Equal(t, domain.PolicyWaiverApprovalRequired, policyResponse.WaiverMode)
-	updatedPolicy := serveScopedJSON[PolicyResponse](t, mux, http.MethodPut, policyPath+"/"+policyResponse.ID, map[string]any{
-		"name":           "deny-critical-cvss",
-		"type":           "cvss_threshold",
-		"action":         "deny",
-		"schema_version": 1,
-		"config":         map[string]any{"max_cvss": 9.0},
-		"enabled":        true,
-	}, http.StatusOK)
+	updatedPolicy := serveScopedJSON[PolicyResponse](
+		t,
+		mux,
+		http.MethodPut,
+		policyPath+"/"+policyResponse.ID,
+		map[string]any{
+			"name":           "deny-critical-cvss",
+			"type":           "cvss_threshold",
+			"action":         "deny",
+			"schema_version": 1,
+			"config":         map[string]any{"max_cvss": 9.0},
+			"enabled":        true,
+		},
+		http.StatusOK,
+	)
 	assert.Equal(t, "deny-critical-cvss", updatedPolicy.Name)
 	assert.Equal(t, "organization-1", updatedPolicy.OrganizationID)
 	assert.Equal(t, domain.PolicyScopeOrganization, updatedPolicy.Scope)
@@ -230,18 +287,38 @@ func TestScopedResourceRoutes_DeriveTenantAndHideOtherOwnershipScopes(t *testing
 	assert.Equal(t, "organization-1", teamUpstream.OrganizationID)
 	assert.Equal(t, "team-1", teamUpstream.TeamID)
 	assert.Equal(t, domain.UpstreamScopeTeamLocal, teamUpstream.Scope)
-	updatedUpstream := serveScopedJSON[UpstreamResponse](t, mux, http.MethodPut, teamUpstreamPath+"/"+teamUpstream.ID, map[string]any{
-		"name":      "team-npm-mirror",
-		"ecosystem": "npm",
-		"base_url":  "https://mirror.example.test",
-	}, http.StatusOK)
+	updatedUpstream := serveScopedJSON[UpstreamResponse](
+		t,
+		mux,
+		http.MethodPut,
+		teamUpstreamPath+"/"+teamUpstream.ID,
+		map[string]any{
+			"name":      "team-npm-mirror",
+			"ecosystem": "npm",
+			"base_url":  "https://mirror.example.test",
+		},
+		http.StatusOK,
+	)
 	assert.Equal(t, "team-npm-mirror", updatedUpstream.Name)
 	assert.Equal(t, "team-1", updatedUpstream.TeamID)
 	assert.Equal(t, domain.UpstreamScopeTeamLocal, updatedUpstream.Scope)
 
-	organizationUpstreams := serveScopedJSON[[]UpstreamResponse](t, mux, http.MethodGet, "/api/v1/organizations/organization-1/upstreams", nil, http.StatusOK)
+	organizationUpstreams := serveScopedJSON[[]UpstreamResponse](
+		t,
+		mux,
+		http.MethodGet,
+		"/api/v1/organizations/organization-1/upstreams",
+		nil,
+		http.StatusOK,
+	)
 	assert.Empty(t, organizationUpstreams)
-	wrongTeam := serveScopedRequest(t, mux, http.MethodGet, "/api/v1/organizations/organization-1/teams/team-2/upstreams/"+teamUpstream.ID, nil)
+	wrongTeam := serveScopedRequest(
+		t,
+		mux,
+		http.MethodGet,
+		"/api/v1/organizations/organization-1/teams/team-2/upstreams/"+teamUpstream.ID,
+		nil,
+	)
 	assert.Equal(t, http.StatusNotFound, wrongTeam.Code)
 }
 

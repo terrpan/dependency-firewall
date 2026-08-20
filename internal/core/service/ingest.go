@@ -107,6 +107,27 @@ func (s *ProxyIngestService) HasRecentAllow(
 	return s.decisions.HasRecentAllow(ctx, tenantID, ecosystem, namespace, name)
 }
 
+// HasRecentAllowInScope performs the has recent allow in scope operation.
+func (s *ProxyIngestService) HasRecentAllowInScope(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+	namespace, name string,
+) (bool, error) {
+	if s == nil || s.decisions == nil {
+		return false, fmt.Errorf("checking scoped recent allow: repository unavailable")
+	}
+	if strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.OrganizationID) == "" {
+		return false, fmt.Errorf("checking scoped recent allow: tenant_id and organization_id are required")
+	}
+	if scoped, ok := s.decisions.(interface {
+		HasRecentAllowInScope(context.Context, domain.AuthorizationScope, domain.EcosystemType, string, string) (bool, error)
+	}); ok {
+		return scoped.HasRecentAllowInScope(ctx, scope, ecosystem, namespace, name)
+	}
+	return false, fmt.Errorf("checking scoped recent allow: repository does not support operational scopes")
+}
+
 // RecordAuditEvent persists a proxy-emitted audit event through the authoritative recorder.
 func (s *ProxyIngestService) RecordAuditEvent(ctx context.Context, event *domain.AuditEvent) error {
 	if s == nil || s.audits == nil {

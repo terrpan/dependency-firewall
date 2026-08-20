@@ -40,7 +40,7 @@ type Config struct {
 
 // AuthConfig selects the human control-plane authentication adapter.
 type AuthConfig struct {
-	Mode  string          `mapstructure:"mode" validate:"omitempty,oneof=disabled clerk"`
+	Mode  string          `mapstructure:"mode"  validate:"omitempty,oneof=disabled clerk"`
 	Clerk AuthClerkConfig `mapstructure:"clerk"`
 }
 
@@ -53,7 +53,7 @@ type AuthClerkConfig struct {
 	Issuer            string        `mapstructure:"issuer"`
 	Audience          string        `mapstructure:"audience"`
 	AuthorizedParties []string      `mapstructure:"authorized_parties"`
-	Leeway            time.Duration `mapstructure:"leeway" validate:"gte=0"`
+	Leeway            time.Duration `mapstructure:"leeway"             validate:"gte=0"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
@@ -393,7 +393,8 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validateAuth() error {
-	if c.Auth.Mode != "clerk" || c.Runtime.Mode == RuntimeModeProxy || c.Runtime.Mode == RuntimeModeDependencyGraphWorker {
+	if c.Auth.Mode != "clerk" || c.Runtime.Mode == RuntimeModeProxy ||
+		c.Runtime.Mode == RuntimeModeDependencyGraphWorker {
 		return nil
 	}
 	if strings.TrimSpace(c.Auth.Clerk.Issuer) == "" {
@@ -403,7 +404,11 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("invalid config: field %q is required when auth.mode is %q", "auth.clerk.audience", "clerk")
 	}
 	if len(c.Auth.Clerk.AuthorizedParties) == 0 {
-		return fmt.Errorf("invalid config: field %q requires at least one value when auth.mode is %q", "auth.clerk.authorized_parties", "clerk")
+		return fmt.Errorf(
+			"invalid config: field %q requires at least one value when auth.mode is %q",
+			"auth.clerk.authorized_parties",
+			"clerk",
+		)
 	}
 	if strings.TrimSpace(c.Auth.Clerk.SecretKey) == "" {
 		return fmt.Errorf("invalid config: field %q is required when auth.mode is %q", "auth.clerk.secret_key", "clerk")

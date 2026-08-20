@@ -16,6 +16,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// Provider and its sibling constants enumerate the supported values.
 const Provider = "clerk"
 
 type cachedJWK struct {
@@ -46,6 +47,7 @@ type sessionStatusClaims struct {
 	} `json:"o"`
 }
 
+// NewAuthenticator constructs a new Authenticator.
 func NewAuthenticator(cfg config.AuthClerkConfig) (*Authenticator, error) {
 	parties := make(map[string]struct{}, len(cfg.AuthorizedParties))
 	for _, party := range cfg.AuthorizedParties {
@@ -81,7 +83,11 @@ func NewAuthenticator(cfg config.AuthClerkConfig) (*Authenticator, error) {
 	return authenticator, nil
 }
 
-func (a *Authenticator) Authenticate(ctx context.Context, token string) (domain.VerifiedIdentity, error) {
+// Authenticate verifies and maps a Clerk JWT to a domain identity.
+func (a *Authenticator) Authenticate( //nolint:gocyclo // JWT verification and mapping steps
+	ctx context.Context,
+	token string,
+) (domain.VerifiedIdentity, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return domain.VerifiedIdentity{}, domain.ErrAuthenticationInvalid
@@ -137,7 +143,11 @@ func (a *Authenticator) Authenticate(ctx context.Context, token string) (domain.
 	}, nil
 }
 
-func (a *Authenticator) verify(ctx context.Context, token string, jwk *clerksdk.JSONWebKey) (*clerksdk.SessionClaims, *sessionStatusClaims, error) {
+func (a *Authenticator) verify(
+	ctx context.Context,
+	token string,
+	jwk *clerksdk.JSONWebKey,
+) (*clerksdk.SessionClaims, *sessionStatusClaims, error) {
 	claims, err := clerkjwt.Verify(ctx, &clerkjwt.VerifyParams{
 		Token:  token,
 		JWK:    jwk,

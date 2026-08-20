@@ -139,7 +139,10 @@ func (h *TenantHandler) list(ctx context.Context, _ *struct{}) (*tenantListOutpu
 func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantOutput, error) {
 	ctx, cancel := withControlPlaneReadTimeout(ctx)
 	defer cancel()
-	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated && input.ID != principal.TenantID {
+	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(
+		ctx,
+	); authenticated &&
+		input.ID != principal.TenantID {
 		return nil, huma.Error404NotFound("tenant not found")
 	}
 
@@ -162,7 +165,10 @@ func (h *TenantHandler) get(ctx context.Context, input *tenantIDInput) (*tenantO
 }
 
 func (h *TenantHandler) update(ctx context.Context, input *updateTenantInput) (*tenantOutput, error) {
-	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(ctx); authenticated && input.ID != principal.TenantID {
+	if principal, authenticated := middleware.AuthenticatedPrincipalFromContext(
+		ctx,
+	); authenticated &&
+		input.ID != principal.TenantID {
 		return nil, huma.Error404NotFound("tenant not found")
 	}
 	resp, err := h.updateTenant(ctx, input.ID, input.Body)

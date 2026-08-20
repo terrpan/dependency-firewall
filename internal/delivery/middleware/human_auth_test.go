@@ -34,7 +34,12 @@ func (s humanResolverStub) Resolve(context.Context, domain.VerifiedIdentity) (do
 
 type humanAuthorizerStub struct{ scope domain.AuthorizationScope }
 
-func (s *humanAuthorizerStub) Authorize(_ context.Context, _ domain.AuthenticatedPrincipal, _ domain.Permission, scope domain.AuthorizationScope) error {
+func (s *humanAuthorizerStub) Authorize(
+	_ context.Context,
+	_ domain.AuthenticatedPrincipal,
+	_ domain.Permission,
+	scope domain.AuthorizationScope,
+) error {
 	s.scope = scope
 	return nil
 }
@@ -44,7 +49,12 @@ func TestHumanAuthentication_RequiresBearerAndRejectsTenantMismatch(t *testing.T
 		Principal: domain.Principal{ID: "principal-a", Status: domain.PrincipalStatusActive},
 		TenantID:  "tenant-a", TenantRole: domain.TenantRoleAdmin,
 	}
-	api, mux := humanAuthTestAPI(t, humanAuthenticatorStub{identity: domain.VerifiedIdentity{Subject: "user-a"}}, humanResolverStub{principal: principal}, &humanAuthorizerStub{})
+	api, mux := humanAuthTestAPI(
+		t,
+		humanAuthenticatorStub{identity: domain.VerifiedIdentity{Subject: "user-a"}},
+		humanResolverStub{principal: principal},
+		&humanAuthorizerStub{},
+	)
 	huma.Register(api, huma.Operation{OperationID: "secured", Method: http.MethodGet, Path: "/secured"},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body string }, error) {
 			_, ok := AuthenticatedPrincipalFromContext(ctx)
@@ -73,7 +83,12 @@ func TestHumanAuthentication_RequiresBearerAndRejectsTenantMismatch(t *testing.T
 
 func TestHumanAuthentication_BootstrapCarriesVerifiedIdentityWithoutLocalMapping(t *testing.T) {
 	identity := domain.VerifiedIdentity{Provider: "clerk", Subject: "user-a", ExternalAccountID: "org-a"}
-	api, mux := humanAuthTestAPI(t, humanAuthenticatorStub{identity: identity}, humanResolverStub{err: domain.ErrSessionBootstrapRequired}, &humanAuthorizerStub{})
+	api, mux := humanAuthTestAPI(
+		t,
+		humanAuthenticatorStub{identity: identity},
+		humanResolverStub{err: domain.ErrSessionBootstrapRequired},
+		&humanAuthorizerStub{},
+	)
 	huma.Register(api, huma.Operation{OperationID: "bootstrap", Method: http.MethodPost, Path: "/bootstrap"},
 		func(ctx context.Context, _ *struct{}) (*struct{ Body string }, error) {
 			got, ok := VerifiedIdentityFromContext(ctx)
@@ -89,18 +104,35 @@ func TestHumanAuthentication_BootstrapCarriesVerifiedIdentityWithoutLocalMapping
 	assert.Equal(t, http.StatusOK, response.Code)
 }
 
-func humanAuthTestAPI(t *testing.T, authenticator HumanAuthenticator, resolver HumanIdentityResolver, authorizer HumanAuthorizer) (huma.API, *http.ServeMux) {
+func humanAuthTestAPI(
+	t *testing.T,
+	authenticator HumanAuthenticator,
+	resolver HumanIdentityResolver,
+	authorizer HumanAuthorizer,
+) (huma.API, *http.ServeMux) {
 	t.Helper()
 	mux := http.NewServeMux()
 	config := huma.DefaultConfig("test", "test")
 	config.OpenAPIPath = ""
 	config.DocsPath = ""
 	api := humago.New(mux, config)
-	api.UseMiddleware(HumanAuthentication(api, authenticator, resolver, authorizer, nil, func(operationID string) (HumanOperationPolicy, bool) {
-		if operationID == "bootstrap" {
-			return HumanOperationPolicy{AuthenticationRequired: true, Bootstrap: true}, true
-		}
-		return HumanOperationPolicy{AuthenticationRequired: true, Permission: domain.PermissionAccountRead}, true
-	}))
+	api.UseMiddleware(
+		HumanAuthentication(
+			api,
+			authenticator,
+			resolver,
+			authorizer,
+			nil,
+			func(operationID string) (HumanOperationPolicy, bool) {
+				if operationID == "bootstrap" {
+					return HumanOperationPolicy{AuthenticationRequired: true, Bootstrap: true}, true
+				}
+				return HumanOperationPolicy{
+					AuthenticationRequired: true,
+					Permission:             domain.PermissionAccountRead,
+				}, true
+			},
+		),
+	)
 	return api, mux
 }

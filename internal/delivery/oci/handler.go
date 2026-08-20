@@ -108,12 +108,15 @@ func (h *RegistryHandler) handleManifest(w http.ResponseWriter, r *http.Request,
 
 	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
 	audit := proxyflow.AuditContext{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		Source:        "delivery/oci",
-		UpstreamID:    upstream.ID,
-		Artifact:      artifact,
-		Operation:     "manifest",
+		TenantID:       tenant.ID,
+		OrganizationID: req.OrganizationID,
+		TeamID:         req.TeamID,
+		CredentialID:   req.CredentialID,
+		CorrelationID:  req.RequestID,
+		Source:         "delivery/oci",
+		UpstreamID:     upstream.ID,
+		Artifact:       artifact,
+		Operation:      "manifest",
 	}
 	if err := proxyflow.RecordRequestReceived(
 		r.Context(),
@@ -243,12 +246,15 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		Name:      name,
 		Digest:    digest,
 	}
+	scope := proxyflow.AccessScope(r.Context(), tenant.ID)
 	audit := proxyflow.AuditContext{
-		TenantID:      tenant.ID,
-		CorrelationID: requestID,
-		Source:        "delivery/oci",
-		Artifact:      blobArtifact,
-		Operation:     "blob",
+		TenantID:       tenant.ID,
+		OrganizationID: scope.OrganizationID,
+		TeamID:         scope.TeamID,
+		CorrelationID:  requestID,
+		Source:         "delivery/oci",
+		Artifact:       blobArtifact,
+		Operation:      "blob",
 	}
 	if err := proxyflow.RecordRequestReceived(
 		r.Context(),
@@ -264,7 +270,7 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 		writeOCIError(w, r, "DENIED", "audit logging unavailable", http.StatusInternalServerError)
 		return
 	}
-	if !h.authorizeBlob(w, r, tenant.ID, repo, artifact, audit) {
+	if !h.authorizeBlob(w, r, scope, repo, artifact, audit) {
 		return
 	}
 
@@ -299,15 +305,16 @@ func (h *RegistryHandler) handleBlob(w http.ResponseWriter, r *http.Request, rep
 func (h *RegistryHandler) authorizeBlob(
 	w http.ResponseWriter,
 	r *http.Request,
-	tenantID, repo string,
+	scope domain.AuthorizationScope,
+	repo string,
 	artifact domain.ArtifactIdentity,
 	audit proxyflow.AuditContext,
 ) bool {
-	allowed, err := h.access.HasRecentAllow(r.Context(), tenantID, artifact)
+	allowed, err := h.access.HasRecentAllowInScope(r.Context(), scope, artifact)
 	if err != nil {
 		h.logger.Error("failed to check manifest allow decision",
 			"error", err,
-			"tenant_id", tenantID,
+			"tenant_id", scope.TenantID,
 			"repo", repo,
 		)
 		writeOCIError(w, r, "DENIED", "policy check error", http.StatusInternalServerError)

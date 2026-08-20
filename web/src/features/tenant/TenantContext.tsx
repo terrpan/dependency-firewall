@@ -46,9 +46,19 @@ export function TenantProvider({ children }: PropsWithChildren) {
   const { session, status: authStatus } = useAuth()
   const [storedTenantId, setStoredTenantId] = useState<string | null>(getInitialTenantId)
 
+  const requiresBootstrap = authStatus === 'authenticated' && Boolean(session?.organizationId)
+  const bootstrap = useQuery({
+    queryKey: ['session-bootstrap', session?.organizationId ?? null, session?.user?.id ?? null],
+    queryFn: () => api.session.bootstrap(),
+    enabled: requiresBootstrap,
+    retry: false,
+    staleTime: Infinity,
+  })
+
   const { data, error, isError, isPending, refetch } = useQuery({
-    queryKey: ['tenants', authStatus, session?.user?.id ?? null],
+    queryKey: ['tenants', authStatus, session?.organizationId ?? null, session?.user?.id ?? null],
     queryFn: () => fetchTenants(api),
+    enabled: !requiresBootstrap || bootstrap.isSuccess,
   })
 
   const tenants = data ?? emptyTenants
@@ -78,11 +88,24 @@ export function TenantProvider({ children }: PropsWithChildren) {
   }, [])
 
   const reloadTenants = useCallback(async () => {
+    if (requiresBootstrap) {
+      await bootstrap.refetch()
+    }
     await refetch()
-  }, [refetch])
+  }, [bootstrap, refetch, requiresBootstrap])
 
-  const status = getTenantStatus(tenantId, isPending, isError, tenants.length)
-  const errorMessage = error instanceof Error ? error.message : 'Unable to load tenants right now.'
+  const status = getTenantStatus(
+    tenantId,
+    isPending || bootstrap.isPending,
+    isError || bootstrap.isError,
+    tenants.length,
+  )
+  const errorMessage =
+    bootstrap.error instanceof Error
+      ? bootstrap.error.message
+      : error instanceof Error
+        ? error.message
+        : 'Unable to load tenants right now.'
 
   const value = useMemo(
     () => ({

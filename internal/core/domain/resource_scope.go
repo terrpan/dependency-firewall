@@ -5,6 +5,7 @@ import "fmt"
 // PolicyScope identifies where a policy is owned and applied.
 type PolicyScope string
 
+// PolicyScopeAccount and its sibling constants enumerate the supported values.
 const (
 	PolicyScopeAccount      PolicyScope = "account"
 	PolicyScopeOrganization PolicyScope = "organization"
@@ -13,6 +14,7 @@ const (
 // PolicyWaiverMode controls whether exact-artifact waivers may be approved.
 type PolicyWaiverMode string
 
+// PolicyWaiverNone and its sibling constants enumerate the supported values.
 const (
 	PolicyWaiverNone             PolicyWaiverMode = "none"
 	PolicyWaiverApprovalRequired PolicyWaiverMode = "approval_required"
@@ -21,6 +23,7 @@ const (
 // UpstreamScope identifies an upstream registry's visibility boundary.
 type UpstreamScope string
 
+// UpstreamScopeTenantShared and its sibling constants enumerate the supported values.
 const (
 	UpstreamScopeTenantShared       UpstreamScope = "tenant_shared"
 	UpstreamScopeOrganizationShared UpstreamScope = "organization_shared"
@@ -75,7 +78,10 @@ func (u Upstream) ValidateScope() error {
 	switch u.ScopeKind {
 	case UpstreamScopeTenantShared:
 		if u.OrganizationID != "" || u.TeamID != "" {
-			return fmt.Errorf("%w: Tenant-shared upstream cannot select an Organization or Team", ErrInvalidResourceScope)
+			return fmt.Errorf(
+				"%w: Tenant-shared upstream cannot select an Organization or Team",
+				ErrInvalidResourceScope,
+			)
 		}
 	case UpstreamScopeOrganizationShared:
 		if u.OrganizationID == "" || u.TeamID != "" {

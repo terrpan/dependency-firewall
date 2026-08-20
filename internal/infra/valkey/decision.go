@@ -85,7 +85,11 @@ func (c *DecisionCache) Set(ctx context.Context, decision *domain.Decision, ttl 
 	if decision.DependencyContext != nil {
 		dependencyContextHash = decision.DependencyContext.Normalize().ContextHash
 	}
-	key := decisionKey(decision.TenantID, generation, decision.Artifact, dependencyContextHash)
+	scopeIdentity := dependencyContextHash
+	if decision.OrganizationID != "" || decision.TeamID != "" || decision.UpstreamID != "" {
+		scopeIdentity = decision.OrganizationID + ":" + decision.TeamID + ":" + decision.UpstreamID + ":" + dependencyContextHash
+	}
+	key := decisionKey(decision.TenantID, generation, decision.Artifact, scopeIdentity)
 	cmd := c.client.B().Set().Key(key).Value(valkeygo.BinaryString(data))
 	if ttl > 0 {
 		if err := c.client.Do(ctx, cmd.Px(ttl).Build()).Error(); err != nil {

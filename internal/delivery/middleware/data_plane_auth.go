@@ -21,10 +21,12 @@ type credentialContextKey struct{}
 // credentials against digest-only verifiers carried in the local bundle.
 type DataPlaneCredentialMiddleware struct{ bundles bundleProvider }
 
+// NewDataPlaneCredentialMiddleware constructs a new DataPlaneCredentialMiddleware.
 func NewDataPlaneCredentialMiddleware(bundles bundleProvider) *DataPlaneCredentialMiddleware {
 	return &DataPlaneCredentialMiddleware{bundles: bundles}
 }
 
+// Middleware performs the middleware operation.
 func (m *DataPlaneCredentialMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tenantID := strings.TrimSpace(r.Header.Get("X-Tenant-ID"))
@@ -77,6 +79,7 @@ func presentedCredential(r *http.Request) (string, bool) {
 	return "", false
 }
 
+// CredentialFromContext performs the credential from context operation.
 func CredentialFromContext(ctx context.Context) (domain.DataPlaneCredentialVerifier, bool) {
 	v, ok := ctx.Value(credentialContextKey{}).(domain.DataPlaneCredentialVerifier)
 	return v, ok

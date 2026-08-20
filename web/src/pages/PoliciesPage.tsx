@@ -12,7 +12,7 @@ import {
   type TypedPolicyVersion,
 } from '../lib/api/index.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
-import { useTenantControlPlaneApi } from '../features/tenant/useTenantControlPlaneApi.ts'
+import { useSessionControlPlaneApi } from '../features/auth/useSessionControlPlaneApi.ts'
 import {
   buildPolicyDraftInput,
   buildPolicyDraftPreview,
@@ -43,10 +43,11 @@ import {
 import { buildPolicyDiffLines } from '../features/policies/policyDiff.ts'
 import { useNotifications } from '../features/notifications/useNotifications.ts'
 import {
-  listUpstreams,
+  listScopedUpstreams,
+  scopedUpstreamsQueryKey,
   sortUpstreams,
   upstreamSupportsPolicyType,
-  upstreamsQueryKey,
+  type UpstreamResourceScope,
 } from '../features/upstreams/api.ts'
 import { policyClass } from '../features/policies/styles.ts'
 
@@ -99,7 +100,7 @@ function isValidNumberString(value: string) {
 
 export function PoliciesPage() {
   const queryClient = useQueryClient()
-  const api = useTenantControlPlaneApi()
+  const api = useSessionControlPlaneApi()
   const { notifyError, notifySuccess } = useNotifications()
   const { tenantId } = useTenant()
   const [userSelectedPolicyId, setUserSelectedPolicyId] = useState<string | null>(null)
@@ -115,6 +116,18 @@ export function PoliciesPage() {
   const [draft, setDraft] = useState<PolicyDraftState>(() => createEmptyPolicyDraft())
   const [previewFormat, setPreviewFormat] = useState<PreviewFormat>('json')
   const [diffFormat, setDiffFormat] = useState<PreviewFormat>('json')
+  const [scopeValue, setScopeValue] = useState('account')
+  const organizationsQuery = useQuery({ queryKey: ['organizations'], queryFn: () => api.organizations.list() })
+  const resourceScope = useMemo<UpstreamResourceScope>(
+    () => (scopeValue === 'account' ? { kind: 'account' } : { kind: 'organization', organizationID: scopeValue }),
+    [scopeValue],
+  )
+  const policiesKey = [
+    'scoped-policies',
+    tenantId,
+    resourceScope.kind,
+    resourceScope.kind === 'organization' ? resourceScope.organizationID : null,
+  ] as const
 
   const policyTypesQuery = useQuery({
     queryKey: ['policy-types'],
@@ -123,21 +136,24 @@ export function PoliciesPage() {
 
   const upstreamsQuery = useQuery({
     enabled: Boolean(tenantId),
-    queryKey: upstreamsQueryKey(tenantId),
+    queryKey: scopedUpstreamsQueryKey(tenantId, resourceScope),
     queryFn: ({ signal }) => {
       if (!tenantId) {
         throw new Error('Select a tenant before loading upstreams.')
       }
 
-      return listUpstreams(api, tenantId, signal)
+      return listScopedUpstreams(api, resourceScope, signal)
     },
   })
 
   const policiesQuery = useQuery({
     enabled: Boolean(tenantId),
-    queryKey: ['policies', tenantId],
+    queryKey: policiesKey,
     queryFn: async ({ signal }) => {
-      const policies = await api.policies.list({ signal })
+      const policies =
+        resourceScope.kind === 'account'
+          ? await api.scopedResources.account.policies.list({ signal })
+          : await api.scopedResources.organization(resourceScope.organizationID).policies.list({ signal })
       return policies.map(asTypedPolicy).sort(sortPolicies)
     },
   })
@@ -188,8 +204,8 @@ export function PoliciesPage() {
     [descriptors, upstreams],
   )
   const compatiblePolicyTypes = useMemo(
-    () => (selectedUpstream ? (compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? []) : []),
-    [compatiblePolicyTypesByUpstream, selectedUpstream],
+    () => (selectedUpstream ? (compatiblePolicyTypesByUpstream.get(selectedUpstream.id) ?? []) : descriptors),
+    [compatiblePolicyTypesByUpstream, descriptors, selectedUpstream],
   )
   const compatibleUpstreams = useMemo(() => {
     const selectedPolicyType = draft.type
@@ -230,7 +246,7 @@ export function PoliciesPage() {
 
   const versionsQuery = useQuery({
     enabled: Boolean(tenantId && selectedPolicyId && isHistoryModalOpen && policyDetailTab === 'history'),
-    queryKey: ['policy-versions', tenantId, selectedPolicyId],
+    queryKey: ['policy-versions', tenantId, scopeValue, selectedPolicyId],
     queryFn: async ({ signal }) => {
       const versions = await api.policies.listVersions(selectedPolicyId ?? '', { signal })
 
@@ -277,19 +293,14 @@ export function PoliciesPage() {
     if (upstreamsQuery.isError && upstreams.length === 0) {
       return upstreamsQuery.error.message
     }
-    if (upstreamsQuery.isPending && upstreams.length === 0) {
-      return 'Wait for upstreams to load before saving this policy.'
-    }
-    if (upstreams.length === 0) {
-      return 'Create an upstream before saving policies.'
-    }
-    if (draft.type && compatibleUpstreams.length === 0) {
+    if (draft.type && normalizedDraft.upstreamId.trim() && compatibleUpstreams.length === 0) {
       return 'No upstream matches this policy type and capability profile.'
     }
-    if (!normalizedDraft.upstreamId.trim()) {
-      return 'Choose the upstream this policy applies to.'
-    }
-    if (draft.type && !compatibleUpstreams.some((upstream) => upstream.id === normalizedDraft.upstreamId.trim())) {
+    if (
+      draft.type &&
+      normalizedDraft.upstreamId.trim() &&
+      !compatibleUpstreams.some((upstream) => upstream.id === normalizedDraft.upstreamId.trim())
+    ) {
       return 'Choose an upstream that supports the selected policy type.'
     }
     return null
@@ -301,7 +312,6 @@ export function PoliciesPage() {
     upstreams.length,
     upstreamsQuery.error,
     upstreamsQuery.isError,
-    upstreamsQuery.isPending,
   ])
   const reviewErrors = useMemo(
     () => (scopedPolicyError ? [scopedPolicyError, ...validationErrors] : validationErrors),
@@ -337,12 +347,12 @@ export function PoliciesPage() {
       return
     }
 
-    queryClient.setQueryData<TypedPolicy[]>(['policies', tenantId], (currentPolicies) => {
+    queryClient.setQueryData<TypedPolicy[]>(policiesKey, (currentPolicies) => {
       const nextPolicies = [...(currentPolicies ?? []).filter((policy) => policy.id !== nextPolicy.id), nextPolicy]
       return nextPolicies.sort(sortPolicies)
     })
-    void queryClient.invalidateQueries({ queryKey: ['policies', tenantId] })
-    void queryClient.invalidateQueries({ queryKey: ['policy-versions', tenantId, nextPolicy.id] })
+    void queryClient.invalidateQueries({ queryKey: policiesKey })
+    void queryClient.invalidateQueries({ queryKey: ['policy-versions', tenantId, scopeValue, nextPolicy.id] })
     setUserSelectedPolicyId(nextPolicy.id)
   }
 
@@ -351,11 +361,11 @@ export function PoliciesPage() {
       return
     }
 
-    queryClient.setQueryData<TypedPolicy[]>(['policies', tenantId], (currentPolicies) =>
+    queryClient.setQueryData<TypedPolicy[]>(policiesKey, (currentPolicies) =>
       (currentPolicies ?? []).filter((policy) => policy.id !== policyID),
     )
-    void queryClient.invalidateQueries({ queryKey: ['policies', tenantId] })
-    void queryClient.invalidateQueries({ queryKey: ['policy-versions', tenantId, policyID] })
+    void queryClient.invalidateQueries({ queryKey: policiesKey })
+    void queryClient.invalidateQueries({ queryKey: ['policy-versions', tenantId, scopeValue, policyID] })
     setUserSelectedPolicyId((currentPolicyID) => (currentPolicyID === policyID ? null : currentPolicyID))
   }
 
@@ -366,9 +376,13 @@ export function PoliciesPage() {
       }
 
       const policy = buildPolicyDraftInput(normalizedDraft, selectedDescriptor)
+      const scopedPolicies =
+        resourceScope.kind === 'account'
+          ? api.scopedResources.account.policies
+          : api.scopedResources.organization(resourceScope.organizationID).policies
       const saved = editingPolicyId
-        ? await api.policies.update(editingPolicyId, policy)
-        : await api.policies.create(policy)
+        ? await scopedPolicies.update(editingPolicyId, policy)
+        : await scopedPolicies.create(policy)
       return asTypedPolicy(saved)
     },
     onSuccess: (savedPolicy) => {
@@ -386,7 +400,11 @@ export function PoliciesPage() {
   const togglePolicyMutation = useMutation({
     mutationFn: async ({ policy, enabled }: { policy: TypedPolicy; enabled: boolean }) => {
       const nextDraft = { ...createPolicyDraftFromPolicy(policy), enabled }
-      const updatedPolicy = await api.policies.update(policy.id, buildPolicyDraftInput(nextDraft))
+      const scopedPolicies =
+        resourceScope.kind === 'account'
+          ? api.scopedResources.account.policies
+          : api.scopedResources.organization(resourceScope.organizationID).policies
+      const updatedPolicy = await scopedPolicies.update(policy.id, buildPolicyDraftInput(nextDraft))
       return asTypedPolicy(updatedPolicy)
     },
     onSuccess: (updatedPolicy) => {
@@ -421,12 +439,16 @@ export function PoliciesPage() {
   })
   const policyInUseDeleteMessage = 'policy has recorded evaluations or decisions'
   const deletePolicyMutation = useMutation({
-    mutationFn: async ({ force, policy }: { force?: boolean; policy: TypedPolicy }) => {
+    mutationFn: async ({ policy }: { force?: boolean; policy: TypedPolicy }) => {
       if (!tenantId) {
         throw new Error('Select a tenant before deleting policies.')
       }
 
-      await api.policies.remove(policy.id, { force })
+      const scopedPolicies =
+        resourceScope.kind === 'account'
+          ? api.scopedResources.account.policies
+          : api.scopedResources.organization(resourceScope.organizationID).policies
+      await scopedPolicies.remove(policy.id)
       return policy
     },
     onSuccess: (deletedPolicy) => {
@@ -467,10 +489,10 @@ export function PoliciesPage() {
   const isEditingPolicy = editingPolicyId !== null
   const hasCreateDraftInProgress =
     !isEditingPolicy && (draft.type !== null || draft.name.trim().length > 0 || wizardStep > 0)
-  const canOpenCreateModal = Boolean(tenantId) && !upstreamsQuery.isPending && upstreams.length > 0
+  const canOpenCreateModal = Boolean(tenantId)
   const canAdvanceWizard =
     wizardStep < policyWizardSteps.length - 1 &&
-    (wizardStep === 0 ? Boolean(normalizedDraft.upstreamId.trim()) : wizardStep === 1 ? Boolean(draft.type) : true)
+    (wizardStep === 0 ? true : wizardStep === 1 ? Boolean(draft.type) : true)
 
   async function refreshAll() {
     await Promise.all([
@@ -505,6 +527,16 @@ export function PoliciesPage() {
 
   function handleUpstreamSelect(upstreamId: string) {
     setDraft((currentDraft) => {
+      if (!upstreamId) {
+        return {
+          ...currentDraft,
+          upstreamId: '',
+          targetEnabled: false,
+          targetDependencyScopes: [],
+          targetDependencyTypes: [],
+          targetOnUnknown: 'warn' as const,
+        }
+      }
       if (currentDraft.upstreamId === upstreamId) {
         return currentDraft
       }
@@ -641,9 +673,7 @@ export function PoliciesPage() {
     const nextErrors: Partial<Record<PolicyDraftFieldErrorKey, string>> = {}
 
     if (step === 0) {
-      if (!normalizedDraft.upstreamId.trim()) {
-        nextErrors.upstreamId = 'Choose the upstream this policy applies to.'
-      } else if (!selectedUpstream) {
+      if (normalizedDraft.upstreamId.trim() && !selectedUpstream) {
         nextErrors.upstreamId = 'Choose an upstream that is available in this tenant.'
       }
     }
@@ -828,9 +858,22 @@ export function PoliciesPage() {
       <PageHeader
         eyebrow="Policy control plane"
         title="Policies"
-        summary="See what each rule does, where it applies, and whether it is enforcing."
+        summary="Manage account-wide rules or rules inherited only by a selected local Organization."
         actions={
           <>
+            <select
+              aria-label="Policy scope"
+              className={policyClass('policies-scope-select')}
+              onChange={(event) => setScopeValue(event.target.value)}
+              value={scopeValue}
+            >
+              <option value="account">Account policies</option>
+              {organizationsQuery.data?.map((organization) => (
+                <option key={organization.id} value={organization.id}>
+                  Organization: {organization.name}
+                </option>
+              ))}
+            </select>
             <span className={policyClass('status-pill status-pill-neutral')}>{policies.length} policies</span>
             <span
               className={policyClass(

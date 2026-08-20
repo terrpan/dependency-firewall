@@ -55,20 +55,23 @@ const (
 
 // AuditEvent is an append-only structured audit record.
 type AuditEvent struct {
-	ID            string
-	TenantID      string
-	CorrelationID string
-	EventType     AuditEventType
-	Source        string
-	EntityType    string
-	EntityID      string
-	UpstreamID    string
-	PolicyID      string
-	Outcome       DecisionOutcome
-	Artifact      ArtifactIdentity
-	Message       string
-	Payload       map[string]any
-	CreatedAt     time.Time
+	ID             string
+	TenantID       string
+	OrganizationID string
+	TeamID         string
+	CredentialID   string
+	CorrelationID  string
+	EventType      AuditEventType
+	Source         string
+	EntityType     string
+	EntityID       string
+	UpstreamID     string
+	PolicyID       string
+	Outcome        DecisionOutcome
+	Artifact       ArtifactIdentity
+	Message        string
+	Payload        map[string]any
+	CreatedAt      time.Time
 }
 
 // AuditEventFilter scopes tenant-aware audit queries.

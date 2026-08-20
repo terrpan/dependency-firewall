@@ -91,7 +91,9 @@ export const upstreamNameExamples: Record<UpstreamEcosystem, string> = {
   oci: 'docker-hub',
 }
 
-type UpstreamsApi = Pick<ControlPlaneApi, 'upstreams'>
+type UpstreamsApi = Pick<ControlPlaneApi, 'upstreams' | 'scopedResources'>
+
+export type UpstreamResourceScope = { kind: 'account' } | { kind: 'organization'; organizationID: string }
 
 export function upstreamsQueryKey(tenantId: string | null) {
   return ['upstreams', tenantId] as const
@@ -116,6 +118,41 @@ export function listUpstreams(api: UpstreamsApi, tenantId: string, signal?: Abor
 
 export function createUpstream(api: UpstreamsApi, tenantId: string, body: CreateUpstreamRequest): Promise<Upstream> {
   return api.upstreams.create(body, { tenantId })
+}
+
+export function scopedUpstreamsQueryKey(tenantID: string | null, scope: UpstreamResourceScope) {
+  return [
+    'scoped-upstreams',
+    tenantID,
+    scope.kind,
+    scope.kind === 'organization' ? scope.organizationID : null,
+  ] as const
+}
+
+export function listScopedUpstreams(
+  api: UpstreamsApi,
+  scope: UpstreamResourceScope,
+  signal?: AbortSignal,
+): Promise<Upstream[]> {
+  return scope.kind === 'account'
+    ? api.scopedResources.account.upstreams.list({ signal })
+    : api.scopedResources.organization(scope.organizationID).upstreams.list({ signal })
+}
+
+export function createScopedUpstream(
+  api: UpstreamsApi,
+  scope: UpstreamResourceScope,
+  body: CreateUpstreamRequest,
+): Promise<Upstream> {
+  return scope.kind === 'account'
+    ? api.scopedResources.account.upstreams.create(body)
+    : api.scopedResources.organization(scope.organizationID).upstreams.create(body)
+}
+
+export function removeScopedUpstream(api: UpstreamsApi, scope: UpstreamResourceScope, id: string): Promise<void> {
+  return scope.kind === 'account'
+    ? api.scopedResources.account.upstreams.remove(id)
+    : api.scopedResources.organization(scope.organizationID).upstreams.remove(id)
 }
 
 function isUpstreamEcosystem(value: string): value is UpstreamEcosystem {

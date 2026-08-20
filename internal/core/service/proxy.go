@@ -167,7 +167,7 @@ func (s *AccessService) preparePolicySet(
 ) (*preparedPolicySet, *domain.Decision, error) {
 	parentSpan := trace.SpanFromContext(ctx)
 	policiesCtx, policiesSpan := serviceTracer().Start(ctx, "access.load_policies")
-	policies, err := s.policies.ListByTenant(policiesCtx, req.TenantID)
+	policies, err := s.effectivePolicies(policiesCtx, req)
 	if err != nil {
 		recordSpanError(policiesSpan, err)
 		policiesSpan.End()
@@ -245,6 +245,10 @@ func (s *AccessService) evaluatePolicies(
 	evaluateSpan.End()
 
 	decision.PolicyHash = policySet.hash
+	decision.OrganizationID = req.OrganizationID
+	decision.TeamID = req.TeamID
+	decision.UpstreamID = req.Upstream.ID
+	decision.CredentialID = req.CredentialID
 	if req.DependencyContext != nil {
 		dependencyContext := req.DependencyContext.Normalize()
 		decision.DependencyContext = &dependencyContext
@@ -304,6 +308,20 @@ func (s *AccessService) evaluatePolicies(
 	}
 
 	return &decision, nil
+}
+
+func (s *AccessService) effectivePolicies(ctx context.Context, req domain.AccessRequest) ([]domain.Policy, error) {
+	if scoped, ok := s.policies.(port.ScopedPolicyRepository); ok {
+		return scoped.ListEffective(ctx, domain.AuthorizationScope{
+			TenantID:       req.TenantID,
+			OrganizationID: req.OrganizationID,
+			TeamID:         req.TeamID,
+		})
+	}
+	if req.OrganizationID != "" || req.TeamID != "" {
+		return nil, fmt.Errorf("scoped policy repository required for credential-bound request")
+	}
+	return s.policies.ListByTenant(ctx, req.TenantID)
 }
 
 func (s *AccessService) finalizeDecision(
@@ -396,4 +414,29 @@ func (s *AccessService) HasRecentAllow(
 	artifact domain.ArtifactIdentity,
 ) (bool, error) {
 	return s.decisions.HasRecentAllow(ctx, tenantID, artifact.Ecosystem, artifact.Namespace, artifact.Name)
+}
+
+type scopedRecentAllowRepository interface {
+	HasRecentAllowInScope(
+		ctx context.Context,
+		scope domain.AuthorizationScope,
+		ecosystem domain.EcosystemType,
+		namespace, name string,
+	) (bool, error)
+}
+
+// HasRecentAllowInScope prevents OCI blob authorization from reusing a
+// manifest allow recorded by another Organization, Team, or upstream.
+func (s *AccessService) HasRecentAllowInScope(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	artifact domain.ArtifactIdentity,
+) (bool, error) {
+	if scope.OrganizationID == "" && scope.TeamID == "" {
+		return s.HasRecentAllow(ctx, scope.TenantID, artifact)
+	}
+	if scoped, ok := s.decisions.(scopedRecentAllowRepository); ok {
+		return scoped.HasRecentAllowInScope(ctx, scope, artifact.Ecosystem, artifact.Namespace, artifact.Name)
+	}
+	return false, fmt.Errorf("scoped decision repository required for credential-bound request")
 }

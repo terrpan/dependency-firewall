@@ -8,13 +8,13 @@ import (
 
 type policyRequest struct {
 	UpstreamID    *string                 `json:"upstream_id,omitempty"`
-	WaiverMode    domain.PolicyWaiverMode `json:"waiver_mode,omitempty" enum:"none,approval_required"`
-	Name          string                  `json:"name,omitempty" validate:"notblank"`
-	Type          domain.PolicyType       `json:"type,omitempty" validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag scorecard license license_allowlist allowlist namespace_allowlist blocklist"`
-	Action        domain.PolicyAction     `json:"action,omitempty" validate:"required,oneof=allow deny"`
-	SchemaVersion int                     `json:"schema_version,omitempty" validate:"required,gte=1"`
+	WaiverMode    domain.PolicyWaiverMode `json:"waiver_mode,omitempty"    enum:"none,approval_required"`
+	Name          string                  `json:"name,omitempty"                                         validate:"notblank"`
+	Type          domain.PolicyType       `json:"type,omitempty"                                         validate:"required,oneof=cvss_threshold minimum_age maximum_age block_mutable_tag scorecard license license_allowlist allowlist namespace_allowlist blocklist"`
+	Action        domain.PolicyAction     `json:"action,omitempty"                                       validate:"required,oneof=allow deny"`
+	SchemaVersion int                     `json:"schema_version,omitempty"                               validate:"required,gte=1"`
 	Target        *domain.PolicyTarget    `json:"target,omitempty"`
-	Config        json.RawMessage         `json:"config,omitempty" validate:"required"`
+	Config        json.RawMessage         `json:"config,omitempty"                                       validate:"required"`
 	Priority      int                     `json:"priority,omitempty"`
 	Enabled       bool                    `json:"enabled,omitempty"`
 }

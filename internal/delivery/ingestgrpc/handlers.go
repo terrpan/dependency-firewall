@@ -70,7 +70,25 @@ func (s *Server) HasRecentAllow(ctx context.Context, req *HasRecentAllowRequest)
 	if req == nil || strings.TrimSpace(req.TenantID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "tenant_id is required")
 	}
-	allowed, err := s.service.HasRecentAllow(ctx, req.TenantID, req.Ecosystem, req.Namespace, req.Name)
+	var allowed bool
+	var err error
+	if strings.TrimSpace(req.OrganizationID) != "" {
+		scoped, ok := s.service.(interface {
+			HasRecentAllowInScope(context.Context, domain.AuthorizationScope, domain.EcosystemType, string, string) (bool, error)
+		})
+		if !ok {
+			return nil, status.Error(codes.FailedPrecondition, "scoped decision repository required")
+		}
+		allowed, err = scoped.HasRecentAllowInScope(
+			ctx,
+			domain.AuthorizationScope{TenantID: req.TenantID, OrganizationID: req.OrganizationID, TeamID: req.TeamID},
+			req.Ecosystem,
+			req.Namespace,
+			req.Name,
+		)
+	} else {
+		allowed, err = s.service.HasRecentAllow(ctx, req.TenantID, req.Ecosystem, req.Namespace, req.Name)
+	}
 	if err != nil {
 		return nil, toStatusError(err)
 	}

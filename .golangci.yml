@@ -61,6 +61,12 @@ linters:
         linters:
           - revive
 
+      # Scoped CRUD route registration in the API delivery layer is mechanical
+      # boilerplate; the summaries, operation IDs, and paths differ each time.
+      - path: "internal/delivery/api/scoped_resources.go"
+        linters:
+          - dupl
+
       # Transport translation layers are mechanical request/response DTOs and
       # thin handler wrappers. Requiring doc comments on each field-mapping
       # type adds noise without adding meaning; the contract they mirror is

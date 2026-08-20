@@ -31,7 +31,9 @@ func (s identityPrincipalGetterStub) GetByIdentity(context.Context, string, stri
 func TestIdentityService_Resolve(t *testing.T) {
 	resolver := NewIdentityService(
 		identityLinkGetterStub{link: &domain.TenantIdentityLink{TenantID: "tenant-a"}},
-		identityPrincipalGetterStub{principal: &domain.Principal{ID: "principal-a", Status: domain.PrincipalStatusActive}},
+		identityPrincipalGetterStub{
+			principal: &domain.Principal{ID: "principal-a", Status: domain.PrincipalStatusActive},
+		},
 	)
 
 	principal, err := resolver.Resolve(context.Background(), domain.VerifiedIdentity{
@@ -56,15 +58,24 @@ type bootstrapDirectoryStub struct {
 	role    domain.TenantRole
 }
 
-func (s bootstrapDirectoryStub) BootstrapRequest(context.Context, domain.VerifiedIdentity) (domain.SessionBootstrapRequest, domain.TenantRole, error) {
+func (s bootstrapDirectoryStub) BootstrapRequest(
+	context.Context,
+	domain.VerifiedIdentity,
+) (domain.SessionBootstrapRequest, domain.TenantRole, error) {
 	return s.request, s.role, nil
 }
 
 type bootstrapStoreStub struct{ calls int }
 
-func (s *bootstrapStoreStub) Bootstrap(_ context.Context, request domain.SessionBootstrapRequest) (*domain.SessionBootstrapResult, error) {
+func (s *bootstrapStoreStub) Bootstrap(
+	_ context.Context,
+	request domain.SessionBootstrapRequest,
+) (*domain.SessionBootstrapResult, error) {
 	s.calls++
-	return &domain.SessionBootstrapResult{Tenant: domain.Tenant{ID: "tenant-a"}, Principal: domain.Principal{ID: "principal-a"}}, nil
+	return &domain.SessionBootstrapResult{
+		Tenant:    domain.Tenant{ID: "tenant-a"},
+		Principal: domain.Principal{ID: "principal-a"},
+	}, nil
 }
 
 func TestSessionBootstrapServiceRejectsProviderScopeSubstitution(t *testing.T) {

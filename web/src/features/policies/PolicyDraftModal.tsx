@@ -264,6 +264,19 @@ export function PolicyDraftModal({
 
             {upstreams.length > 0 ? (
               <div className={policyClass('policy-type-grid')}>
+                <button
+                  className={policyClass('policy-type-card', !normalizedDraft.upstreamId.trim() && 'selected')}
+                  onClick={() => onUpstreamSelect('')}
+                  type="button"
+                >
+                  <div className={policyClass('policy-type-card-header')}>
+                    <strong>All upstreams in this scope</strong>
+                    <span className={policyClass('policy-badge policy-badge-info')}>BASELINE</span>
+                  </div>
+                  <p className={policyClass('muted')}>
+                    Applies to every current and future upstream in the selected scope.
+                  </p>
+                </button>
                 {upstreams.map((upstream) => {
                   const isSelected = upstream.id === normalizedDraft.upstreamId.trim()
                   const compatibleDescriptorsForUpstream = compatiblePolicyTypesByUpstream.get(upstream.id) ?? []
@@ -311,10 +324,9 @@ export function PolicyDraftModal({
 
             {!upstreamsIsPending && upstreams.length === 0 ? (
               <section className={policyClass('policy-summary-card')}>
-                <h4>Create an upstream first</h4>
+                <h4>Scope-wide baseline policy</h4>
                 <p className={policyClass('muted')}>
-                  Policies are scoped to an upstream in the firewall, so add an npm or OCI upstream before creating this
-                  rule.
+                  This policy will apply to every upstream in the selected scope, including ones added later.
                 </p>
               </section>
             ) : null}
@@ -339,6 +351,14 @@ export function PolicyDraftModal({
                 </div>
               </section>
             ) : null}
+            {!selectedUpstream ? (
+              <section className={policyClass('policy-summary-card policy-summary-card-compact')}>
+                <h4>All upstreams in this scope</h4>
+                <p className={policyClass('muted')}>
+                  Choose a policy type for the baseline that every upstream inherits.
+                </p>
+              </section>
+            ) : null}
 
             {draftFieldErrors.type ? (
               <section className={policyClass('policy-error-panel')}>
@@ -347,7 +367,7 @@ export function PolicyDraftModal({
               </section>
             ) : null}
 
-            {selectedUpstream && compatiblePolicyTypes.length > 0 ? (
+            {compatiblePolicyTypes.length > 0 ? (
               <div className={policyClass('policy-type-grid')}>
                 {compatiblePolicyTypes.map((descriptor) => {
                   const descriptorType = descriptor.type as PolicyType

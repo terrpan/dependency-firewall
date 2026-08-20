@@ -169,7 +169,18 @@ func (b Bundle) ToDomain() (*domain.TenantBundle, error) {
 	}
 	for i := range b.Credentials {
 		c := b.Credentials[i]
-		result.Credentials = append(result.Credentials, domain.DataPlaneCredentialVerifier{ID: c.ID, TenantID: c.TenantID, OrganizationID: c.OrganizationID, TeamID: c.TeamID, SecretDigest: c.SecretDigest, ExpiresAt: c.ExpiresAt, RevokedAt: c.RevokedAt})
+		result.Credentials = append(
+			result.Credentials,
+			domain.DataPlaneCredentialVerifier{
+				ID:             c.ID,
+				TenantID:       c.TenantID,
+				OrganizationID: c.OrganizationID,
+				TeamID:         c.TeamID,
+				SecretDigest:   c.SecretDigest,
+				ExpiresAt:      c.ExpiresAt,
+				RevokedAt:      c.RevokedAt,
+			},
+		)
 	}
 
 	return result, nil

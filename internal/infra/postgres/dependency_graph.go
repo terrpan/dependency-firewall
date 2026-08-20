@@ -301,7 +301,8 @@ func insertDependencyGraphNodes(
 		node.RootID = rootID
 		depTypes := dependencyTypeStrings(node.DependencyTypes)
 		var nodeID string
-		err := tx.QueryRow(ctx,
+		err := tx.QueryRow(
+			ctx,
 			`INSERT INTO dependency_graph_nodes (tenant_id, upstream_id, root_id, ecosystem, namespace, name, version, digest, min_depth, dependency_types)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 			 RETURNING id`,
@@ -351,11 +352,17 @@ func insertDependencyGraphEdges(
 		if !ok {
 			return fmt.Errorf("inserting dependency graph edge: child node %q not found", edge.ChildNodeID)
 		}
-		if _, err := tx.Exec(ctx,
+		if _, err := tx.Exec(
+			ctx,
 			`INSERT INTO dependency_graph_edges (tenant_id, upstream_id, root_id, parent_node_id, child_node_id, dependency_type)
 			 VALUES ($1, $2, $3, $4, $5, $6)
 			 ON CONFLICT (root_id, parent_node_id, child_node_id, dependency_type) DO NOTHING`,
-			req.TenantID, req.Upstream.ID, rootID, parentID, childID, edge.DependencyType,
+			req.TenantID,
+			req.Upstream.ID,
+			rootID,
+			parentID,
+			childID,
+			edge.DependencyType,
 		); err != nil {
 			return fmt.Errorf("inserting dependency graph edge: %w", err)
 		}
@@ -408,13 +415,17 @@ func (r *DependencyGraphRepository) LookupContext(
 		`SELECT context
 		 FROM dependency_context_summaries
 		 WHERE tenant_id = $1
-		   AND upstream_id = $2
-		   AND ecosystem = $3
-		   AND namespace = $4
-		   AND name = $5
-		   AND version = $6
-		   AND digest = $7`,
+		   AND organization_id = NULLIF($2, '')::uuid
+		   AND team_id IS NOT DISTINCT FROM NULLIF($3, '')::uuid
+		   AND upstream_id = $4
+		   AND ecosystem = $5
+		   AND namespace = $6
+		   AND name = $7
+		   AND version = $8
+		   AND digest = $9`,
 		key.TenantID,
+		key.OrganizationID,
+		key.TeamID,
 		key.UpstreamID,
 		key.Artifact.Ecosystem,
 		key.Artifact.Namespace,

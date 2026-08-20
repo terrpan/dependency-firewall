@@ -36,9 +36,12 @@ func (r *AuditEventRepository) Record(ctx context.Context, event *domain.AuditEv
 
 	if _, err := r.pool.Exec(
 		ctx,
-		`INSERT INTO audit_events (tenant_id, event_type, entity_type, entity_id, payload, created_at)
-		 VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+		`INSERT INTO audit_events (tenant_id, organization_id, team_id, upstream_id, event_type, entity_type, entity_id, payload, created_at)
+		 VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8::jsonb, $9)`,
 		event.TenantID,
+		event.OrganizationID,
+		event.TeamID,
+		event.UpstreamID,
 		string(event.EventType),
 		nullableAuditString(event.EntityType),
 		entityID,

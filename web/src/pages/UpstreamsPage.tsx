@@ -3,19 +3,21 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { useSearchParams } from 'react-router-dom'
 import { useNotifications } from '../features/notifications/useNotifications.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
-import { useTenantControlPlaneApi } from '../features/tenant/useTenantControlPlaneApi.ts'
+import { useSessionControlPlaneApi } from '../features/auth/useSessionControlPlaneApi.ts'
 import {
   createEmptyUpstreamDraft,
-  createUpstream,
-  listUpstreams,
+  createScopedUpstream,
+  listScopedUpstreams,
+  removeScopedUpstream,
+  scopedUpstreamsQueryKey,
   sortUpstreams,
   upstreamEcosystemSupportsAuth,
-  upstreamsQueryKey,
   validateUpstreamDraft,
   type UpstreamCapability,
   type UpstreamDraft,
   type UpstreamDraftErrors,
   type UpstreamEcosystem,
+  type UpstreamResourceScope,
 } from '../features/upstreams/api.ts'
 import { CreateUpstreamModal } from '../features/upstreams/CreateUpstreamModal.tsx'
 import { UpstreamDetailsPanel, UpstreamUsagePanel, UpstreamsListPanel } from '../features/upstreams/components.tsx'
@@ -45,7 +47,7 @@ type UpstreamsPageContentProps = {
 }
 
 function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProps) {
-  const api = useTenantControlPlaneApi()
+  const api = useSessionControlPlaneApi()
   const { notifyError, notifySuccess } = useNotifications()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
@@ -55,18 +57,25 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
   const [createStep, setCreateStep] = useState(0)
   const [copiedUsageKey, setCopiedUsageKey] = useState<string | null>(null)
   const [copyErrorMessage, setCopyErrorMessage] = useState<string | null>(null)
+  const [scopeValue, setScopeValue] = useState('account')
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const copyResetTimerRef = useRef<number | null>(null)
 
+  const organizationsQuery = useQuery({ queryKey: ['organizations'], queryFn: () => api.organizations.list() })
+  const resourceScope = useMemo<UpstreamResourceScope>(
+    () => (scopeValue === 'account' ? { kind: 'account' } : { kind: 'organization', organizationID: scopeValue }),
+    [scopeValue],
+  )
+
   const upstreamsQuery = useQuery({
-    queryKey: upstreamsQueryKey(tenantId),
+    queryKey: scopedUpstreamsQueryKey(tenantId, resourceScope),
     queryFn: ({ signal }) => {
       if (!tenantId) {
         throw new Error('Select a tenant before loading upstreams.')
       }
 
-      return listUpstreams(api, tenantId, signal)
+      return listScopedUpstreams(api, resourceScope, signal)
     },
     enabled: Boolean(tenantId),
   })
@@ -129,21 +138,24 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
         throw new Error('Please fix the validation errors and try again.')
       }
 
-      return createUpstream(api, tenantId, validation.value)
+      return createScopedUpstream(api, resourceScope, validation.value)
     },
     onSuccess: async (createdUpstream) => {
-      queryClient.setQueryData<Upstream[]>(upstreamsQueryKey(tenantId), (current) =>
+      queryClient.setQueryData<Upstream[]>(scopedUpstreamsQueryKey(tenantId, resourceScope), (current) =>
         sortUpstreams(
           [...(current ?? []), createdUpstream].filter(
             (upstream, index, items) => items.findIndex((item) => item.id === upstream.id) === index,
           ),
         ),
       )
-      await queryClient.invalidateQueries({ queryKey: upstreamsQueryKey(tenantId) })
+      await queryClient.invalidateQueries({ queryKey: scopedUpstreamsQueryKey(tenantId, resourceScope) })
       setSelectedUpstreamId(createdUpstream.id)
       setDraft(createEmptyUpstreamDraft(createdUpstream.ecosystem as UpstreamEcosystem))
       setDraftErrors({})
-      notifySuccess('Upstream created', `${createdUpstream.name} is now configured for this tenant.`)
+      notifySuccess(
+        'Upstream created',
+        `${createdUpstream.name} is now configured for this ${resourceScope.kind === 'account' ? 'account' : 'Organization'}.`,
+      )
       setCreateStep(0)
       setIsCreateModalOpen(false)
     },
@@ -154,14 +166,14 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
         throw new Error('Select a tenant before deleting an upstream.')
       }
 
-      await api.upstreams.remove(upstream.id, { tenantId })
+      await removeScopedUpstream(api, resourceScope, upstream.id)
       return upstream
     },
     onSuccess: async (deletedUpstream) => {
       const remainingUpstreams = sortUpstreams(upstreams.filter((upstream) => upstream.id !== deletedUpstream.id))
 
-      queryClient.setQueryData<Upstream[]>(upstreamsQueryKey(tenantId), remainingUpstreams)
-      await queryClient.invalidateQueries({ queryKey: upstreamsQueryKey(tenantId) })
+      queryClient.setQueryData<Upstream[]>(scopedUpstreamsQueryKey(tenantId, resourceScope), remainingUpstreams)
+      await queryClient.invalidateQueries({ queryKey: scopedUpstreamsQueryKey(tenantId, resourceScope) })
       setSelectedUpstreamId(remainingUpstreams[0]?.id ?? null)
       notifySuccess('Upstream deleted', `${deletedUpstream.name} has been removed.`)
     },
@@ -273,12 +285,25 @@ function UpstreamsPageContent({ tenantId, tenantName }: UpstreamsPageContentProp
         title="Upstreams"
         summary={
           <>
-            Connect package sources for {tenantName ?? 'this tenant'}, then copy the client setup that routes installs
-            through the firewall.
+            Connect package sources for {tenantName ?? 'this account'}, then choose whether the source is shared across
+            the account or only one Organization.
           </>
         }
         actions={
           <>
+            <select
+              aria-label="Upstream scope"
+              className={upstreamClass('upstreams-scope-select')}
+              onChange={(event) => setScopeValue(event.target.value)}
+              value={scopeValue}
+            >
+              <option value="account">Account shared</option>
+              {organizationsQuery.data?.map((organization) => (
+                <option key={organization.id} value={organization.id}>
+                  Organization: {organization.name}
+                </option>
+              ))}
+            </select>
             <span className={upstreamClass('status-pill status-pill-neutral')}>
               {upstreamsQuery.isPending
                 ? 'Loading sources'

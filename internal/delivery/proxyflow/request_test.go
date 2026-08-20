@@ -2,6 +2,8 @@ package proxyflow
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +12,53 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
+
+type credentialBundleStub struct{ bundle *domain.TenantBundle }
+
+func (b credentialBundleStub) GetTenantBundle(context.Context, string) (*domain.TenantBundle, error) {
+	return b.bundle, nil
+}
+
+type scopedUpstreamRepoStub struct {
+	upstreamRepoStub
+	visibleByEcosystem *domain.Upstream
+	lastScope          domain.AuthorizationScope
+}
+
+func (s *scopedUpstreamRepoStub) GetVisibleByID(
+	_ context.Context,
+	scope domain.AuthorizationScope,
+	id string,
+) (*domain.Upstream, error) {
+	s.lastScope = scope
+	if s.byID == nil || s.byID.ID != id {
+		return nil, domain.ErrUpstreamNotFound
+	}
+	return s.byID, nil
+}
+
+func (s *scopedUpstreamRepoStub) ListVisible(
+	_ context.Context,
+	scope domain.AuthorizationScope,
+) ([]domain.Upstream, error) {
+	s.lastScope = scope
+	if s.visibleByEcosystem == nil {
+		return []domain.Upstream{}, nil
+	}
+	return []domain.Upstream{*s.visibleByEcosystem}, nil
+}
+
+func (s *scopedUpstreamRepoStub) ResolveVisibleByEcosystem(
+	_ context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+) (*domain.Upstream, error) {
+	s.lastScope = scope
+	if s.visibleByEcosystem == nil || s.visibleByEcosystem.Ecosystem != ecosystem {
+		return nil, domain.ErrUpstreamNotFound
+	}
+	return s.visibleByEcosystem, nil
+}
 
 type upstreamRepoStub struct {
 	byID               *domain.Upstream
@@ -146,5 +195,51 @@ func TestNewAccessRequest_UsesContextRequestID(t *testing.T) {
 	}
 	if built.Timestamp.Before(before) {
 		t.Fatalf("unexpected timestamp: %s", built.Timestamp)
+	}
+}
+
+func TestCredentialScopeControlsUpstreamAndAccessRequest(t *testing.T) {
+	t.Parallel()
+
+	secret := "scope-bound-secret"
+	digest := sha256.Sum256([]byte(secret))
+	credential := domain.DataPlaneCredentialVerifier{
+		ID:             "credential-1",
+		TenantID:       "tenant-1",
+		OrganizationID: "organization-1",
+		TeamID:         "team-1",
+		SecretDigest:   hex.EncodeToString(digest[:]),
+	}
+	repo := &scopedUpstreamRepoStub{
+		visibleByEcosystem: &domain.Upstream{ID: "team-upstream", Ecosystem: domain.EcosystemNPM},
+	}
+	var accessRequest domain.AccessRequest
+	middlewareHandler := middleware.NewDataPlaneCredentialMiddleware(credentialBundleStub{
+		bundle: &domain.TenantBundle{Credentials: []domain.DataPlaneCredentialVerifier{credential}},
+	}).Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		upstream, err := ResolveUpstream(r.Context(), repo, "tenant-1", domain.EcosystemNPM)
+		if err != nil {
+			t.Errorf("ResolveUpstream() error = %v", err)
+			return
+		}
+		accessRequest = NewAccessRequest(
+			r.Context(),
+			"tenant-1",
+			*upstream,
+			domain.ArtifactIdentity{Ecosystem: domain.EcosystemNPM, Name: "pkg", Version: "1.0.0"},
+		)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/npm/pkg", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-1")
+	req.Header.Set("Authorization", "Bearer "+secret)
+	middlewareHandler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if repo.lastScope != (domain.AuthorizationScope{TenantID: "tenant-1", OrganizationID: "organization-1", TeamID: "team-1"}) {
+		t.Fatalf("upstream resolved with wrong scope: %#v", repo.lastScope)
+	}
+	if accessRequest.OrganizationID != "organization-1" || accessRequest.TeamID != "team-1" ||
+		accessRequest.CredentialID != "credential-1" {
+		t.Fatalf("access request did not retain credential scope: %#v", accessRequest)
 	}
 }

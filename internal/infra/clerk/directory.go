@@ -37,6 +37,7 @@ type Directory struct {
 	timeout       time.Duration
 }
 
+// NewDirectory constructs a new Directory.
 func NewDirectory(secretKey string, client *http.Client) *Directory {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -50,7 +51,11 @@ func NewDirectory(secretKey string, client *http.Client) *Directory {
 	}
 }
 
-func (d *Directory) BootstrapRequest(ctx context.Context, identity domain.VerifiedIdentity) (domain.SessionBootstrapRequest, domain.TenantRole, error) {
+// BootstrapRequest performs the bootstrap request operation.
+func (d *Directory) BootstrapRequest(
+	ctx context.Context,
+	identity domain.VerifiedIdentity,
+) (domain.SessionBootstrapRequest, domain.TenantRole, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
 
@@ -73,13 +78,18 @@ func (d *Directory) BootstrapRequest(ctx context.Context, identity domain.Verifi
 	}, role, nil
 }
 
+// FreshTenantRole performs the fresh tenant role operation.
 func (d *Directory) FreshTenantRole(ctx context.Context, identity domain.VerifiedIdentity) (domain.TenantRole, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
 	return d.freshTenantRole(ctx, identity)
 }
 
-func (d *Directory) VerifyTenantMembership(ctx context.Context, provider, externalAccountID, externalSubject string) error {
+// VerifyTenantMembership performs the verify tenant membership operation.
+func (d *Directory) VerifyTenantMembership(
+	ctx context.Context,
+	provider, externalAccountID, externalSubject string,
+) error {
 	if provider != Provider {
 		return domain.ErrUnauthorized
 	}
@@ -113,7 +123,9 @@ func (d *Directory) freshTenantRole(ctx context.Context, identity domain.Verifie
 }
 
 func displayName(principal *clerksdk.User) string {
-	name := strings.TrimSpace(strings.TrimSpace(stringValue(principal.FirstName)) + " " + strings.TrimSpace(stringValue(principal.LastName)))
+	name := strings.TrimSpace(
+		strings.TrimSpace(stringValue(principal.FirstName)) + " " + strings.TrimSpace(stringValue(principal.LastName)),
+	)
 	if name != "" {
 		return name
 	}

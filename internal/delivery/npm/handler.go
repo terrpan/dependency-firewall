@@ -148,12 +148,15 @@ func (h *RegistryHandler) startNPMRequest(
 	req := proxyflow.NewAccessRequest(r.Context(), tenant.ID, *upstream, artifact)
 	req.Kind = kind
 	audit := proxyflow.AuditContext{
-		TenantID:      tenant.ID,
-		CorrelationID: req.RequestID,
-		Source:        "delivery/npm",
-		UpstreamID:    upstream.ID,
-		Artifact:      artifact,
-		Operation:     operation,
+		TenantID:       tenant.ID,
+		OrganizationID: req.OrganizationID,
+		TeamID:         req.TeamID,
+		CredentialID:   req.CredentialID,
+		CorrelationID:  req.RequestID,
+		Source:         "delivery/npm",
+		UpstreamID:     upstream.ID,
+		Artifact:       artifact,
+		Operation:      operation,
 	}
 	if err := proxyflow.RecordRequestReceived(
 		r.Context(),

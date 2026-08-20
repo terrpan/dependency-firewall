@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
@@ -29,10 +31,103 @@ func registerControlPlaneRoutes(
 	info BuildInfo,
 ) error {
 	if cfg.Auth.Mode == "" || cfg.Auth.Mode == "disabled" {
-		logger.Error("SECURITY: human control-plane authentication is disabled; compatibility mode must not be exposed publicly")
+		logger.Error(
+			"SECURITY: human control-plane authentication is disabled; compatibility mode must not be exposed publicly",
+		)
 	}
 	controlPlaneAPI := apidelivery.NewControlPlaneAPI(mux, info.Version)
+	apidelivery.NewHealthHandler(newControlPlaneHealthService(deps, cfg, logger, info), logger).
+		RegisterHumaRoutes(controlPlaneAPI)
 
+	services := newControlPlaneServices(deps, cfg, logger)
+
+	sessionBootstrapService, tenantMembershipVerifier, err := registerControlPlaneAuth(
+		controlPlaneAPI, cfg, deps, services.authorization, logger,
+	)
+	if err != nil {
+		return err
+	}
+	hierarchyService := service.NewHierarchyService(
+		deps.organizationRepo,
+		deps.organizationMembers,
+		deps.teamRepo,
+		deps.teamMembers,
+		deps.principalRepo,
+		services.authorization,
+		tenantMembershipVerifier,
+	)
+
+	registerControlPlaneHandlers(controlPlaneAPI, deps, services, hierarchyService, sessionBootstrapService, logger)
+	return nil
+}
+
+// controlPlaneServices bundles the control-plane business-logic services so
+// registerControlPlaneRoutes can wire them into HTTP handlers without a long
+// list of local variables.
+type controlPlaneServices struct {
+	tenant         *service.TenantService
+	session        *service.SessionService
+	policy         *service.PolicyService
+	cache          *service.CacheService
+	upstream       *service.UpstreamService
+	evaluation     *service.EvaluationService
+	auditList      *service.AuditService
+	authorization  *service.AuthorizationService
+	scopedPolicy   *service.ScopedPolicyService
+	scopedUpstream *service.ScopedUpstreamService
+}
+
+func newControlPlaneServices(deps *dependencies, cfg *config.Config, logger *slog.Logger) *controlPlaneServices {
+	authorizationService := service.NewAuthorizationService(
+		deps.organizationRepo,
+		deps.organizationMembers,
+		deps.teamRepo,
+		deps.teamMembers,
+	)
+	policyService := service.NewPolicyService(
+		deps.policyRepo,
+		deps.policyRevisionRepo,
+		deps.decisionCache,
+		deps.upstreamRepo,
+	)
+	upstreamService := service.NewUpstreamService(
+		deps.upstreamRepo,
+		deps.policyRepo,
+		service.WithAuthenticatedUpstreams(
+			cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls",
+		),
+	)
+	return &controlPlaneServices{
+		tenant:     service.NewTenantService(deps.tenantRepo),
+		session:    service.NewSessionService(deps.tenantRepo, deps.organizationRepo, deps.organizationMembers),
+		policy:     policyService,
+		cache:      service.NewCacheService(deps.decisionCache, deps.metadataCache),
+		upstream:   upstreamService,
+		evaluation: service.NewEvaluationService(deps.decisionRepo),
+		auditList: service.NewAuditService(
+			nil,
+			deps.auditRepo,
+			logger,
+			cfg.Audit.Enabled,
+			parseAuditFailureMode(cfg.Audit.FailureMode),
+			parseAuditDetailLevel(cfg.Audit.DetailLevel),
+		),
+		authorization: authorizationService,
+		scopedPolicy:  service.NewScopedPolicyService(policyService, deps.scopedPolicyRepo, authorizationService),
+		scopedUpstream: service.NewScopedUpstreamService(
+			upstreamService,
+			deps.scopedUpstreamRepo,
+			authorizationService,
+		),
+	}
+}
+
+func newControlPlaneHealthService(
+	deps *dependencies,
+	cfg *config.Config,
+	logger *slog.Logger,
+	info BuildInfo,
+) *service.HealthService {
 	healthOptions := []service.HealthOption{}
 	if cfg.Runtime.Mode == config.RuntimeModeControlPlane {
 		if proxyURL := strings.TrimSpace(cfg.Health.ProxyURL); proxyURL != "" {
@@ -47,8 +142,7 @@ func registerControlPlaneRoutes(
 			)
 		}
 	}
-
-	healthService := service.NewHealthService(
+	return service.NewHealthService(
 		info.ServiceName,
 		info.Version,
 		info.Commit,
@@ -58,79 +152,69 @@ func registerControlPlaneRoutes(
 		logger,
 		healthOptions...,
 	)
+}
 
-	apidelivery.NewHealthHandler(healthService, logger).RegisterHumaRoutes(controlPlaneAPI)
-
-	tenantService := service.NewTenantService(deps.tenantRepo)
-	sessionService := service.NewSessionService(deps.tenantRepo, deps.organizationRepo, deps.organizationMembers)
-	policyService := service.NewPolicyService(
-		deps.policyRepo,
-		deps.policyRevisionRepo,
-		deps.decisionCache,
-		deps.upstreamRepo,
-	)
-	cacheService := service.NewCacheService(deps.decisionCache, deps.metadataCache)
-	upstreamService := service.NewUpstreamService(
-		deps.upstreamRepo,
-		deps.policyRepo,
-		service.WithAuthenticatedUpstreams(
-			cfg.Runtime.Mode != config.RuntimeModeControlPlane || cfg.Bundle.TLS.Mode == "mtls",
-		),
-	)
-	evaluationService := service.NewEvaluationService(deps.decisionRepo)
-	auditListService := service.NewAuditService(
-		nil,
-		deps.auditRepo,
-		logger,
-		cfg.Audit.Enabled,
-		parseAuditFailureMode(cfg.Audit.FailureMode),
-		parseAuditDetailLevel(cfg.Audit.DetailLevel),
-	)
-	authorizationService := service.NewAuthorizationService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers)
-	scopedPolicyService := service.NewScopedPolicyService(policyService, deps.scopedPolicyRepo, authorizationService)
-	scopedUpstreamService := service.NewScopedUpstreamService(upstreamService, deps.scopedUpstreamRepo, authorizationService)
-
-	var sessionBootstrapService *service.SessionBootstrapService
-	var tenantMembershipVerifier service.TenantMembershipVerifier
-	if cfg.Auth.Mode == "clerk" {
-		authenticator, err := clerkinfra.NewAuthenticator(cfg.Auth.Clerk)
-		if err != nil {
-			return fmt.Errorf("registering control-plane routes: %w", err)
-		}
-		directory := clerkinfra.NewDirectory(cfg.Auth.Clerk.SecretKey, telemetry.WrapHTTPClient(newOutboundHTTPClient(10*time.Second)))
-		tenantMembershipVerifier = directory
-		sessionBootstrapService = service.NewSessionBootstrapService(directory, deps.sessionBootstrap)
-		identityService := service.NewIdentityService(deps.tenantIdentityLinks, deps.principalRepo)
-		controlPlaneAPI.UseMiddleware(middleware.HumanAuthentication(
-			controlPlaneAPI, authenticator, identityService, authorizationService, directory,
-			func(operationID string) (middleware.HumanOperationPolicy, bool) {
-				policy, ok := apidelivery.ControlPlaneOperationPolicy(operationID)
-				return middleware.HumanOperationPolicy{
-					AuthenticationRequired: policy.AuthenticationRequired,
-					Permission:             policy.Permission,
-					Bootstrap:              policy.Bootstrap,
-					FreshMembership:        policy.FreshMembership,
-					ScopedAuthorization:    policy.ScopedAuthorization,
-				}, ok
-			},
-		))
+// registerControlPlaneAuth wires the human-authentication middleware onto the
+// control-plane API when Clerk auth is enabled. It returns the session
+// bootstrap service and tenant membership verifier the caller needs to build
+// the session and hierarchy services; both are nil when auth is disabled.
+func registerControlPlaneAuth(
+	controlPlaneAPI huma.API,
+	cfg *config.Config,
+	deps *dependencies,
+	authorizationService *service.AuthorizationService,
+	logger *slog.Logger,
+) (*service.SessionBootstrapService, service.TenantMembershipVerifier, error) {
+	if cfg.Auth.Mode != "clerk" {
+		return nil, nil, nil
 	}
-	hierarchyService := service.NewHierarchyService(deps.organizationRepo, deps.organizationMembers, deps.teamRepo, deps.teamMembers, deps.principalRepo, authorizationService, tenantMembershipVerifier)
+	authenticator, err := clerkinfra.NewAuthenticator(cfg.Auth.Clerk)
+	if err != nil {
+		return nil, nil, fmt.Errorf("registering control-plane routes: %w", err)
+	}
+	directory := clerkinfra.NewDirectory(
+		cfg.Auth.Clerk.SecretKey,
+		telemetry.WrapHTTPClient(newOutboundHTTPClient(10*time.Second)),
+	)
+	sessionBootstrapService := service.NewSessionBootstrapService(directory, deps.sessionBootstrap)
+	identityService := service.NewIdentityService(deps.tenantIdentityLinks, deps.principalRepo)
+	controlPlaneAPI.UseMiddleware(middleware.HumanAuthentication(
+		controlPlaneAPI, authenticator, identityService, authorizationService, directory,
+		func(operationID string) (middleware.HumanOperationPolicy, bool) {
+			policy, ok := apidelivery.ControlPlaneOperationPolicy(operationID)
+			return middleware.HumanOperationPolicy{
+				AuthenticationRequired: policy.AuthenticationRequired,
+				Permission:             policy.Permission,
+				Bootstrap:              policy.Bootstrap,
+				FreshMembership:        policy.FreshMembership,
+				ScopedAuthorization:    policy.ScopedAuthorization,
+			}, ok
+		},
+	))
+	return sessionBootstrapService, directory, nil
+}
 
-	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewSessionHandler(sessionService, logger, sessionBootstrapService).RegisterHumaRoutes(controlPlaneAPI)
+func registerControlPlaneHandlers(
+	controlPlaneAPI huma.API,
+	deps *dependencies,
+	services *controlPlaneServices,
+	hierarchyService *service.HierarchyService,
+	sessionBootstrapService *service.SessionBootstrapService,
+	logger *slog.Logger,
+) {
+	apidelivery.NewTenantHandler(services.tenant, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewSessionHandler(services.session, logger, sessionBootstrapService).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewHierarchyHandler(hierarchyService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewCacheHandler(cacheService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewScopedResourceHandler(scopedPolicyService, scopedUpstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewEvaluationHandler(evaluationService, logger).RegisterHumaRoutes(controlPlaneAPI)
-	apidelivery.NewAuditHandler(auditListService, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewPolicyHandler(services.policy, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewCacheHandler(services.cache, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewUpstreamHandler(services.upstream, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewScopedResourceHandler(services.scopedPolicy, services.scopedUpstream, logger).
+		RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewEvaluationHandler(services.evaluation, logger).RegisterHumaRoutes(controlPlaneAPI)
+	apidelivery.NewAuditHandler(services.auditList, logger).RegisterHumaRoutes(controlPlaneAPI)
 	if deps.dependencyGraphRepo != nil {
 		apidelivery.NewDependencyGraphHandler(deps.dependencyGraphRepo, logger).RegisterHumaRoutes(controlPlaneAPI)
 	}
-
-	return nil
 }
 
 func registerProxyRoutes(
@@ -151,8 +235,14 @@ func registerProxyRoutes(
 
 	tenantResolver := middleware.NewTenantResolver(bundleinfra.NewTenantLookup(bundleProvider))
 	credentialAuth := middleware.NewDataPlaneCredentialMiddleware(bundleProvider)
-	mux.Handle("/v2/", newOCIProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver, credentialAuth))
-	mux.Handle("/npm/", newNPMProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver, credentialAuth))
+	mux.Handle(
+		"/v2/",
+		newOCIProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver, credentialAuth),
+	)
+	mux.Handle(
+		"/npm/",
+		newNPMProxyHandler(accessService, deps, bundleUpstreamRepo, logger, tenantResolver, credentialAuth),
+	)
 }
 
 func newProxyAccessService(

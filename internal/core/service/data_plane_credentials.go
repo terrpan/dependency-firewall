@@ -22,10 +22,12 @@ type CredentialSecret struct {
 	Secret     string
 }
 
+// DataPlaneCredentialService models a data plane credential service.
 type DataPlaneCredentialService struct {
 	repository port.DataPlaneCredentialRepository
 }
 
+// NewDataPlaneCredentialService constructs a new DataPlaneCredentialService.
 func NewDataPlaneCredentialService(repository port.DataPlaneCredentialRepository) (*DataPlaneCredentialService, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("data-plane credential repository is required")
@@ -33,8 +35,13 @@ func NewDataPlaneCredentialService(repository port.DataPlaneCredentialRepository
 	return &DataPlaneCredentialService{repository: repository}, nil
 }
 
-func (s *DataPlaneCredentialService) Create(ctx context.Context, credential domain.DataPlaneCredential) (*CredentialSecret, error) {
-	if strings.TrimSpace(credential.Name) == "" || credential.TenantID == "" || credential.OrganizationID == "" || credential.CreatedBy == "" {
+// Create performs the create operation.
+func (s *DataPlaneCredentialService) Create(
+	ctx context.Context,
+	credential domain.DataPlaneCredential,
+) (*CredentialSecret, error) {
+	if strings.TrimSpace(credential.Name) == "" || credential.TenantID == "" || credential.OrganizationID == "" ||
+		credential.CreatedBy == "" {
 		return nil, fmt.Errorf("credential name, tenant, organization, and creator are required")
 	}
 	if credential.ExpiresAt != nil && !credential.ExpiresAt.After(time.Now()) {
@@ -53,9 +60,11 @@ func (s *DataPlaneCredentialService) Create(ctx context.Context, credential doma
 	return &CredentialSecret{Credential: credential, Secret: secret}, nil
 }
 
+// VerifyCredentialSecret performs the verify credential secret operation.
 // Verify compares an opaque presented secret with a bundle verifier digest.
 func VerifyCredentialSecret(secret string, verifier domain.DataPlaneCredentialVerifier, now time.Time) bool {
-	if secret == "" || verifier.SecretDigest == "" || verifier.RevokedAt != nil || (verifier.ExpiresAt != nil && !verifier.ExpiresAt.After(now)) {
+	if secret == "" || verifier.SecretDigest == "" || verifier.RevokedAt != nil ||
+		(verifier.ExpiresAt != nil && !verifier.ExpiresAt.After(now)) {
 		return false
 	}
 	h := sha256.Sum256([]byte(secret))

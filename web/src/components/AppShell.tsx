@@ -7,10 +7,12 @@ import {
   FileCheck2,
   GitFork,
   LayoutDashboard,
+  LogOut,
   Menu,
   Moon,
   Server,
   Sun,
+  UsersRound,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -40,6 +42,13 @@ const navigationItems = [
     requiresTenant: true,
   },
   { to: '/tenants', label: 'Tenants', summary: 'Workspace selection and setup.', icon: Building2 },
+  {
+    to: '/organizations',
+    label: 'Organizations',
+    summary: 'Operational scopes and Teams.',
+    icon: UsersRound,
+    requiresTenant: true,
+  },
   {
     to: '/upstreams',
     label: 'Upstreams',
@@ -184,7 +193,7 @@ export function AppShell() {
   const navigationType = useNavigationType()
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme)
   const [navigationOpen, setNavigationOpen] = useState(false)
-  const { session, status: authStatus } = useAuth()
+  const { session, signOut, status: authStatus } = useAuth()
   const { activeTenant, hasTenants, isError, isLoading, setTenantId, status, tenantId, tenants } = useTenant()
 
   useEffect(() => {
@@ -359,6 +368,18 @@ export function AppShell() {
             </div>
 
             <div className={applicationClass('shell-utility-actions')}>
+              {signOut ? (
+                <button
+                  aria-label="Sign out"
+                  className={applicationClass('shell-icon-button')}
+                  onClick={() => void signOut()}
+                  title="Sign out"
+                  type="button"
+                >
+                  <LogOut size={18} />
+                  <span className={applicationClass('sr-only')}>Sign out</span>
+                </button>
+              ) : null}
               <button
                 aria-label={`${themeLabel}. Switch to ${nextTheme} theme`}
                 className={applicationClass('shell-icon-button shell-theme-toggle')}

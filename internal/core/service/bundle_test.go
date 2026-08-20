@@ -154,10 +154,19 @@ func TestBundleRevisionTracksPolicyAndUpstreamScope(t *testing.T) {
 	t.Parallel()
 
 	tenant := domain.Tenant{ID: "tenant-1"}
-	policyOne := domain.Policy{ID: "policy-1", ScopeKind: domain.PolicyScopeOrganization, OrganizationID: "organization-1"}
+	policyOne := domain.Policy{
+		ID:             "policy-1",
+		ScopeKind:      domain.PolicyScopeOrganization,
+		OrganizationID: "organization-1",
+	}
 	policyTwo := policyOne
 	policyTwo.OrganizationID = "organization-2"
-	upstreamOne := domain.Upstream{ID: "upstream-1", ScopeKind: domain.UpstreamScopeTeamLocal, OrganizationID: "organization-1", TeamID: "team-1"}
+	upstreamOne := domain.Upstream{
+		ID:             "upstream-1",
+		ScopeKind:      domain.UpstreamScopeTeamLocal,
+		OrganizationID: "organization-1",
+		TeamID:         "team-1",
+	}
 	upstreamTwo := upstreamOne
 	upstreamTwo.TeamID = "team-2"
 

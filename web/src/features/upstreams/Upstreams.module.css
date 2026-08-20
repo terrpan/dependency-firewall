@@ -360,6 +360,15 @@
   padding: 10px 12px;
 }
 
+.upstreams-scope-select {
+  background: var(--df-surface-raised);
+  border: 1px solid var(--df-border);
+  border-radius: 0.5rem;
+  color: var(--df-text);
+  min-height: 2.25rem;
+  padding: 0 0.65rem;
+}
+
 .upstreams-field-invalid label,
 .upstreams-field-error {
   color: var(--danger-text);

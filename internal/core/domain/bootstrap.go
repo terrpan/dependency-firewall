@@ -1,5 +1,6 @@
 package domain
 
+// SessionBootstrapRequest models a session bootstrap request.
 type SessionBootstrapRequest struct {
 	Provider          string
 	ExternalAccountID string
@@ -9,6 +10,7 @@ type SessionBootstrapRequest struct {
 	Email             string
 }
 
+// SessionBootstrapResult models a session bootstrap result.
 type SessionBootstrapResult struct {
 	Tenant    Tenant
 	Principal Principal

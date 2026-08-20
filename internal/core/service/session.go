@@ -32,7 +32,12 @@ type sessionMembershipLister interface {
 	ListByPrincipal(ctx context.Context, tenantID, principalID string) ([]domain.OrganizationMembership, error)
 }
 
-func NewSessionService(tenants sessionTenantGetter, organizations sessionOrganizationLister, memberships ...sessionMembershipLister) *SessionService {
+// NewSessionService constructs a new SessionService.
+func NewSessionService(
+	tenants sessionTenantGetter,
+	organizations sessionOrganizationLister,
+	memberships ...sessionMembershipLister,
+) *SessionService {
 	service := &SessionService{tenants: tenants, organizations: organizations}
 	service.organization, _ = organizations.(sessionOrganizationGetter)
 	if len(memberships) > 0 {
@@ -41,6 +46,7 @@ func NewSessionService(tenants sessionTenantGetter, organizations sessionOrganiz
 	return service
 }
 
+// CompatibilitySession performs the compatibility session operation.
 func (s *SessionService) CompatibilitySession(ctx context.Context, tenantID string) (*domain.Session, error) {
 	if tenantID == "" {
 		return nil, domain.ErrTenantNotFound
@@ -80,7 +86,11 @@ func (s *SessionService) CompatibilitySession(ctx context.Context, tenantID stri
 	}, nil
 }
 
-func (s *SessionService) AuthenticatedSession(ctx context.Context, principal domain.AuthenticatedPrincipal) (*domain.Session, error) {
+// AuthenticatedSession assembles a session for an authenticated principal.
+func (s *SessionService) AuthenticatedSession( //nolint:gocognit // session assembly branches across identity providers
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+) (*domain.Session, error) {
 	tenant, err := s.tenants.GetByID(ctx, principal.TenantID)
 	if err != nil {
 		return nil, err
@@ -126,6 +136,7 @@ func (s *SessionService) AuthenticatedSession(ctx context.Context, principal dom
 	}, nil
 }
 
+// IsSessionTenantNotFound reports whether session tenant not found holds.
 func IsSessionTenantNotFound(err error) bool {
 	return errors.Is(err, domain.ErrTenantNotFound)
 }

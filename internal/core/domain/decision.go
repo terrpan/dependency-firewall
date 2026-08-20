@@ -31,6 +31,10 @@ const (
 type Decision struct {
 	ID                string
 	TenantID          string
+	OrganizationID    string
+	TeamID            string
+	UpstreamID        string
+	CredentialID      string
 	Artifact          ArtifactIdentity
 	Outcome           DecisionOutcome
 	PolicyID          string

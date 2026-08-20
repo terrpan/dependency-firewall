@@ -14,13 +14,19 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
+// SessionHandler models a session handler.
 type SessionHandler struct {
 	sessions  *service.SessionService
 	bootstrap *service.SessionBootstrapService
 	logger    *slog.Logger
 }
 
-func NewSessionHandler(sessions *service.SessionService, logger *slog.Logger, bootstrap ...*service.SessionBootstrapService) *SessionHandler {
+// NewSessionHandler constructs a new SessionHandler.
+func NewSessionHandler(
+	sessions *service.SessionService,
+	logger *slog.Logger,
+	bootstrap ...*service.SessionBootstrapService,
+) *SessionHandler {
 	handler := &SessionHandler{sessions: sessions, logger: logger}
 	if len(bootstrap) > 0 {
 		handler.bootstrap = bootstrap[0]
@@ -28,6 +34,7 @@ func NewSessionHandler(sessions *service.SessionService, logger *slog.Logger, bo
 	return handler
 }
 
+// RegisterHumaRoutes performs the register huma routes operation.
 func (h *SessionHandler) RegisterHumaRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-session",
@@ -40,10 +47,20 @@ func (h *SessionHandler) RegisterHumaRoutes(api huma.API) {
 	}, h.get)
 	removeValidationResponse(api, "/api/v1/session", http.MethodGet)
 	huma.Register(api, huma.Operation{
-		OperationID: "bootstrap-session", Method: http.MethodPost, Path: "/api/v1/session/bootstrap",
+		OperationID: "bootstrap-session",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/session/bootstrap",
 		Summary:     "Bootstrap the active session",
 		Description: "Synchronously establishes the local account and Principal projection after fresh provider membership verification.",
-		Tags:        []string{"session"}, Errors: controlPlaneReadErrors(http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusInternalServerError),
+		Tags: []string{
+			"session",
+		},
+		Errors: controlPlaneReadErrors(
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusConflict,
+			http.StatusInternalServerError,
+		),
 	}, h.bootstrapSession)
 	removeValidationResponse(api, "/api/v1/session/bootstrap", http.MethodPost)
 }
@@ -54,6 +71,7 @@ type sessionInput struct {
 
 type sessionOutput struct{ Body *SessionResponse }
 
+// SessionResponse models a session response.
 type SessionResponse struct {
 	Tenant             *TenantResponse               `json:"tenant"`
 	Principal          SessionPrincipalResponse      `json:"principal"`
@@ -63,6 +81,7 @@ type SessionResponse struct {
 	CompatibilityMode  bool                          `json:"compatibility_mode"`
 }
 
+// SessionPrincipalResponse models a session principal response.
 type SessionPrincipalResponse struct {
 	ID          string                 `json:"id"`
 	DisplayName string                 `json:"display_name"`
@@ -70,6 +89,7 @@ type SessionPrincipalResponse struct {
 	Status      domain.PrincipalStatus `json:"status"`
 }
 
+// SessionOrganizationResponse models a session organization response.
 type SessionOrganizationResponse struct {
 	ID          string                    `json:"id"`
 	Name        string                    `json:"name"`
@@ -107,6 +127,7 @@ type bootstrapSessionOutput struct {
 	Body *BootstrapSessionResponse
 }
 
+// BootstrapSessionResponse models a bootstrap session response.
 type BootstrapSessionResponse struct {
 	Tenant     *TenantResponse          `json:"tenant"`
 	Principal  SessionPrincipalResponse `json:"principal"`
@@ -114,7 +135,10 @@ type BootstrapSessionResponse struct {
 	Created    bool                     `json:"created"`
 }
 
-func (h *SessionHandler) bootstrapSession(ctx context.Context, _ *bootstrapSessionInput) (*bootstrapSessionOutput, error) {
+func (h *SessionHandler) bootstrapSession(
+	ctx context.Context,
+	_ *bootstrapSessionInput,
+) (*bootstrapSessionOutput, error) {
 	if h.bootstrap == nil {
 		return nil, huma.Error403Forbidden("session bootstrap requires Clerk authentication mode")
 	}
@@ -134,9 +158,15 @@ func (h *SessionHandler) bootstrapSession(ctx context.Context, _ *bootstrapSessi
 		}
 	}
 	return &bootstrapSessionOutput{Body: &BootstrapSessionResponse{
-		Tenant:     toTenantResponse(&result.Tenant),
-		Principal:  SessionPrincipalResponse{ID: result.Principal.ID, DisplayName: result.Principal.DisplayName, Email: result.Principal.Email, Status: result.Principal.Status},
-		TenantRole: role, Created: result.Created,
+		Tenant: toTenantResponse(&result.Tenant),
+		Principal: SessionPrincipalResponse{
+			ID:          result.Principal.ID,
+			DisplayName: result.Principal.DisplayName,
+			Email:       result.Principal.Email,
+			Status:      result.Principal.Status,
+		},
+		TenantRole: role,
+		Created:    result.Created,
 	}}, nil
 }
 

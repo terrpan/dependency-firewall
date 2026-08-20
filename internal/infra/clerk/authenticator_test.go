@@ -25,13 +25,41 @@ func TestAuthenticator_Authenticate(t *testing.T) {
 		{name: "owner session", mutate: setRole("owner"), wantRole: domain.TenantRoleOwner},
 		{name: "admin session", mutate: setRole("admin"), wantRole: domain.TenantRoleAdmin},
 		{name: "member session", mutate: setRole("member"), wantRole: domain.TenantRoleMember},
-		{name: "missing active account", mutate: func(claims map[string]any) { delete(claims, "o") }, wantError: domain.ErrActiveAccountRequired},
-		{name: "pending session", mutate: func(claims map[string]any) { claims["sts"] = "pending" }, wantError: domain.ErrAuthenticationInvalid},
-		{name: "expired session", mutate: func(claims map[string]any) { claims["exp"] = now.Add(-time.Minute).Unix() }, wantError: domain.ErrAuthenticationInvalid},
-		{name: "future session", mutate: func(claims map[string]any) { claims["nbf"] = now.Add(time.Minute).Unix() }, wantError: domain.ErrAuthenticationInvalid},
-		{name: "wrong issuer", mutate: func(claims map[string]any) { claims["iss"] = "https://other.clerk.accounts.dev" }, wantError: domain.ErrAuthenticationInvalid},
-		{name: "wrong audience", mutate: func(claims map[string]any) { claims["aud"] = []string{"other-api"} }, wantError: domain.ErrAuthenticationInvalid},
-		{name: "wrong authorized party", mutate: func(claims map[string]any) { claims["azp"] = "https://evil.example.test" }, wantError: domain.ErrAuthenticationInvalid},
+		{
+			name:      "missing active account",
+			mutate:    func(claims map[string]any) { delete(claims, "o") },
+			wantError: domain.ErrActiveAccountRequired,
+		},
+		{
+			name:      "pending session",
+			mutate:    func(claims map[string]any) { claims["sts"] = "pending" },
+			wantError: domain.ErrAuthenticationInvalid,
+		},
+		{
+			name:      "expired session",
+			mutate:    func(claims map[string]any) { claims["exp"] = now.Add(-time.Minute).Unix() },
+			wantError: domain.ErrAuthenticationInvalid,
+		},
+		{
+			name:      "future session",
+			mutate:    func(claims map[string]any) { claims["nbf"] = now.Add(time.Minute).Unix() },
+			wantError: domain.ErrAuthenticationInvalid,
+		},
+		{
+			name:      "wrong issuer",
+			mutate:    func(claims map[string]any) { claims["iss"] = "https://other.clerk.accounts.dev" },
+			wantError: domain.ErrAuthenticationInvalid,
+		},
+		{
+			name:      "wrong audience",
+			mutate:    func(claims map[string]any) { claims["aud"] = []string{"other-api"} },
+			wantError: domain.ErrAuthenticationInvalid,
+		},
+		{
+			name:      "wrong authorized party",
+			mutate:    func(claims map[string]any) { claims["azp"] = "https://evil.example.test" },
+			wantError: domain.ErrAuthenticationInvalid,
+		},
 		{name: "unknown role", mutate: setRole("billing"), wantError: domain.ErrUnsupportedTenantRole},
 	}
 
@@ -43,10 +71,17 @@ func TestAuthenticator_Authenticate(t *testing.T) {
 			}
 			token, publicKey := clerktest.GenerateJWT(t, claims, "test-key")
 			authenticator := &Authenticator{
-				issuer: "https://clerk.example.accounts.dev", audience: "dependency-firewall",
+				issuer:            "https://clerk.example.accounts.dev",
+				audience:          "dependency-firewall",
 				authorizedParties: map[string]struct{}{"https://console.example.test": {}},
-				staticJWK:         &clerksdk.JSONWebKey{Key: publicKey, KeyID: "test-key", Algorithm: string(jose.RS256), Use: "sig"},
-				clock:             clerktest.NewClockAt(now), cache: make(map[string]cachedJWK),
+				staticJWK: &clerksdk.JSONWebKey{
+					Key:       publicKey,
+					KeyID:     "test-key",
+					Algorithm: string(jose.RS256),
+					Use:       "sig",
+				},
+				clock: clerktest.NewClockAt(now),
+				cache: make(map[string]cachedJWK),
 			}
 
 			identity, err := authenticator.Authenticate(context.Background(), token)

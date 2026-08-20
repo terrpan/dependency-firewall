@@ -27,6 +27,9 @@ const (
 // AccessRequest is the normalized input to the policy engine.
 type AccessRequest struct {
 	TenantID          string
+	OrganizationID    string
+	TeamID            string
+	CredentialID      string
 	RequestID         string
 	Kind              AccessRequestKind
 	Artifact          ArtifactIdentity

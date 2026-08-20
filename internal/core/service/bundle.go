@@ -343,7 +343,12 @@ type bundleUpstreamAuthHashInput struct {
 	UpdatedAt time.Time               `json:"updated_at"`
 }
 
-func bundleRevision(tenant domain.Tenant, policies []domain.Policy, upstreams []domain.Upstream, credentialSets ...[]domain.DataPlaneCredentialVerifier) (string, error) {
+func bundleRevision(
+	tenant domain.Tenant,
+	policies []domain.Policy,
+	upstreams []domain.Upstream,
+	credentialSets ...[]domain.DataPlaneCredentialVerifier,
+) (string, error) {
 	var credentials []domain.DataPlaneCredentialVerifier
 	if len(credentialSets) > 0 {
 		credentials = credentialSets[0]

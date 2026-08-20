@@ -244,15 +244,26 @@ func (s *stubPolicyUpstreamRepository) GetVisibleByID(
 	return nil, domain.ErrUpstreamNotFound
 }
 
-func (s *stubPolicyUpstreamRepository) ListVisible(context.Context, domain.AuthorizationScope) ([]domain.Upstream, error) {
+func (s *stubPolicyUpstreamRepository) ListVisible(
+	context.Context,
+	domain.AuthorizationScope,
+) ([]domain.Upstream, error) {
 	return nil, nil
 }
 
-func (s *stubPolicyUpstreamRepository) ResolveVisibleByEcosystem(context.Context, domain.AuthorizationScope, domain.EcosystemType) (*domain.Upstream, error) {
+func (s *stubPolicyUpstreamRepository) ResolveVisibleByEcosystem(
+	context.Context,
+	domain.AuthorizationScope,
+	domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return nil, domain.ErrUpstreamNotFound
 }
 
-func (s *stubPolicyUpstreamRepository) GetByEcosystem(context.Context, string, domain.EcosystemType) (*domain.Upstream, error) {
+func (s *stubPolicyUpstreamRepository) GetByEcosystem(
+	context.Context,
+	string,
+	domain.EcosystemType,
+) (*domain.Upstream, error) {
 	return nil, domain.ErrUpstreamNotFound
 }
 

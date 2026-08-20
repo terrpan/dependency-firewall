@@ -24,11 +24,16 @@ type IdentityService struct {
 	principals identityPrincipalGetter
 }
 
+// NewIdentityService constructs a new IdentityService.
 func NewIdentityService(links identityTenantLinkGetter, principals identityPrincipalGetter) *IdentityService {
 	return &IdentityService{links: links, principals: principals}
 }
 
-func (s *IdentityService) Resolve(ctx context.Context, identity domain.VerifiedIdentity) (domain.AuthenticatedPrincipal, error) {
+// Resolve performs the resolve operation.
+func (s *IdentityService) Resolve(
+	ctx context.Context,
+	identity domain.VerifiedIdentity,
+) (domain.AuthenticatedPrincipal, error) {
 	if strings.TrimSpace(identity.Provider) == "" || strings.TrimSpace(identity.Subject) == "" ||
 		strings.TrimSpace(identity.ExternalAccountID) == "" {
 		return domain.AuthenticatedPrincipal{}, domain.ErrAuthenticationInvalid
@@ -56,8 +61,12 @@ func (s *IdentityService) Resolve(ctx context.Context, identity domain.VerifiedI
 	}, nil
 }
 
+// SessionBootstrapDirectory defines the behavior required of a session bootstrap directory.
 type SessionBootstrapDirectory interface {
-	BootstrapRequest(ctx context.Context, identity domain.VerifiedIdentity) (domain.SessionBootstrapRequest, domain.TenantRole, error)
+	BootstrapRequest(
+		ctx context.Context,
+		identity domain.VerifiedIdentity,
+	) (domain.SessionBootstrapRequest, domain.TenantRole, error)
 }
 
 type sessionBootstrapStore interface {
@@ -71,11 +80,19 @@ type SessionBootstrapService struct {
 	store     sessionBootstrapStore
 }
 
-func NewSessionBootstrapService(directory SessionBootstrapDirectory, store sessionBootstrapStore) *SessionBootstrapService {
+// NewSessionBootstrapService constructs a new SessionBootstrapService.
+func NewSessionBootstrapService(
+	directory SessionBootstrapDirectory,
+	store sessionBootstrapStore,
+) *SessionBootstrapService {
 	return &SessionBootstrapService{directory: directory, store: store}
 }
 
-func (s *SessionBootstrapService) Bootstrap(ctx context.Context, identity domain.VerifiedIdentity) (*domain.SessionBootstrapResult, domain.TenantRole, error) {
+// Bootstrap performs the bootstrap operation.
+func (s *SessionBootstrapService) Bootstrap(
+	ctx context.Context,
+	identity domain.VerifiedIdentity,
+) (*domain.SessionBootstrapResult, domain.TenantRole, error) {
 	request, role, err := s.directory.BootstrapRequest(ctx, identity)
 	if err != nil {
 		return nil, "", err

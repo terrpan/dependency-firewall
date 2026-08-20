@@ -82,6 +82,7 @@ type DataPlaneCredentialRepository interface {
 	Revoke(ctx context.Context, tenantID, id string, at time.Time) error
 }
 
+// BundleCredentialRepository defines the behavior required of a bundle credential repository.
 type BundleCredentialRepository interface {
 	ListVerifiersByTenant(ctx context.Context, tenantID string) ([]domain.DataPlaneCredentialVerifier, error)
 }
@@ -185,7 +186,11 @@ type UpstreamRepository interface {
 type ScopedUpstreamRepository interface {
 	GetVisibleByID(ctx context.Context, scope domain.AuthorizationScope, id string) (*domain.Upstream, error)
 	ListVisible(ctx context.Context, scope domain.AuthorizationScope) ([]domain.Upstream, error)
-	ResolveVisibleByEcosystem(ctx context.Context, scope domain.AuthorizationScope, ecosystem domain.EcosystemType) (*domain.Upstream, error)
+	ResolveVisibleByEcosystem(
+		ctx context.Context,
+		scope domain.AuthorizationScope,
+		ecosystem domain.EcosystemType,
+	) (*domain.Upstream, error)
 }
 
 // BundleUpstreamRepository lists upstreams for bundle construction without

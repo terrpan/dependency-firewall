@@ -20,11 +20,16 @@ const sessionBootstrapAttempts = 3
 // state for a verified external session. Network calls must complete before it starts.
 type SessionBootstrapRepository struct{ pool *pgxpool.Pool }
 
+// NewSessionBootstrapRepository constructs a new SessionBootstrapRepository.
 func NewSessionBootstrapRepository(pool *pgxpool.Pool) *SessionBootstrapRepository {
 	return &SessionBootstrapRepository{pool: pool}
 }
 
-func (r *SessionBootstrapRepository) Bootstrap(ctx context.Context, request domain.SessionBootstrapRequest) (*domain.SessionBootstrapResult, error) {
+// Bootstrap performs the bootstrap operation.
+func (r *SessionBootstrapRepository) Bootstrap(
+	ctx context.Context,
+	request domain.SessionBootstrapRequest,
+) (*domain.SessionBootstrapResult, error) {
 	var lastErr error
 	for attempt := 0; attempt < sessionBootstrapAttempts; attempt++ {
 		result, err := r.bootstrapOnce(ctx, request)
@@ -36,15 +41,22 @@ func (r *SessionBootstrapRepository) Bootstrap(ctx context.Context, request doma
 		}
 		lastErr = err
 	}
-	return nil, fmt.Errorf("%w: concurrent identity provisioning did not converge: %v", domain.ErrSessionBootstrapConflict, lastErr)
+	return nil, fmt.Errorf(
+		"%w: concurrent identity provisioning did not converge: %v",
+		domain.ErrSessionBootstrapConflict,
+		lastErr,
+	)
 }
 
-func (r *SessionBootstrapRepository) bootstrapOnce(ctx context.Context, request domain.SessionBootstrapRequest) (*domain.SessionBootstrapResult, error) {
+func (r *SessionBootstrapRepository) bootstrapOnce(
+	ctx context.Context,
+	request domain.SessionBootstrapRequest,
+) (*domain.SessionBootstrapResult, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("starting session bootstrap transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck -- commit or caller error is authoritative
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once the tx has committed; commit or caller error is authoritative
 
 	tenant, tenantCreated, err := bootstrapTenant(ctx, tx, request)
 	if err != nil {
@@ -62,7 +74,11 @@ func (r *SessionBootstrapRepository) bootstrapOnce(ctx context.Context, request 
 	}, nil
 }
 
-func bootstrapTenant(ctx context.Context, tx pgx.Tx, request domain.SessionBootstrapRequest) (*domain.Tenant, bool, error) {
+func bootstrapTenant(
+	ctx context.Context,
+	tx pgx.Tx,
+	request domain.SessionBootstrapRequest,
+) (*domain.Tenant, bool, error) {
 	var tenant domain.Tenant
 	err := tx.QueryRow(ctx,
 		`SELECT t.id, t.name, t.created_at, t.updated_at
@@ -83,7 +99,8 @@ func bootstrapTenant(ctx context.Context, tx pgx.Tx, request domain.SessionBoots
 		name = "Account"
 	}
 	var nameExists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, name).Scan(&nameExists); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenants WHERE name = $1)`, name).
+		Scan(&nameExists); err != nil {
 		return nil, false, fmt.Errorf("checking bootstrap tenant name: %w", err)
 	}
 	if nameExists {
@@ -104,7 +121,11 @@ func bootstrapTenant(ctx context.Context, tx pgx.Tx, request domain.SessionBoots
 	return &tenant, true, nil
 }
 
-func bootstrapPrincipal(ctx context.Context, tx pgx.Tx, request domain.SessionBootstrapRequest) (*domain.Principal, bool, error) {
+func bootstrapPrincipal(
+	ctx context.Context,
+	tx pgx.Tx,
+	request domain.SessionBootstrapRequest,
+) (*domain.Principal, bool, error) {
 	var principal domain.Principal
 	err := tx.QueryRow(ctx,
 		`SELECT p.id, p.display_name, p.email, p.status, p.created_at, p.updated_at

@@ -10,6 +10,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/port"
 )
 
+// OrganizationAccess models an organization access.
 type OrganizationAccess struct {
 	Organization domain.Organization
 	Role         domain.OrganizationRole
@@ -27,10 +28,12 @@ type HierarchyService struct {
 	membership    TenantMembershipVerifier
 }
 
+// TenantMembershipVerifier defines the behavior required of a tenant membership verifier.
 type TenantMembershipVerifier interface {
 	VerifyTenantMembership(ctx context.Context, provider, externalAccountID, externalSubject string) error
 }
 
+// NewHierarchyService constructs a new HierarchyService.
 func NewHierarchyService(
 	organizations port.OrganizationRepository,
 	orgMembers port.OrganizationMembershipRepository,
@@ -40,14 +43,25 @@ func NewHierarchyService(
 	authorization *AuthorizationService,
 	membership ...TenantMembershipVerifier,
 ) *HierarchyService {
-	service := &HierarchyService{organizations: organizations, orgMembers: orgMembers, teams: teams, teamMembers: teamMembers, principals: principals, authorization: authorization}
+	service := &HierarchyService{
+		organizations: organizations,
+		orgMembers:    orgMembers,
+		teams:         teams,
+		teamMembers:   teamMembers,
+		principals:    principals,
+		authorization: authorization,
+	}
 	if len(membership) > 0 {
 		service.membership = membership[0]
 	}
 	return service
 }
 
-func (s *HierarchyService) ListOrganizations(ctx context.Context, principal domain.AuthenticatedPrincipal) ([]OrganizationAccess, error) {
+// ListOrganizations performs the list organizations operation.
+func (s *HierarchyService) ListOrganizations(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+) ([]OrganizationAccess, error) {
 	if tenantAdministrator(principal) {
 		organizations, err := s.organizations.ListByTenant(ctx, principal.TenantID)
 		if err != nil {
@@ -77,18 +91,37 @@ func (s *HierarchyService) ListOrganizations(ctx context.Context, principal doma
 	return result, nil
 }
 
-func (s *HierarchyService) CreateOrganization(ctx context.Context, principal domain.AuthenticatedPrincipal, name string) (*domain.Organization, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionOrganizationsCreate, domain.AuthorizationScope{TenantID: principal.TenantID}); err != nil {
+// CreateOrganization performs the create organization operation.
+func (s *HierarchyService) CreateOrganization(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	name string,
+) (*domain.Organization, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionOrganizationsCreate,
+		domain.AuthorizationScope{TenantID: principal.TenantID},
+	); err != nil {
 		return nil, err
 	}
-	organization := &domain.Organization{TenantID: principal.TenantID, Name: name, Status: domain.OrganizationStatusActive}
+	organization := &domain.Organization{
+		TenantID: principal.TenantID,
+		Name:     name,
+		Status:   domain.OrganizationStatusActive,
+	}
 	if err := s.organizations.Create(ctx, organization); err != nil {
 		return nil, fmt.Errorf("creating organization: %w", err)
 	}
 	return organization, nil
 }
 
-func (s *HierarchyService) GetOrganization(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID string) (*OrganizationAccess, error) {
+// GetOrganization performs the get organization operation.
+func (s *HierarchyService) GetOrganization(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID string,
+) (*OrganizationAccess, error) {
 	scope := domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}
 	if tenantAdministrator(principal) {
 		scope.OrganizationID = ""
@@ -111,7 +144,13 @@ func (s *HierarchyService) GetOrganization(ctx context.Context, principal domain
 	return &OrganizationAccess{Organization: *organization, Role: role}, nil
 }
 
-func (s *HierarchyService) UpdateOrganization(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, name string, status domain.OrganizationStatus) (*domain.Organization, error) {
+// UpdateOrganization performs the update organization operation.
+func (s *HierarchyService) UpdateOrganization(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, name string,
+	status domain.OrganizationStatus,
+) (*domain.Organization, error) {
 	scope := domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}
 	if tenantAdministrator(principal) {
 		scope.OrganizationID = ""
@@ -131,8 +170,18 @@ func (s *HierarchyService) UpdateOrganization(ctx context.Context, principal dom
 	return organization, nil
 }
 
-func (s *HierarchyService) GetOrganizationMembership(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, principalID string) (*domain.OrganizationMembership, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionOrganizationsRead, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}); err != nil {
+// GetOrganizationMembership performs the get organization membership operation.
+func (s *HierarchyService) GetOrganizationMembership(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, principalID string,
+) (*domain.OrganizationMembership, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionOrganizationsRead,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID},
+	); err != nil {
 		return nil, err
 	}
 	membership, err := s.orgMembers.Get(ctx, principal.TenantID, organizationID, principalID)
@@ -142,21 +191,42 @@ func (s *HierarchyService) GetOrganizationMembership(ctx context.Context, princi
 	return membership, nil
 }
 
-func (s *HierarchyService) SetOrganizationMembership(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, principalID string, role domain.OrganizationRole) (*domain.OrganizationMembership, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionOrganizationsManage, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}); err != nil {
+// SetOrganizationMembership performs the set organization membership operation.
+func (s *HierarchyService) SetOrganizationMembership(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, principalID string,
+	role domain.OrganizationRole,
+) (*domain.OrganizationMembership, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionOrganizationsManage,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID},
+	); err != nil {
 		return nil, err
 	}
 	if err := s.requireAssignablePrincipal(ctx, principal, principalID); err != nil {
 		return nil, err
 	}
-	membership := &domain.OrganizationMembership{TenantID: principal.TenantID, OrganizationID: organizationID, PrincipalID: principalID, Role: role}
+	membership := &domain.OrganizationMembership{
+		TenantID:       principal.TenantID,
+		OrganizationID: organizationID,
+		PrincipalID:    principalID,
+		Role:           role,
+	}
 	if err := s.orgMembers.Upsert(ctx, membership); err != nil {
 		return nil, fmt.Errorf("setting organization membership: %w", err)
 	}
 	return membership, nil
 }
 
-func (s *HierarchyService) ListTeams(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID string) ([]domain.Team, error) {
+// ListTeams performs the list teams operation.
+func (s *HierarchyService) ListTeams(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID string,
+) ([]domain.Team, error) {
 	scope := domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}
 	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsRead, scope); err != nil {
 		return nil, err
@@ -192,8 +262,18 @@ func (s *HierarchyService) ListTeams(ctx context.Context, principal domain.Authe
 	return filtered, nil
 }
 
-func (s *HierarchyService) CreateTeam(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, name string) (*domain.Team, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsManage, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}); err != nil {
+// CreateTeam performs the create team operation.
+func (s *HierarchyService) CreateTeam(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, name string,
+) (*domain.Team, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionTeamsManage,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID},
+	); err != nil {
 		return nil, err
 	}
 	team := &domain.Team{TenantID: principal.TenantID, OrganizationID: organizationID, Name: name}
@@ -203,8 +283,18 @@ func (s *HierarchyService) CreateTeam(ctx context.Context, principal domain.Auth
 	return team, nil
 }
 
-func (s *HierarchyService) GetTeam(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, teamID string) (*domain.Team, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsRead, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID, TeamID: teamID}); err != nil {
+// GetTeam performs the get team operation.
+func (s *HierarchyService) GetTeam(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, teamID string,
+) (*domain.Team, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionTeamsRead,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID, TeamID: teamID},
+	); err != nil {
 		return nil, err
 	}
 	team, err := s.teams.GetByID(ctx, principal.TenantID, organizationID, teamID)
@@ -214,8 +304,19 @@ func (s *HierarchyService) GetTeam(ctx context.Context, principal domain.Authent
 	return team, nil
 }
 
-func (s *HierarchyService) UpdateTeam(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, teamID, name string, archived bool) (*domain.Team, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsManage, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}); err != nil {
+// UpdateTeam performs the update team operation.
+func (s *HierarchyService) UpdateTeam(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, teamID, name string,
+	archived bool,
+) (*domain.Team, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionTeamsManage,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID},
+	); err != nil {
 		return nil, err
 	}
 	team, err := s.teams.GetByID(ctx, principal.TenantID, organizationID, teamID)
@@ -235,8 +336,18 @@ func (s *HierarchyService) UpdateTeam(ctx context.Context, principal domain.Auth
 	return team, nil
 }
 
-func (s *HierarchyService) IsTeamMember(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, teamID, principalID string) (bool, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsRead, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID, TeamID: teamID}); err != nil {
+// IsTeamMember performs the is team member operation.
+func (s *HierarchyService) IsTeamMember(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, teamID, principalID string,
+) (bool, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionTeamsRead,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID, TeamID: teamID},
+	); err != nil {
 		return false, err
 	}
 	member, err := s.teamMembers.IsMember(ctx, principal.TenantID, organizationID, teamID, principalID)
@@ -246,8 +357,18 @@ func (s *HierarchyService) IsTeamMember(ctx context.Context, principal domain.Au
 	return member, nil
 }
 
-func (s *HierarchyService) SetTeamMembership(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, teamID, principalID string) (*domain.TeamMembership, error) {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsManage, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}); err != nil {
+// SetTeamMembership performs the set team membership operation.
+func (s *HierarchyService) SetTeamMembership(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, teamID, principalID string,
+) (*domain.TeamMembership, error) {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionTeamsManage,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID},
+	); err != nil {
 		return nil, err
 	}
 	team, err := s.teams.GetByID(ctx, principal.TenantID, organizationID, teamID)
@@ -260,15 +381,30 @@ func (s *HierarchyService) SetTeamMembership(ctx context.Context, principal doma
 	if err := s.requireAssignablePrincipal(ctx, principal, principalID); err != nil {
 		return nil, err
 	}
-	membership := &domain.TeamMembership{TenantID: principal.TenantID, OrganizationID: organizationID, TeamID: teamID, PrincipalID: principalID}
+	membership := &domain.TeamMembership{
+		TenantID:       principal.TenantID,
+		OrganizationID: organizationID,
+		TeamID:         teamID,
+		PrincipalID:    principalID,
+	}
 	if err := s.teamMembers.Upsert(ctx, membership); err != nil {
 		return nil, fmt.Errorf("setting team membership: %w", err)
 	}
 	return membership, nil
 }
 
-func (s *HierarchyService) DeleteTeamMembership(ctx context.Context, principal domain.AuthenticatedPrincipal, organizationID, teamID, principalID string) error {
-	if err := s.authorization.Authorize(ctx, principal, domain.PermissionTeamsManage, domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID}); err != nil {
+// DeleteTeamMembership performs the delete team membership operation.
+func (s *HierarchyService) DeleteTeamMembership(
+	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
+	organizationID, teamID, principalID string,
+) error {
+	if err := s.authorization.Authorize(
+		ctx,
+		principal,
+		domain.PermissionTeamsManage,
+		domain.AuthorizationScope{TenantID: principal.TenantID, OrganizationID: organizationID},
+	); err != nil {
 		return err
 	}
 	if _, err := s.teams.GetByID(ctx, principal.TenantID, organizationID, teamID); err != nil {
@@ -280,7 +416,11 @@ func (s *HierarchyService) DeleteTeamMembership(ctx context.Context, principal d
 	return nil
 }
 
-func (s *HierarchyService) requireAssignablePrincipal(ctx context.Context, actor domain.AuthenticatedPrincipal, principalID string) error {
+func (s *HierarchyService) requireAssignablePrincipal(
+	ctx context.Context,
+	actor domain.AuthenticatedPrincipal,
+	principalID string,
+) error {
 	principal, err := s.principals.GetByID(ctx, principalID)
 	if err != nil {
 		return fmt.Errorf("getting membership principal: %w", err)
@@ -295,7 +435,12 @@ func (s *HierarchyService) requireAssignablePrincipal(ctx context.Context, actor
 	if err != nil {
 		return fmt.Errorf("getting membership principal identity: %w", err)
 	}
-	if err := s.membership.VerifyTenantMembership(ctx, actor.Provider, actor.ExternalAccountID, identity.ExternalSubject); err != nil {
+	if err := s.membership.VerifyTenantMembership(
+		ctx,
+		actor.Provider,
+		actor.ExternalAccountID,
+		identity.ExternalSubject,
+	); err != nil {
 		return fmt.Errorf("verifying tenant membership: %w", err)
 	}
 	return nil

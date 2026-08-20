@@ -63,9 +63,11 @@ func (s *DependencyContextService) Resolve(
 
 func dependencyContextKey(req domain.AccessRequest) domain.DependencyContextSummaryKey {
 	return domain.DependencyContextSummaryKey{
-		TenantID:   req.TenantID,
-		UpstreamID: req.Upstream.ID,
-		Artifact:   req.Artifact,
+		TenantID:       req.TenantID,
+		OrganizationID: req.OrganizationID,
+		TeamID:         req.TeamID,
+		UpstreamID:     req.Upstream.ID,
+		Artifact:       req.Artifact,
 	}
 }
 

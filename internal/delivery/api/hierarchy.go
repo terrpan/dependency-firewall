@@ -14,33 +14,206 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
+// HierarchyHandler models a hierarchy handler.
 type HierarchyHandler struct {
 	hierarchy *service.HierarchyService
 	logger    *slog.Logger
 }
 
+// NewHierarchyHandler constructs a new HierarchyHandler.
 func NewHierarchyHandler(hierarchy *service.HierarchyService, logger *slog.Logger) *HierarchyHandler {
 	return &HierarchyHandler{hierarchy: hierarchy, logger: logger}
 }
 
+// RegisterHumaRoutes registers the Organization and Team management endpoints.
 func (h *HierarchyHandler) RegisterHumaRoutes(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "list-organizations", Method: http.MethodGet, Path: "/api/v1/organizations", Summary: "List assigned Organizations", Tags: []string{"organizations"}, Errors: hierarchyErrors()}, h.listOrganizations)
-	huma.Register(api, huma.Operation{OperationID: "create-organization", Method: http.MethodPost, Path: "/api/v1/organizations", Summary: "Create an Organization", DefaultStatus: http.StatusCreated, Tags: []string{"organizations"}, Errors: hierarchyErrors()}, h.createOrganization)
-	huma.Register(api, huma.Operation{OperationID: "get-organization", Method: http.MethodGet, Path: "/api/v1/organizations/{organization_id}", Summary: "Get an Organization", Tags: []string{"organizations"}, Errors: hierarchyErrors()}, h.getOrganization)
-	huma.Register(api, huma.Operation{OperationID: "update-organization", Method: http.MethodPatch, Path: "/api/v1/organizations/{organization_id}", Summary: "Update an Organization", Tags: []string{"organizations"}, Errors: hierarchyErrors()}, h.updateOrganization)
-	huma.Register(api, huma.Operation{OperationID: "get-organization-member", Method: http.MethodGet, Path: "/api/v1/organizations/{organization_id}/members/{principal_id}", Summary: "Get an Organization role assignment", Tags: []string{"organization-members"}, Errors: hierarchyErrors()}, h.getOrganizationMember)
-	huma.Register(api, huma.Operation{OperationID: "set-organization-member", Method: http.MethodPut, Path: "/api/v1/organizations/{organization_id}/members/{principal_id}", Summary: "Set an Organization role assignment", Tags: []string{"organization-members"}, Errors: hierarchyErrors()}, h.setOrganizationMember)
-	huma.Register(api, huma.Operation{OperationID: "list-teams", Method: http.MethodGet, Path: "/api/v1/organizations/{organization_id}/teams", Summary: "List accessible Teams", Tags: []string{"teams"}, Errors: hierarchyErrors()}, h.listTeams)
-	huma.Register(api, huma.Operation{OperationID: "create-team", Method: http.MethodPost, Path: "/api/v1/organizations/{organization_id}/teams", Summary: "Create a Team", DefaultStatus: http.StatusCreated, Tags: []string{"teams"}, Errors: hierarchyErrors()}, h.createTeam)
-	huma.Register(api, huma.Operation{OperationID: "get-team", Method: http.MethodGet, Path: "/api/v1/organizations/{organization_id}/teams/{team_id}", Summary: "Get a Team", Tags: []string{"teams"}, Errors: hierarchyErrors()}, h.getTeam)
-	huma.Register(api, huma.Operation{OperationID: "update-team", Method: http.MethodPatch, Path: "/api/v1/organizations/{organization_id}/teams/{team_id}", Summary: "Update or archive a Team", Tags: []string{"teams"}, Errors: hierarchyErrors()}, h.updateTeam)
-	huma.Register(api, huma.Operation{OperationID: "get-team-member", Method: http.MethodGet, Path: "/api/v1/organizations/{organization_id}/teams/{team_id}/members/{principal_id}", Summary: "Get a Team membership", Tags: []string{"team-members"}, Errors: hierarchyErrors()}, h.getTeamMember)
-	huma.Register(api, huma.Operation{OperationID: "set-team-member", Method: http.MethodPut, Path: "/api/v1/organizations/{organization_id}/teams/{team_id}/members/{principal_id}", Summary: "Add a Team member", Tags: []string{"team-members"}, Errors: hierarchyErrors()}, h.setTeamMember)
-	huma.Register(api, huma.Operation{OperationID: "delete-team-member", Method: http.MethodDelete, Path: "/api/v1/organizations/{organization_id}/teams/{team_id}/members/{principal_id}", Summary: "Remove a Team member", DefaultStatus: http.StatusNoContent, Tags: []string{"team-members"}, Errors: hierarchyErrors()}, h.deleteTeamMember)
+	h.registerOrganizationRoutes(api)
+	h.registerTeamRoutes(api)
+}
+
+func (h *HierarchyHandler) registerOrganizationRoutes(api huma.API) {
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "list-organizations",
+			Method:      http.MethodGet,
+			Path:        "/api/v1/organizations",
+			Summary:     "List assigned Organizations",
+			Tags:        []string{"organizations"},
+			Errors:      hierarchyErrors(),
+		},
+		h.listOrganizations,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID:   "create-organization",
+			Method:        http.MethodPost,
+			Path:          "/api/v1/organizations",
+			Summary:       "Create an Organization",
+			DefaultStatus: http.StatusCreated,
+			Tags:          []string{"organizations"},
+			Errors:        hierarchyErrors(),
+		},
+		h.createOrganization,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "get-organization",
+			Method:      http.MethodGet,
+			Path:        "/api/v1/organizations/{organization_id}",
+			Summary:     "Get an Organization",
+			Tags:        []string{"organizations"},
+			Errors:      hierarchyErrors(),
+		},
+		h.getOrganization,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "update-organization",
+			Method:      http.MethodPatch,
+			Path:        "/api/v1/organizations/{organization_id}",
+			Summary:     "Update an Organization",
+			Tags:        []string{"organizations"},
+			Errors:      hierarchyErrors(),
+		},
+		h.updateOrganization,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "get-organization-member",
+			Method:      http.MethodGet,
+			Path:        "/api/v1/organizations/{organization_id}/members/{principal_id}",
+			Summary:     "Get an Organization role assignment",
+			Tags:        []string{"organization-members"},
+			Errors:      hierarchyErrors(),
+		},
+		h.getOrganizationMember,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "set-organization-member",
+			Method:      http.MethodPut,
+			Path:        "/api/v1/organizations/{organization_id}/members/{principal_id}",
+			Summary:     "Set an Organization role assignment",
+			Tags:        []string{"organization-members"},
+			Errors:      hierarchyErrors(),
+		},
+		h.setOrganizationMember,
+	)
+}
+
+func (h *HierarchyHandler) registerTeamRoutes(api huma.API) {
+	h.registerTeamResourceRoutes(api)
+	h.registerTeamMemberRoutes(api)
+}
+
+func (h *HierarchyHandler) registerTeamResourceRoutes(api huma.API) {
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "list-teams",
+			Method:      http.MethodGet,
+			Path:        "/api/v1/organizations/{organization_id}/teams",
+			Summary:     "List accessible Teams",
+			Tags:        []string{"teams"},
+			Errors:      hierarchyErrors(),
+		},
+		h.listTeams,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID:   "create-team",
+			Method:        http.MethodPost,
+			Path:          "/api/v1/organizations/{organization_id}/teams",
+			Summary:       "Create a Team",
+			DefaultStatus: http.StatusCreated,
+			Tags:          []string{"teams"},
+			Errors:        hierarchyErrors(),
+		},
+		h.createTeam,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "get-team",
+			Method:      http.MethodGet,
+			Path:        "/api/v1/organizations/{organization_id}/teams/{team_id}",
+			Summary:     "Get a Team",
+			Tags:        []string{"teams"},
+			Errors:      hierarchyErrors(),
+		},
+		h.getTeam,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "update-team",
+			Method:      http.MethodPatch,
+			Path:        "/api/v1/organizations/{organization_id}/teams/{team_id}",
+			Summary:     "Update or archive a Team",
+			Tags:        []string{"teams"},
+			Errors:      hierarchyErrors(),
+		},
+		h.updateTeam,
+	)
+}
+
+func (h *HierarchyHandler) registerTeamMemberRoutes(api huma.API) {
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "get-team-member",
+			Method:      http.MethodGet,
+			Path:        "/api/v1/organizations/{organization_id}/teams/{team_id}/members/{principal_id}",
+			Summary:     "Get a Team membership",
+			Tags:        []string{"team-members"},
+			Errors:      hierarchyErrors(),
+		},
+		h.getTeamMember,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID: "set-team-member",
+			Method:      http.MethodPut,
+			Path:        "/api/v1/organizations/{organization_id}/teams/{team_id}/members/{principal_id}",
+			Summary:     "Add a Team member",
+			Tags:        []string{"team-members"},
+			Errors:      hierarchyErrors(),
+		},
+		h.setTeamMember,
+	)
+	huma.Register(
+		api,
+		huma.Operation{
+			OperationID:   "delete-team-member",
+			Method:        http.MethodDelete,
+			Path:          "/api/v1/organizations/{organization_id}/teams/{team_id}/members/{principal_id}",
+			Summary:       "Remove a Team member",
+			DefaultStatus: http.StatusNoContent,
+			Tags:          []string{"team-members"},
+			Errors:        hierarchyErrors(),
+		},
+		h.deleteTeamMember,
+	)
 }
 
 func hierarchyErrors() []int {
-	return controlPlaneErrors(http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError, http.StatusServiceUnavailable)
+	return controlPlaneErrors(
+		http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusConflict,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+	)
 }
 
 type organizationPathInput struct {
@@ -49,18 +222,18 @@ type organizationPathInput struct {
 
 type organizationMemberPathInput struct {
 	OrganizationID string `path:"organization_id" doc:"Organization identifier"`
-	PrincipalID    string `path:"principal_id" doc:"Principal identifier"`
+	PrincipalID    string `path:"principal_id"    doc:"Principal identifier"`
 }
 
 type teamPathInput struct {
 	OrganizationID string `path:"organization_id" doc:"Organization identifier"`
-	TeamID         string `path:"team_id" doc:"Team identifier"`
+	TeamID         string `path:"team_id"         doc:"Team identifier"`
 }
 
 type teamMemberPathInput struct {
 	OrganizationID string `path:"organization_id" doc:"Organization identifier"`
-	TeamID         string `path:"team_id" doc:"Team identifier"`
-	PrincipalID    string `path:"principal_id" doc:"Principal identifier"`
+	TeamID         string `path:"team_id"         doc:"Team identifier"`
+	PrincipalID    string `path:"principal_id"    doc:"Principal identifier"`
 }
 
 type organizationRequest struct {
@@ -68,7 +241,7 @@ type organizationRequest struct {
 }
 
 type updateOrganizationRequest struct {
-	Name   string                    `json:"name" validate:"notblank"`
+	Name   string                    `json:"name"   validate:"notblank"`
 	Status domain.OrganizationStatus `json:"status" validate:"required,oneof=active archived"`
 }
 
@@ -98,7 +271,7 @@ type createTeamInput struct {
 }
 
 type updateTeamRequest struct {
-	Name     string `json:"name" validate:"notblank"`
+	Name     string `json:"name"     validate:"notblank"`
 	Archived bool   `json:"archived"`
 }
 
@@ -108,6 +281,7 @@ type updateTeamInput struct {
 	Body           updateTeamRequest
 }
 
+// OrganizationResponse models an organization response.
 type OrganizationResponse struct {
 	ID          string                    `json:"id"`
 	TenantID    string                    `json:"tenant_id"`
@@ -121,6 +295,7 @@ type OrganizationResponse struct {
 	UpdatedAt   time.Time                 `json:"updated_at"`
 }
 
+// TeamResponse models a team response.
 type TeamResponse struct {
 	ID             string     `json:"id"`
 	TenantID       string     `json:"tenant_id"`
@@ -132,6 +307,7 @@ type TeamResponse struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
+// OrganizationMembershipResponse models an organization membership response.
 type OrganizationMembershipResponse struct {
 	TenantID       string                  `json:"tenant_id"`
 	OrganizationID string                  `json:"organization_id"`
@@ -141,6 +317,7 @@ type OrganizationMembershipResponse struct {
 	UpdatedAt      time.Time               `json:"updated_at"`
 }
 
+// TeamMembershipResponse models a team membership response.
 type TeamMembershipResponse struct {
 	TenantID       string     `json:"tenant_id"`
 	OrganizationID string     `json:"organization_id"`
@@ -174,7 +351,10 @@ func (h *HierarchyHandler) listOrganizations(ctx context.Context, _ *struct{}) (
 	return &organizationListOutput{Body: result}, nil
 }
 
-func (h *HierarchyHandler) createOrganization(ctx context.Context, input *organizationInput) (*organizationOutput, error) {
+func (h *HierarchyHandler) createOrganization(
+	ctx context.Context,
+	input *organizationInput,
+) (*organizationOutput, error) {
 	if err := validateRequest(input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -189,7 +369,10 @@ func (h *HierarchyHandler) createOrganization(ctx context.Context, input *organi
 	return &organizationOutput{Body: organizationResponse(*organization, domain.OrganizationRoleAdmin)}, nil
 }
 
-func (h *HierarchyHandler) getOrganization(ctx context.Context, input *organizationPathInput) (*organizationOutput, error) {
+func (h *HierarchyHandler) getOrganization(
+	ctx context.Context,
+	input *organizationPathInput,
+) (*organizationOutput, error) {
 	principal, err := hierarchyPrincipal(ctx)
 	if err != nil {
 		return nil, err
@@ -201,7 +384,10 @@ func (h *HierarchyHandler) getOrganization(ctx context.Context, input *organizat
 	return &organizationOutput{Body: organizationResponse(item.Organization, item.Role)}, nil
 }
 
-func (h *HierarchyHandler) updateOrganization(ctx context.Context, input *updateOrganizationInput) (*organizationOutput, error) {
+func (h *HierarchyHandler) updateOrganization(
+	ctx context.Context,
+	input *updateOrganizationInput,
+) (*organizationOutput, error) {
 	if err := validateRequest(input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -209,14 +395,23 @@ func (h *HierarchyHandler) updateOrganization(ctx context.Context, input *update
 	if err != nil {
 		return nil, err
 	}
-	organization, err := h.hierarchy.UpdateOrganization(ctx, principal, input.OrganizationID, input.Body.Name, input.Body.Status)
+	organization, err := h.hierarchy.UpdateOrganization(
+		ctx,
+		principal,
+		input.OrganizationID,
+		input.Body.Name,
+		input.Body.Status,
+	)
 	if err != nil {
 		return nil, h.hierarchyError(ctx, "updating organization", err)
 	}
 	return &organizationOutput{Body: organizationResponse(*organization, domain.OrganizationRoleAdmin)}, nil
 }
 
-func (h *HierarchyHandler) getOrganizationMember(ctx context.Context, input *organizationMemberPathInput) (*organizationMembershipOutput, error) {
+func (h *HierarchyHandler) getOrganizationMember(
+	ctx context.Context,
+	input *organizationMemberPathInput,
+) (*organizationMembershipOutput, error) {
 	principal, err := hierarchyPrincipal(ctx)
 	if err != nil {
 		return nil, err
@@ -228,7 +423,10 @@ func (h *HierarchyHandler) getOrganizationMember(ctx context.Context, input *org
 	return &organizationMembershipOutput{Body: organizationMembershipResponse(membership)}, nil
 }
 
-func (h *HierarchyHandler) setOrganizationMember(ctx context.Context, input *setOrganizationMemberInput) (*organizationMembershipOutput, error) {
+func (h *HierarchyHandler) setOrganizationMember(
+	ctx context.Context,
+	input *setOrganizationMemberInput,
+) (*organizationMembershipOutput, error) {
 	if err := validateRequest(input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -236,7 +434,13 @@ func (h *HierarchyHandler) setOrganizationMember(ctx context.Context, input *set
 	if err != nil {
 		return nil, err
 	}
-	membership, err := h.hierarchy.SetOrganizationMembership(ctx, principal, input.OrganizationID, input.PrincipalID, input.Body.Role)
+	membership, err := h.hierarchy.SetOrganizationMembership(
+		ctx,
+		principal,
+		input.OrganizationID,
+		input.PrincipalID,
+		input.Body.Role,
+	)
 	if err != nil {
 		return nil, h.hierarchyError(ctx, "setting organization member", err)
 	}
@@ -294,14 +498,24 @@ func (h *HierarchyHandler) updateTeam(ctx context.Context, input *updateTeamInpu
 	if err != nil {
 		return nil, err
 	}
-	team, err := h.hierarchy.UpdateTeam(ctx, principal, input.OrganizationID, input.TeamID, input.Body.Name, input.Body.Archived)
+	team, err := h.hierarchy.UpdateTeam(
+		ctx,
+		principal,
+		input.OrganizationID,
+		input.TeamID,
+		input.Body.Name,
+		input.Body.Archived,
+	)
 	if err != nil {
 		return nil, h.hierarchyError(ctx, "updating team", err)
 	}
 	return &teamOutput{Body: teamResponse(*team)}, nil
 }
 
-func (h *HierarchyHandler) getTeamMember(ctx context.Context, input *teamMemberPathInput) (*teamMembershipOutput, error) {
+func (h *HierarchyHandler) getTeamMember(
+	ctx context.Context,
+	input *teamMemberPathInput,
+) (*teamMembershipOutput, error) {
 	principal, err := hierarchyPrincipal(ctx)
 	if err != nil {
 		return nil, err
@@ -313,15 +527,31 @@ func (h *HierarchyHandler) getTeamMember(ctx context.Context, input *teamMemberP
 	if !member {
 		return nil, huma.Error404NotFound("team membership not found")
 	}
-	return &teamMembershipOutput{Body: &TeamMembershipResponse{TenantID: principal.TenantID, OrganizationID: input.OrganizationID, TeamID: input.TeamID, PrincipalID: input.PrincipalID}}, nil
+	return &teamMembershipOutput{
+		Body: &TeamMembershipResponse{
+			TenantID:       principal.TenantID,
+			OrganizationID: input.OrganizationID,
+			TeamID:         input.TeamID,
+			PrincipalID:    input.PrincipalID,
+		},
+	}, nil
 }
 
-func (h *HierarchyHandler) setTeamMember(ctx context.Context, input *teamMemberPathInput) (*teamMembershipOutput, error) {
+func (h *HierarchyHandler) setTeamMember(
+	ctx context.Context,
+	input *teamMemberPathInput,
+) (*teamMembershipOutput, error) {
 	principal, err := hierarchyPrincipal(ctx)
 	if err != nil {
 		return nil, err
 	}
-	membership, err := h.hierarchy.SetTeamMembership(ctx, principal, input.OrganizationID, input.TeamID, input.PrincipalID)
+	membership, err := h.hierarchy.SetTeamMembership(
+		ctx,
+		principal,
+		input.OrganizationID,
+		input.TeamID,
+		input.PrincipalID,
+	)
 	if err != nil {
 		return nil, h.hierarchyError(ctx, "setting team member", err)
 	}
@@ -333,7 +563,13 @@ func (h *HierarchyHandler) deleteTeamMember(ctx context.Context, input *teamMemb
 	if err != nil {
 		return nil, err
 	}
-	if err := h.hierarchy.DeleteTeamMembership(ctx, principal, input.OrganizationID, input.TeamID, input.PrincipalID); err != nil {
+	if err := h.hierarchy.DeleteTeamMembership(
+		ctx,
+		principal,
+		input.OrganizationID,
+		input.TeamID,
+		input.PrincipalID,
+	); err != nil {
 		return nil, h.hierarchyError(ctx, "deleting team member", err)
 	}
 	return nil, nil
@@ -348,7 +584,10 @@ func hierarchyPrincipal(ctx context.Context) (domain.AuthenticatedPrincipal, err
 }
 
 func (h *HierarchyHandler) hierarchyError(ctx context.Context, operation string, err error) error {
-	if errors.Is(err, domain.ErrOrganizationNotFound) || errors.Is(err, domain.ErrTeamNotFound) || errors.Is(err, domain.ErrPrincipalNotFound) || errors.Is(err, domain.ErrOrganizationMembershipNotFound) || errors.Is(err, domain.ErrTeamMembershipNotFound) {
+	if errors.Is(err, domain.ErrOrganizationNotFound) || errors.Is(err, domain.ErrTeamNotFound) ||
+		errors.Is(err, domain.ErrPrincipalNotFound) ||
+		errors.Is(err, domain.ErrOrganizationMembershipNotFound) ||
+		errors.Is(err, domain.ErrTeamMembershipNotFound) {
 		return huma.Error404NotFound("resource not found")
 	}
 	if errors.Is(err, domain.ErrOrganizationNameConflict) || errors.Is(err, domain.ErrTeamNameConflict) {
@@ -362,7 +601,9 @@ func (h *HierarchyHandler) hierarchyError(ctx context.Context, operation string,
 	}
 	var denial *domain.AuthorizationError
 	if errors.As(err, &denial) {
-		if denial.Reason == domain.AuthorizationDenialOrganizationNotFound || denial.Reason == domain.AuthorizationDenialTeamNotFound || denial.Reason == domain.AuthorizationDenialTenantMismatch {
+		if denial.Reason == domain.AuthorizationDenialOrganizationNotFound ||
+			denial.Reason == domain.AuthorizationDenialTeamNotFound ||
+			denial.Reason == domain.AuthorizationDenialTenantMismatch {
 			return huma.Error404NotFound("resource not found")
 		}
 		return huma.Error403Forbidden("insufficient permission for this scope")
@@ -371,19 +612,51 @@ func (h *HierarchyHandler) hierarchyError(ctx context.Context, operation string,
 }
 
 func organizationResponse(organization domain.Organization, role domain.OrganizationRole) *OrganizationResponse {
-	return &OrganizationResponse{ID: organization.ID, TenantID: organization.TenantID, Name: organization.Name, Status: organization.Status, IsDefault: organization.IsDefault, Role: role, Permissions: service.PermissionsForOrganizationRole(role), Scope: "organization", CreatedAt: organization.CreatedAt, UpdatedAt: organization.UpdatedAt}
+	return &OrganizationResponse{
+		ID:          organization.ID,
+		TenantID:    organization.TenantID,
+		Name:        organization.Name,
+		Status:      organization.Status,
+		IsDefault:   organization.IsDefault,
+		Role:        role,
+		Permissions: service.PermissionsForOrganizationRole(role),
+		Scope:       "organization",
+		CreatedAt:   organization.CreatedAt,
+		UpdatedAt:   organization.UpdatedAt,
+	}
 }
 
 func teamResponse(team domain.Team) *TeamResponse {
-	return &TeamResponse{ID: team.ID, TenantID: team.TenantID, OrganizationID: team.OrganizationID, Name: team.Name, ArchivedAt: team.ArchivedAt, Scope: "team", CreatedAt: team.CreatedAt, UpdatedAt: team.UpdatedAt}
+	return &TeamResponse{
+		ID:             team.ID,
+		TenantID:       team.TenantID,
+		OrganizationID: team.OrganizationID,
+		Name:           team.Name,
+		ArchivedAt:     team.ArchivedAt,
+		Scope:          "team",
+		CreatedAt:      team.CreatedAt,
+		UpdatedAt:      team.UpdatedAt,
+	}
 }
 
 func organizationMembershipResponse(membership *domain.OrganizationMembership) *OrganizationMembershipResponse {
-	return &OrganizationMembershipResponse{TenantID: membership.TenantID, OrganizationID: membership.OrganizationID, PrincipalID: membership.PrincipalID, Role: membership.Role, CreatedAt: membership.CreatedAt, UpdatedAt: membership.UpdatedAt}
+	return &OrganizationMembershipResponse{
+		TenantID:       membership.TenantID,
+		OrganizationID: membership.OrganizationID,
+		PrincipalID:    membership.PrincipalID,
+		Role:           membership.Role,
+		CreatedAt:      membership.CreatedAt,
+		UpdatedAt:      membership.UpdatedAt,
+	}
 }
 
 func teamMembershipResponse(membership *domain.TeamMembership) *TeamMembershipResponse {
-	response := &TeamMembershipResponse{TenantID: membership.TenantID, OrganizationID: membership.OrganizationID, TeamID: membership.TeamID, PrincipalID: membership.PrincipalID}
+	response := &TeamMembershipResponse{
+		TenantID:       membership.TenantID,
+		OrganizationID: membership.OrganizationID,
+		TeamID:         membership.TeamID,
+		PrincipalID:    membership.PrincipalID,
+	}
 	if !membership.CreatedAt.IsZero() {
 		response.CreatedAt = &membership.CreatedAt
 	}

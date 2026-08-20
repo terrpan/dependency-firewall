@@ -238,7 +238,12 @@ func (s *AccessService) lookupCachedDecision(
 
 	cacheCtx, cacheSpan := serviceTracer().Start(ctx, "access.decision_cache_lookup")
 	dependencyContextHash := dependencyContextCacheHash(req.DependencyContext)
-	cached, err := s.decisionCache.Get(cacheCtx, req.TenantID, req.Artifact, dependencyContextHash)
+	cached, err := s.decisionCache.Get(
+		cacheCtx,
+		req.TenantID,
+		req.Artifact,
+		scopedDecisionCacheIdentity(req, dependencyContextHash),
+	)
 	if err == nil {
 		cacheSpan.SetAttributes(attribute.Bool("cache.hit", true))
 		cacheSpan.End()
@@ -335,4 +340,11 @@ func (s *AccessService) recordDecisionCacheMiss(ctx context.Context, req domain.
 			"dependency_context": dependencyContextSummary(req.DependencyContext),
 		},
 	})
+}
+
+func scopedDecisionCacheIdentity(req domain.AccessRequest, dependencyContextHash string) string {
+	if dependencyContextHash == "" {
+		dependencyContextHash = "none"
+	}
+	return req.OrganizationID + ":" + req.TeamID + ":" + req.Upstream.ID + ":" + dependencyContextHash
 }

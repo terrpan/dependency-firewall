@@ -58,13 +58,21 @@ func upsertDecisionArtifact(ctx context.Context, tx pgx.Tx, decision *domain.Dec
 		return nil, nil
 	}
 	var artifactID string
-	err := tx.QueryRow(ctx,
-		`INSERT INTO artifacts (tenant_id, ecosystem, namespace, name, version, digest)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+	err := tx.QueryRow(
+		ctx,
+		`INSERT INTO artifacts (tenant_id, organization_id, team_id, upstream_id, ecosystem, namespace, name, version, digest)
+		 VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9)
 		 ON CONFLICT ON CONSTRAINT artifacts_scope_identity_key DO UPDATE SET tenant_id = EXCLUDED.tenant_id
 		 RETURNING id`,
-		decision.TenantID, decision.Artifact.Ecosystem, decision.Artifact.Namespace,
-		decision.Artifact.Name, decision.Artifact.Version, decision.Artifact.Digest,
+		decision.TenantID,
+		decision.OrganizationID,
+		decision.TeamID,
+		decision.UpstreamID,
+		decision.Artifact.Ecosystem,
+		decision.Artifact.Namespace,
+		decision.Artifact.Name,
+		decision.Artifact.Version,
+		decision.Artifact.Digest,
 	).Scan(&artifactID)
 	if err != nil {
 		return nil, fmt.Errorf("upserting artifact: %w", err)
@@ -92,10 +100,13 @@ func insertDecision(
 	}
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO decisions (tenant_id, artifact_id, outcome, policy_id, policy_hash, reason, warnings, dependency_context, cached_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`INSERT INTO decisions (tenant_id, organization_id, team_id, upstream_id, artifact_id, outcome, policy_id, policy_hash, reason, warnings, dependency_context, cached_at)
+		 VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9, $10, $11, $12)
 		 RETURNING id, evaluated_at`,
 		decision.TenantID,
+		decision.OrganizationID,
+		decision.TeamID,
+		decision.UpstreamID,
 		artifactID,
 		decision.Outcome,
 		policyID,
@@ -128,10 +139,13 @@ func insertDecisionEvaluation(
 	var evaluationID string
 	err := tx.QueryRow(
 		ctx,
-		`INSERT INTO evaluations (tenant_id, artifact_id, outcome, policy_id, reason, dependency_context)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO evaluations (tenant_id, organization_id, team_id, upstream_id, artifact_id, outcome, policy_id, reason, dependency_context)
+		 VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9)
 		 RETURNING id`,
 		decision.TenantID,
+		decision.OrganizationID,
+		decision.TeamID,
+		decision.UpstreamID,
 		artifactID,
 		decision.Outcome,
 		policyID,
@@ -147,11 +161,20 @@ func insertDecisionEvaluation(
 		if reason.PolicyID != "" {
 			reasonPolicyID = &reason.PolicyID
 		}
-		_, err = tx.Exec(ctx,
-			`INSERT INTO evaluation_reasons (tenant_id, evaluation_id, policy_id, policy_name, category, action, message)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			decision.TenantID, evaluationID, reasonPolicyID, reason.PolicyName,
-			string(reason.Category), string(reason.Action), reason.Message,
+		_, err = tx.Exec(
+			ctx,
+			`INSERT INTO evaluation_reasons (tenant_id, organization_id, team_id, upstream_id, evaluation_id, policy_id, policy_name, category, action, message)
+			 VALUES ($1, NULLIF($2, '')::uuid, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, $5, $6, $7, $8, $9, $10)`,
+			decision.TenantID,
+			decision.OrganizationID,
+			decision.TeamID,
+			decision.UpstreamID,
+			evaluationID,
+			reasonPolicyID,
+			reason.PolicyName,
+			string(reason.Category),
+			string(reason.Action),
+			reason.Message,
 		)
 		if err != nil {
 			return fmt.Errorf("inserting evaluation reason: %w", err)
@@ -360,6 +383,43 @@ func (r *DecisionRepository) HasRecentAllow(
 	).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("checking recent allow decision: %w", err)
+	}
+	return exists, nil
+}
+
+// HasRecentAllowInScope checks a manifest decision only within the credential's
+// Organization and optional Team. This is intentionally separate from the
+// legacy tenant-wide lookup retained for the unauthenticated compatibility mode.
+func (r *DecisionRepository) HasRecentAllowInScope(
+	ctx context.Context,
+	scope domain.AuthorizationScope,
+	ecosystem domain.EcosystemType,
+	namespace string,
+	name string,
+) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM decisions d
+			JOIN artifacts a ON d.artifact_id = a.id
+			WHERE d.tenant_id = $1
+			  AND d.organization_id = NULLIF($2, '')::uuid
+			  AND d.team_id IS NOT DISTINCT FROM NULLIF($3, '')::uuid
+			  AND a.ecosystem = $4
+			  AND a.namespace = $5
+			  AND a.name = $6
+			  AND d.outcome = 'allow'
+			  AND d.evaluated_at > now() - interval '1 hour'
+		)`,
+		scope.TenantID,
+		scope.OrganizationID,
+		scope.TeamID,
+		string(ecosystem),
+		namespace,
+		name,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("checking recent scoped allow decision: %w", err)
 	}
 	return exists, nil
 }

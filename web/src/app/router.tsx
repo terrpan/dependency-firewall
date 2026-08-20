@@ -23,6 +23,9 @@ const TenantsPage = lazy(() => import('../pages/TenantsPage.tsx').then(({ Tenant
 const UpstreamsPage = lazy(() =>
   import('../pages/UpstreamsPage.tsx').then(({ UpstreamsPage }) => ({ default: UpstreamsPage })),
 )
+const OrganizationsPage = lazy(() =>
+  import('../pages/OrganizationsPage.tsx').then(({ OrganizationsPage }) => ({ default: OrganizationsPage })),
+)
 
 export const router = createBrowserRouter([
   {
@@ -40,6 +43,10 @@ export const router = createBrowserRouter([
       {
         path: 'tenants',
         element: <RouteElement Page={TenantsPage} />,
+      },
+      {
+        path: 'organizations',
+        element: <RouteElement Page={OrganizationsPage} />,
       },
       {
         path: 'upstreams',

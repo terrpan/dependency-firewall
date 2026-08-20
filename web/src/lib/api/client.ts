@@ -11,7 +11,10 @@ import {
   type RequestHeaders,
 } from './request.ts'
 import type {
+  BootstrapSession,
   CacheClearResult,
+  CreateOrganizationRequest,
+  CreateTeamRequest,
   DependencyGraph,
   DependencyGraphRoot,
   CreatePolicyRequest,
@@ -19,6 +22,7 @@ import type {
   CreateUpstreamRequest,
   Evaluation,
   Health,
+  Organization,
   Policy,
   PolicyImportBody,
   PolicyImportContentType,
@@ -27,9 +31,12 @@ import type {
   PolicyUpsertInput,
   PolicyVersion,
   RollbackPolicyRequest,
+  Session,
+  Team,
   Tenant,
   UpdatePolicyRequest,
   UpdateTenantRequest,
+  UpdateTeamRequest,
   UpdateUpstreamRequest,
   Upstream,
 } from './types.ts'
@@ -61,7 +68,7 @@ export type ControlPlaneApiOptions = {
 type RequestScope = 'control-plane' | 'root'
 
 type InternalRequestOptions<TBody> = JsonRequestOptions<TBody> & {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   path: string
   scope?: RequestScope
   contentType?: string
@@ -190,6 +197,146 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
           scope: 'root',
           ...options,
         })
+      },
+    },
+    session: {
+      get(options?: RequestOptions) {
+        return request<Session>({ method: 'GET', path: '/session', ...options })
+      },
+      bootstrap(options?: RequestOptions) {
+        return request<BootstrapSession>({ method: 'POST', path: '/session/bootstrap', ...options })
+      },
+    },
+    organizations: {
+      list(options?: RequestOptions) {
+        return request<Organization[]>({ method: 'GET', path: '/organizations', ...options })
+      },
+      create(body: CreateOrganizationRequest, options?: RequestOptions) {
+        return request<Organization, CreateOrganizationRequest>({
+          method: 'POST',
+          path: '/organizations',
+          body,
+          contentType: 'application/json',
+          ...options,
+        })
+      },
+      teams: {
+        list(organizationID: string, options?: RequestOptions) {
+          return request<Team[]>({ method: 'GET', path: `/organizations/${organizationID}/teams`, ...options })
+        },
+        create(organizationID: string, body: CreateTeamRequest, options?: RequestOptions) {
+          return request<Team, CreateTeamRequest>({
+            method: 'POST',
+            path: `/organizations/${organizationID}/teams`,
+            body,
+            contentType: 'application/json',
+            ...options,
+          })
+        },
+        update(organizationID: string, teamID: string, body: UpdateTeamRequest, options?: RequestOptions) {
+          return request<Team, UpdateTeamRequest>({
+            method: 'PATCH',
+            path: `/organizations/${organizationID}/teams/${teamID}`,
+            body,
+            contentType: 'application/json',
+            ...options,
+          })
+        },
+      },
+    },
+    scopedResources: {
+      account: {
+        policies: {
+          list(options?: RequestOptions) {
+            return request<Policy[]>({ method: 'GET', path: '/account/policies', ...options })
+          },
+          create(body: PolicyUpsertInput, options?: RequestOptions) {
+            return request<Policy, PolicyUpsertInput>({
+              method: 'POST',
+              path: '/account/policies',
+              body,
+              contentType: 'application/json',
+              ...options,
+            })
+          },
+          update(id: string, body: PolicyUpsertInput, options?: RequestOptions) {
+            return request<Policy, PolicyUpsertInput>({
+              method: 'PUT',
+              path: `/account/policies/${id}`,
+              body,
+              contentType: 'application/json',
+              ...options,
+            })
+          },
+          remove(id: string, options?: RequestOptions) {
+            return request<void>({ method: 'DELETE', path: `/account/policies/${id}`, ...options })
+          },
+        },
+        upstreams: {
+          list(options?: RequestOptions) {
+            return request<Upstream[]>({ method: 'GET', path: '/account/upstreams', ...options })
+          },
+          create(body: CreateUpstreamRequest, options?: RequestOptions) {
+            return request<Upstream, CreateUpstreamRequest>({
+              method: 'POST',
+              path: '/account/upstreams',
+              body,
+              contentType: 'application/json',
+              ...options,
+            })
+          },
+          remove(id: string, options?: RequestOptions) {
+            return request<void>({ method: 'DELETE', path: `/account/upstreams/${id}`, ...options })
+          },
+        },
+      },
+      organization(organizationID: string) {
+        const root = `/organizations/${organizationID}`
+        return {
+          policies: {
+            list(options?: RequestOptions) {
+              return request<Policy[]>({ method: 'GET', path: `${root}/policies`, ...options })
+            },
+            create(body: PolicyUpsertInput, options?: RequestOptions) {
+              return request<Policy, PolicyUpsertInput>({
+                method: 'POST',
+                path: `${root}/policies`,
+                body,
+                contentType: 'application/json',
+                ...options,
+              })
+            },
+            update(id: string, body: PolicyUpsertInput, options?: RequestOptions) {
+              return request<Policy, PolicyUpsertInput>({
+                method: 'PUT',
+                path: `${root}/policies/${id}`,
+                body,
+                contentType: 'application/json',
+                ...options,
+              })
+            },
+            remove(id: string, options?: RequestOptions) {
+              return request<void>({ method: 'DELETE', path: `${root}/policies/${id}`, ...options })
+            },
+          },
+          upstreams: {
+            list(options?: RequestOptions) {
+              return request<Upstream[]>({ method: 'GET', path: `${root}/upstreams`, ...options })
+            },
+            create(body: CreateUpstreamRequest, options?: RequestOptions) {
+              return request<Upstream, CreateUpstreamRequest>({
+                method: 'POST',
+                path: `${root}/upstreams`,
+                body,
+                contentType: 'application/json',
+                ...options,
+              })
+            },
+            remove(id: string, options?: RequestOptions) {
+              return request<void>({ method: 'DELETE', path: `${root}/upstreams/${id}`, ...options })
+            },
+          },
+        }
       },
     },
     tenants: {

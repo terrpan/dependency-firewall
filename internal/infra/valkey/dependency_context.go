@@ -22,7 +22,7 @@ func NewDependencyContextCache(client valkeygo.Client) *DependencyContextCache {
 }
 
 func dependencyContextKey(key domain.DependencyContextSummaryKey) string {
-	return "dependency-context:" + key.TenantID + ":" + key.UpstreamID + ":" + key.Artifact.CacheKey()
+	return "dependency-context:" + key.TenantID + ":" + key.OrganizationID + ":" + key.TeamID + ":" + key.UpstreamID + ":" + key.Artifact.CacheKey()
 }
 
 // Get retrieves a cached dependency context. Returns domain.ErrCacheMiss if not found.

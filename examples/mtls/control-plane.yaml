@@ -1,6 +1,22 @@
 runtime:
   mode: control-plane
 
+auth:
+  # disabled is one-release local compatibility only and emits a security warning.
+  # Use clerk for a publicly reachable human control plane.
+  mode: clerk
+  clerk:
+    # Server-only Clerk Backend API secret. Set via the FIREWALL_AUTH_CLERK_SECRET_KEY
+    # environment variable; do not commit a value here.
+    secret_key: ""
+    # Optional pinned PEM public verification key. Otherwise JWKs are cached.
+    jwt_key: ""
+    issuer: "https://living-eagle-98.clerk.accounts.dev"
+    audience: dependency-firewall-api
+    authorized_parties:
+      - "http://localhost:5173"
+    leeway: 5s
+
 server:
   port: 8080
   read_timeout: 30s

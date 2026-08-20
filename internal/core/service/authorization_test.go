@@ -26,15 +26,22 @@ func (f *authorizationFixture) GetByID(_ context.Context, tenantID, id string) (
 	return &organization, nil
 }
 
-func (f *authorizationFixture) Get(_ context.Context, tenantID, organizationID, principalID string) (*domain.OrganizationMembership, error) {
-	if f.membership == nil || tenantID != f.membership.TenantID || organizationID != f.membership.OrganizationID || principalID != f.membership.PrincipalID {
+func (f *authorizationFixture) Get(
+	_ context.Context,
+	tenantID, organizationID, principalID string,
+) (*domain.OrganizationMembership, error) {
+	if f.membership == nil || tenantID != f.membership.TenantID || organizationID != f.membership.OrganizationID ||
+		principalID != f.membership.PrincipalID {
 		return nil, domain.ErrOrganizationMembershipNotFound
 	}
 	membership := *f.membership
 	return &membership, nil
 }
 
-func (f *authorizationFixture) GetByIDTeam(_ context.Context, tenantID, organizationID, id string) (*domain.Team, error) {
+func (f *authorizationFixture) GetByIDTeam(
+	_ context.Context,
+	tenantID, organizationID, id string,
+) (*domain.Team, error) {
 	if tenantID != f.team.TenantID || organizationID != f.team.OrganizationID || id != f.team.ID {
 		return nil, domain.ErrTeamNotFound
 	}
@@ -155,16 +162,25 @@ func TestAuthorizationService_RoleAndScopeMatrix(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := &authorizationFixture{
-				organization: domain.Organization{ID: organizationID, TenantID: tenantID, Status: domain.OrganizationStatusActive},
-				team:         domain.Team{ID: teamID, TenantID: tenantID, OrganizationID: organizationID},
-				teamMember:   test.teamMember,
+				organization: domain.Organization{
+					ID:       organizationID,
+					TenantID: tenantID,
+					Status:   domain.OrganizationStatusActive,
+				},
+				team:       domain.Team{ID: teamID, TenantID: tenantID, OrganizationID: organizationID},
+				teamMember: test.teamMember,
 			}
 			if test.orgRole != nil {
 				fixture.membership = &domain.OrganizationMembership{
 					TenantID: tenantID, OrganizationID: organizationID, PrincipalID: principalID, Role: *test.orgRole,
 				}
 			}
-			service := NewAuthorizationService(fixture, fixture, teamRepositoryAdapter{fixture}, teamMembershipAdapter{fixture})
+			service := NewAuthorizationService(
+				fixture,
+				fixture,
+				teamRepositoryAdapter{fixture},
+				teamMembershipAdapter{fixture},
+			)
 			principal := domain.AuthenticatedPrincipal{
 				Principal:  domain.Principal{ID: principalID, Status: domain.PrincipalStatusActive},
 				TenantID:   tenantID,

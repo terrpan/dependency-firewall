@@ -1,7 +1,9 @@
 package domain
 
+// Permission is the type used for permission values.
 type Permission string
 
+// PermissionAccountRead and its sibling constants enumerate the supported values.
 const (
 	PermissionAccountRead          Permission = "account:read"
 	PermissionAccountManage        Permission = "account:manage"
@@ -31,14 +33,17 @@ const (
 	PermissionCacheInvalidate      Permission = "cache:invalidate"
 )
 
+// TenantRole is the type used for tenant role values.
 type TenantRole string
 
+// TenantRoleOwner and its sibling constants enumerate the supported values.
 const (
 	TenantRoleOwner  TenantRole = "owner"
 	TenantRoleAdmin  TenantRole = "admin"
 	TenantRoleMember TenantRole = "member"
 )
 
+// AuthenticatedPrincipal models an authenticated principal.
 type AuthenticatedPrincipal struct {
 	Principal         Principal
 	TenantID          string
@@ -57,14 +62,17 @@ type VerifiedIdentity struct {
 	SessionID         string
 }
 
+// AuthorizationScope models an authorization scope.
 type AuthorizationScope struct {
 	TenantID       string
 	OrganizationID string
 	TeamID         string
 }
 
+// AuthorizationDenialReason is the type used for authorization denial reason values.
 type AuthorizationDenialReason string
 
+// AuthorizationDenialUnauthenticated and its sibling constants enumerate the supported values.
 const (
 	AuthorizationDenialUnauthenticated        AuthorizationDenialReason = "unauthenticated"
 	AuthorizationDenialTenantMismatch         AuthorizationDenialReason = "tenant_mismatch"
@@ -75,6 +83,7 @@ const (
 	AuthorizationDenialInsufficientPermission AuthorizationDenialReason = "insufficient_permission"
 )
 
+// AuthorizationError models an authorization error.
 type AuthorizationError struct {
 	Reason AuthorizationDenialReason
 }

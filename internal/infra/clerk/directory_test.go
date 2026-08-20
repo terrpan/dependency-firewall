@@ -26,7 +26,10 @@ type membershipListerStub struct {
 	memberships []*clerksdk.OrganizationMembership
 }
 
-func (s membershipListerStub) List(context.Context, *organizationmembership.ListParams) (*clerksdk.OrganizationMembershipList, error) {
+func (s membershipListerStub) List(
+	context.Context,
+	*organizationmembership.ListParams,
+) (*clerksdk.OrganizationMembershipList, error) {
 	return &clerksdk.OrganizationMembershipList{OrganizationMemberships: s.memberships}, nil
 }
 

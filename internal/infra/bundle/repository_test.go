@@ -36,14 +36,41 @@ func TestScopedBundleRepositoriesFilterVisibilityAndPolicyInheritance(t *testing
 		TenantID: "tenant-1",
 		Policies: []domain.Policy{
 			{ID: "account", TenantID: "tenant-1", ScopeKind: domain.PolicyScopeAccount},
-			{ID: "org-1", TenantID: "tenant-1", ScopeKind: domain.PolicyScopeOrganization, OrganizationID: "organization-1"},
-			{ID: "org-2", TenantID: "tenant-1", ScopeKind: domain.PolicyScopeOrganization, OrganizationID: "organization-2"},
+			{
+				ID:             "org-1",
+				TenantID:       "tenant-1",
+				ScopeKind:      domain.PolicyScopeOrganization,
+				OrganizationID: "organization-1",
+			},
+			{
+				ID:             "org-2",
+				TenantID:       "tenant-1",
+				ScopeKind:      domain.PolicyScopeOrganization,
+				OrganizationID: "organization-2",
+			},
 		},
 		Upstreams: []domain.Upstream{
 			{ID: "tenant", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeTenantShared},
-			{ID: "org-1", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeOrganizationShared, OrganizationID: "organization-1"},
-			{ID: "team-1", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeTeamLocal, OrganizationID: "organization-1", TeamID: "team-1"},
-			{ID: "team-2", TenantID: "tenant-1", ScopeKind: domain.UpstreamScopeTeamLocal, OrganizationID: "organization-1", TeamID: "team-2"},
+			{
+				ID:             "org-1",
+				TenantID:       "tenant-1",
+				ScopeKind:      domain.UpstreamScopeOrganizationShared,
+				OrganizationID: "organization-1",
+			},
+			{
+				ID:             "team-1",
+				TenantID:       "tenant-1",
+				ScopeKind:      domain.UpstreamScopeTeamLocal,
+				OrganizationID: "organization-1",
+				TeamID:         "team-1",
+			},
+			{
+				ID:             "team-2",
+				TenantID:       "tenant-1",
+				ScopeKind:      domain.UpstreamScopeTeamLocal,
+				OrganizationID: "organization-1",
+				TeamID:         "team-2",
+			},
 		},
 	}}
 
@@ -64,7 +91,11 @@ func TestScopedBundleRepositoriesFilterVisibilityAndPolicyInheritance(t *testing
 	})
 	require.NoError(t, err)
 	require.Len(t, upstreams, 3)
-	assert.ElementsMatch(t, []string{"tenant", "org-1", "team-1"}, []string{upstreams[0].ID, upstreams[1].ID, upstreams[2].ID})
+	assert.ElementsMatch(
+		t,
+		[]string{"tenant", "org-1", "team-1"},
+		[]string{upstreams[0].ID, upstreams[1].ID, upstreams[2].ID},
+	)
 }
 
 func TestPolicyRepositoryListByTenantReturnsBundlePolicies(t *testing.T) {

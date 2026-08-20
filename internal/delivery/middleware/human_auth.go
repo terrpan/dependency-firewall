@@ -12,22 +12,32 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
+// HumanAuthenticator defines the behavior required of a human authenticator.
 type HumanAuthenticator interface {
 	Authenticate(ctx context.Context, token string) (domain.VerifiedIdentity, error)
 }
 
+// HumanIdentityResolver defines the behavior required of a human identity resolver.
 type HumanIdentityResolver interface {
 	Resolve(ctx context.Context, identity domain.VerifiedIdentity) (domain.AuthenticatedPrincipal, error)
 }
 
+// HumanAuthorizer defines the behavior required of a human authorizer.
 type HumanAuthorizer interface {
-	Authorize(ctx context.Context, principal domain.AuthenticatedPrincipal, permission domain.Permission, scope domain.AuthorizationScope) error
+	Authorize(
+		ctx context.Context,
+		principal domain.AuthenticatedPrincipal,
+		permission domain.Permission,
+		scope domain.AuthorizationScope,
+	) error
 }
 
+// HumanMembershipVerifier defines the behavior required of a human membership verifier.
 type HumanMembershipVerifier interface {
 	FreshTenantRole(ctx context.Context, identity domain.VerifiedIdentity) (domain.TenantRole, error)
 }
 
+// HumanOperationPolicy models a human operation policy.
 type HumanOperationPolicy struct {
 	AuthenticationRequired bool
 	Permission             domain.Permission
@@ -36,6 +46,7 @@ type HumanOperationPolicy struct {
 	ScopedAuthorization    bool
 }
 
+// HumanOperationPolicyLookup is the type used for human operation policy lookup values.
 type HumanOperationPolicyLookup func(operationID string) (HumanOperationPolicy, bool)
 
 type humanContextKey uint8
@@ -45,11 +56,13 @@ const (
 	authenticatedPrincipalKey
 )
 
+// VerifiedIdentityFromContext performs the verified identity from context operation.
 func VerifiedIdentityFromContext(ctx context.Context) (domain.VerifiedIdentity, bool) {
 	identity, ok := ctx.Value(verifiedIdentityKey).(domain.VerifiedIdentity)
 	return identity, ok
 }
 
+// AuthenticatedPrincipalFromContext performs the authenticated principal from context operation.
 func AuthenticatedPrincipalFromContext(ctx context.Context) (domain.AuthenticatedPrincipal, bool) {
 	principal, ok := ctx.Value(authenticatedPrincipalKey).(domain.AuthenticatedPrincipal)
 	return principal, ok
@@ -58,6 +71,8 @@ func AuthenticatedPrincipalFromContext(ctx context.Context) (domain.Authenticate
 // HumanAuthentication authenticates and authorizes Clerk-mode Huma operations.
 // Client-selected Tenant headers are treated only as selectors and must match
 // the account resolved from the verified session.
+//
+//nolint:gocognit,gocyclo,funlen // authentication flow with multiple credential modes
 func HumanAuthentication(
 	api huma.API,
 	authenticator HumanAuthenticator,
@@ -90,7 +105,12 @@ func HumanAuthentication(
 		}
 		if policy.FreshMembership {
 			if membershipVerifier == nil {
-				_ = huma.WriteErr(api, ctx, http.StatusServiceUnavailable, "fresh account membership verification unavailable")
+				_ = huma.WriteErr(
+					api,
+					ctx,
+					http.StatusServiceUnavailable,
+					"fresh account membership verification unavailable",
+				)
 				return
 			}
 			role, err := membershipVerifier.FreshTenantRole(ctx.Context(), identity)
@@ -126,12 +146,20 @@ func HumanAuthentication(
 			_ = huma.WriteErr(api, ctx, status, message)
 			return
 		}
-		if selectedTenant := strings.TrimSpace(ctx.Header("X-Tenant-ID")); selectedTenant != "" && selectedTenant != principal.TenantID {
+		if selectedTenant := strings.TrimSpace(
+			ctx.Header("X-Tenant-ID"),
+		); selectedTenant != "" &&
+			selectedTenant != principal.TenantID {
 			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "resource not found")
 			return
 		}
 		if policy.Permission != "" && !policy.ScopedAuthorization {
-			err = authorizer.Authorize(requestContext, principal, policy.Permission, domain.AuthorizationScope{TenantID: principal.TenantID})
+			err = authorizer.Authorize(
+				requestContext,
+				principal,
+				policy.Permission,
+				domain.AuthorizationScope{TenantID: principal.TenantID},
+			)
 			if err != nil {
 				status := http.StatusInternalServerError
 				message := "authorization failed"

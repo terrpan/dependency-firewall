@@ -22,7 +22,7 @@ declare global {
 }
 
 export const localAuthAdapter: AuthAdapter = {
-	useSnapshot() {
+  useSnapshot() {
     const testAuth = typeof window === 'undefined' ? undefined : window.__DEPENDENCY_FIREWALL_TEST_AUTH__
     if (testAuth?.state === 'authenticated') {
       return {

@@ -17,12 +17,15 @@ type AuditRecorder interface {
 // tenant, the correlation ID shared by those events, the emitting component, the resolved upstream, the artifact under
 // evaluation, and the protocol operation recorded in the event payload.
 type AuditContext struct {
-	TenantID      string
-	CorrelationID string
-	Source        string
-	UpstreamID    string
-	Artifact      domain.ArtifactIdentity
-	Operation     string
+	TenantID       string
+	OrganizationID string
+	TeamID         string
+	CredentialID   string
+	CorrelationID  string
+	Source         string
+	UpstreamID     string
+	Artifact       domain.ArtifactIdentity
+	Operation      string
 }
 
 // RecordRequestReceived emits the first event of a proxy request, capturing the HTTP method, path and remote address
@@ -41,14 +44,17 @@ func RecordRequestReceived(
 	payload["remote_addr"] = r.RemoteAddr
 	mergePayload(payload, extraPayload)
 	return record(ctx, recorder, domain.AuditEvent{
-		TenantID:      audit.TenantID,
-		CorrelationID: audit.CorrelationID,
-		EventType:     domain.AuditEventProxyRequestReceived,
-		Source:        audit.Source,
-		UpstreamID:    audit.UpstreamID,
-		Artifact:      audit.Artifact,
-		Message:       message,
-		Payload:       payload,
+		TenantID:       audit.TenantID,
+		OrganizationID: audit.OrganizationID,
+		TeamID:         audit.TeamID,
+		CredentialID:   audit.CredentialID,
+		CorrelationID:  audit.CorrelationID,
+		EventType:      domain.AuditEventProxyRequestReceived,
+		Source:         audit.Source,
+		UpstreamID:     audit.UpstreamID,
+		Artifact:       audit.Artifact,
+		Message:        message,
+		Payload:        payload,
 	})
 }
 
@@ -144,14 +150,17 @@ func RecordSimpleRequestDenied(
 // separating time spent in evaluation from time spent waiting on the upstream.
 func RecordUpstreamFetchStarted(ctx context.Context, recorder AuditRecorder, audit AuditContext, message string) error {
 	return record(ctx, recorder, domain.AuditEvent{
-		TenantID:      audit.TenantID,
-		CorrelationID: audit.CorrelationID,
-		EventType:     domain.AuditEventUpstreamFetchStarted,
-		Source:        audit.Source,
-		UpstreamID:    audit.UpstreamID,
-		Artifact:      audit.Artifact,
-		Message:       message,
-		Payload:       basePayload(audit.Operation),
+		TenantID:       audit.TenantID,
+		OrganizationID: audit.OrganizationID,
+		TeamID:         audit.TeamID,
+		CredentialID:   audit.CredentialID,
+		CorrelationID:  audit.CorrelationID,
+		EventType:      domain.AuditEventUpstreamFetchStarted,
+		Source:         audit.Source,
+		UpstreamID:     audit.UpstreamID,
+		Artifact:       audit.Artifact,
+		Message:        message,
+		Payload:        basePayload(audit.Operation),
 	})
 }
 
@@ -165,13 +174,16 @@ func RecordUpstreamFetchFailed(
 	err error,
 ) error {
 	return record(ctx, recorder, domain.AuditEvent{
-		TenantID:      audit.TenantID,
-		CorrelationID: audit.CorrelationID,
-		EventType:     domain.AuditEventUpstreamFetchFailed,
-		Source:        audit.Source,
-		UpstreamID:    audit.UpstreamID,
-		Artifact:      audit.Artifact,
-		Message:       message,
+		TenantID:       audit.TenantID,
+		OrganizationID: audit.OrganizationID,
+		TeamID:         audit.TeamID,
+		CredentialID:   audit.CredentialID,
+		CorrelationID:  audit.CorrelationID,
+		EventType:      domain.AuditEventUpstreamFetchFailed,
+		Source:         audit.Source,
+		UpstreamID:     audit.UpstreamID,
+		Artifact:       audit.Artifact,
+		Message:        message,
 		Payload: map[string]any{
 			"operation": audit.Operation,
 			"error":     err.Error(),
@@ -194,14 +206,17 @@ func requestAuditEvent(
 	extraPayload map[string]any,
 ) domain.AuditEvent {
 	event := domain.AuditEvent{
-		TenantID:      audit.TenantID,
-		CorrelationID: audit.CorrelationID,
-		EventType:     eventType,
-		Source:        audit.Source,
-		UpstreamID:    audit.UpstreamID,
-		Message:       message,
-		Artifact:      audit.Artifact,
-		Payload:       basePayload(audit.Operation),
+		TenantID:       audit.TenantID,
+		OrganizationID: audit.OrganizationID,
+		TeamID:         audit.TeamID,
+		CredentialID:   audit.CredentialID,
+		CorrelationID:  audit.CorrelationID,
+		EventType:      eventType,
+		Source:         audit.Source,
+		UpstreamID:     audit.UpstreamID,
+		Message:        message,
+		Artifact:       audit.Artifact,
+		Payload:        basePayload(audit.Operation),
 	}
 
 	if decision != nil {

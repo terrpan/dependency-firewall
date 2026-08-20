@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -63,6 +64,25 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	tenantID, correlationID string,
 	artifact domain.ArtifactIdentity,
 ) (*domain.ArtifactMetadata, error) {
+	return s.enrichWithScope(ctx, tenantID, correlationID, "", artifact)
+}
+
+// EnrichForAccessRequest keeps metadata cache entries isolated by the actual
+// data-plane operational scope. The enricher still receives the canonical
+// artifact identity; only its cache key is scope-qualified.
+func (s *EnrichmentService) EnrichForAccessRequest(
+	ctx context.Context,
+	req domain.AccessRequest,
+) (*domain.ArtifactMetadata, error) {
+	scopeKey := req.OrganizationID + ":" + req.TeamID + ":" + req.Upstream.ID
+	return s.enrichWithScope(ctx, req.TenantID, req.RequestID, scopeKey, req.Artifact)
+}
+
+func (s *EnrichmentService) enrichWithScope(
+	ctx context.Context,
+	tenantID, correlationID, scopeKey string,
+	artifact domain.ArtifactIdentity,
+) (*domain.ArtifactMetadata, error) {
 	ctx, span := serviceTracer().Start(ctx, "enrichment.fetch_metadata")
 	span.SetAttributes(
 		attribute.String("tenant.id", tenantID),
@@ -74,7 +94,7 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 	}
 	defer span.End()
 
-	cached, found, err := s.lookupCachedMetadata(ctx, tenantID, correlationID, artifact)
+	cached, found, err := s.lookupCachedMetadata(ctx, tenantID, correlationID, scopeKey, artifact)
 	if err != nil || found {
 		return cached, err
 	}
@@ -84,18 +104,19 @@ func (s *EnrichmentService) EnrichWithCorrelation(
 		return nil, err
 	}
 	if metadata != nil {
-		s.storeCachedMetadata(ctx, tenantID, artifact, metadata)
+		s.storeCachedMetadata(ctx, tenantID, scopeKey, artifact, metadata)
 	}
 	return metadata, nil
 }
 
 func (s *EnrichmentService) lookupCachedMetadata(
 	ctx context.Context,
-	tenantID, correlationID string,
+	tenantID, correlationID, scopeKey string,
 	artifact domain.ArtifactIdentity,
 ) (*domain.ArtifactMetadata, bool, error) {
 	cacheCtx, cacheSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_lookup")
-	cached, err := s.metadataCache.Get(cacheCtx, tenantID, artifact)
+	cacheArtifact := metadataCacheArtifact(artifact, scopeKey)
+	cached, err := s.metadataCache.Get(cacheCtx, tenantID, cacheArtifact)
 	if err != nil {
 		recordSpanErrorIfUnexpected(cacheSpan, err)
 		if errors.Is(err, domain.ErrCacheMiss) {
@@ -182,13 +203,14 @@ func (s *EnrichmentService) queryEnrichmentSources(
 
 func (s *EnrichmentService) storeCachedMetadata(
 	ctx context.Context,
-	tenantID string,
+	tenantID, scopeKey string,
 	artifact domain.ArtifactIdentity,
 	metadata *domain.ArtifactMetadata,
 ) {
 	ttl := s.cacheTTL(artifact)
+	cacheArtifact := metadataCacheArtifact(artifact, scopeKey)
 	writeCtx, writeSpan := serviceTracer().Start(ctx, "enrichment.metadata_cache_store")
-	if cacheErr := s.metadataCache.Set(writeCtx, tenantID, artifact, metadata, ttl); cacheErr != nil {
+	if cacheErr := s.metadataCache.Set(writeCtx, tenantID, cacheArtifact, metadata, ttl); cacheErr != nil {
 		recordSpanError(writeSpan, cacheErr)
 		s.logger.WarnContext(ctx, "failed to cache metadata",
 			slog.String("tenant_id", tenantID),
@@ -198,6 +220,15 @@ func (s *EnrichmentService) storeCachedMetadata(
 	}
 	writeSpan.SetAttributes(attribute.Int64("cache.ttl_ms", ttl.Milliseconds()))
 	writeSpan.End()
+}
+
+func metadataCacheArtifact(artifact domain.ArtifactIdentity, scopeKey string) domain.ArtifactIdentity {
+	if scopeKey == "" {
+		return artifact
+	}
+	cacheArtifact := artifact
+	cacheArtifact.Namespace = "scope=" + strings.ReplaceAll(scopeKey, ":", "_") + "|" + artifact.Namespace
+	return cacheArtifact
 }
 
 func (s *EnrichmentService) recordAudit(ctx context.Context, event domain.AuditEvent) error {
