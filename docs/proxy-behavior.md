@@ -8,8 +8,6 @@ Proxy HTTP endpoints do not authenticate ecosystem clients. Tenant and upstream 
 
 Internal proxy-to-control-plane gRPC is a different boundary: split mode requires mTLS and certificate-to-tenant authorization.
 
-The target SaaS data plane authenticates a high-entropy opaque firewall credential locally from the Tenant bundle. That credential—not an Organization/Team header—selects exactly one Organization and optionally one Team. This remains independent of Clerk and of internal mTLS. The current unauthenticated behavior survives for one release only in explicit compatibility mode, restricted to the generated default Organization, Tenant-shared upstreams, and account policies.
-
 ## Common evaluation flow
 
 For requests that identify an enforceable artifact version or digest, the proxy:
@@ -44,8 +42,6 @@ u-{upstream_id}.{tenant_id}.{firewall-host}
 ```
 
 `X-Tenant-ID` remains useful for direct tests and non-Docker clients. It is not an authentication mechanism.
-
-Existing npm paths and OCI hostnames remain stable. In the target authenticated mode their Tenant must match the credential Tenant. When more than one visible upstream can serve an ecosystem, an unqualified route fails as ambiguous instead of selecting the most recently updated upstream.
 
 ## npm protocol behavior
 
@@ -125,8 +121,6 @@ The proxy can authenticate server-side to an OCI upstream with Basic/PAT or stat
 
 Client-facing registry authentication is absent. Do not confuse upstream authentication with authentication of Docker/OCI clients to the firewall.
 
-The target client authentication uses npm bearer credentials and OCI Basic authentication over TLS, with the opaque firewall secret as password and a registry-compatible `/v2/` challenge when credentials are missing. Stored bundles contain verifier digests and scope metadata, never raw secrets.
-
 ## Cache scope and constraints
 
 | Cache                       | Scope in current key                                           | Current constraint                                    |
@@ -156,8 +150,6 @@ The split proxy refreshes bundles on demand after `bundle.refresh_interval`. A r
 
 Last-known-good protects bundle reads only. Uncached decisions still synchronously use ingest for durable decision/audit workflows and may fail during a control-plane outage. Cached decisions may continue when all other required dependencies are available.
 
-The target credential verifier has an independent `bundle.credential_max_staleness` limit of five minutes. An older last-known-good policy bundle may remain usable, but credential authentication fails with service unavailable once security material exceeds that limit.
-
 ### Valkey
 
 Decision, metadata, and dependency-context lookups depend on external Valkey. The bundle cache is not stored in Valkey; it is local process memory.
@@ -174,8 +166,8 @@ Enforceable requests record decisions and audit events according to configured f
 
 These are directions, not current guarantees:
 
-- implementation of credential-bound Organization/Team scope and registry challenge flows;
-- Organization/Team/upstream-scoped decision/metadata keys and recent-allow queries;
+- client authentication, scoped tokens, OIDC/CLI login, and registry challenge flows;
+- upstream-scoped decision/metadata keys and recent-allow queries;
 - enforced HTTPS for authenticated upstreams;
 - S3/GCS artifact cache implementations;
 - asynchronous or batched durable audit writes.

@@ -2,7 +2,7 @@
 
 The operator console is an implemented client-rendered React/TypeScript/Vite application. It is built and deployed separately from the Go runtime and consumes the control-plane API through generated OpenAPI types.
 
-Current routes are Dashboard, Tenants, Upstreams, Policies, Evaluations, Dependency Graphs, and Not Found. Audit events have an API but no UI route. The target SaaS information architecture below is staged work, not a claim about the current UI.
+Current routes are Dashboard, Tenants, Upstreams, Policies, Evaluations, Dependency Graphs, and Not Found. Audit events have an API but no UI route.
 
 ## Current authentication boundary
 
@@ -18,49 +18,13 @@ Implemented extension seams are:
 
 These seams are not an authority boundary. A production IdP adapter, session enforcement, Go JWT/JWKS validation, RBAC, and IdP-organization-to-tenant mapping remain future work. Backend authorization must remain authoritative and must not trust client role claims.
 
-## Target SaaS information architecture
-
-The existing workspace selector becomes a compact Clerk-backed Account switcher. Organization is the primary operational selector. Teams appear as filters, ownership badges, and Team pages rather than a permanent global selector.
-
-```text
-Dashboard
-
-Protect
-  Policies
-  Upstreams
-  Credentials
-  Waiver requests
-
-Observe
-  Evaluations
-  Dependency Graphs
-  Audit
-
-Organization
-  Teams
-  Members
-  Access
-
-Account
-  Members
-  Security / SSO
-  Billing
-  Settings
-```
-
-The account switcher is visually quiet when only one account is available. Account switching activates the external account and refreshes `/api/v1/session`; the UI never lists all database Tenants. Organization selection is local application state validated by server-returned memberships and permissions.
-
-Policies separate inherited account rules from Organization rules. Upstreams use the labels `Tenant shared`, `Organization shared`, and `Team local`. Team pages collect members, Team-local upstreams, credential setup, waivers, and effective access. Permission-denied states distinguish missing account membership, missing Organization assignment, missing Team membership, and insufficient permission without revealing foreign resource existence.
-
-Credential creation shows npm and OCI setup snippets, displays the secret exactly once, and makes Organization/Team scope explicit. Waiver flows require an exact artifact, parent deny policy, business justification, expiry, and a different approver, with pending, rejected, active, expired, and revoked states.
-
 ## Product design principles
 
 1. **Operational clarity before decoration.** Put scope, risk, state, and next action first.
 2. **Calm by default, emphatic by exception.** Reserve semantic color for information that changes a decision.
 3. **Progressive disclosure for dense systems.** Inventories support selection; details expose full records.
 4. **Consistency is a safety feature.** Reuse the same control and state language across routes.
-5. **Account and Organization context are explicit.** The shell shows the active account and operational Organization without implying that UI state authorizes either.
+5. **Tenant context is explicit.** The shell always shows the active workspace.
 6. **Keyboard and pointer behavior are peers.** Navigation, dialogs, filters, and graph inspection work without a mouse.
 7. **Responsive means recomposed, not compressed.** Columns collapse and actions wrap rather than shrinking into illegibility.
 
@@ -104,8 +68,7 @@ When a shared primitive or pattern replaces a route-specific implementation, rem
 ## Route behavior
 
 - **Dashboard:** summarize tenant protection and required setup; internal implementation metrics do not displace operator actions.
-- **Account:** show identity-provider account membership and account-scoped settings; do not expose global Tenant enumeration.
-- **Organizations and Teams:** make operational scope, membership, and effective access clear.
+- **Tenants:** make the active workspace unmistakable and use shared creation dialog behavior.
 - **Upstreams:** lead with source, ecosystem, credential readiness, policy coverage, and client setup.
 - **Policies:** lead with plain-language effect, enabled/dry-run state, upstream scope, dependency target, and ordering. Technical schema/version data stays in details.
 - **Evaluations:** lead with outcome, artifact, human-readable reason, and policy. Search/filter state must not blur page-level totals.
@@ -119,7 +82,7 @@ Routes are lazy-loaded. D3 remains behind the dependency-graph route boundary an
 
 SSR is intentionally deferred because the console has no public SEO/content requirement. Consider React Router framework mode only if public pages or measured first-render needs create a concrete trigger.
 
-Theme storage uses `dependency-firewall-theme`; Organization selection remains application state and is revalidated against each refreshed session.
+Theme storage uses `dependency-firewall-theme`; tenant selection remains persisted by the application tenant boundary.
 
 ## Accessibility
 
@@ -142,7 +105,7 @@ Selective screenshots cover stable shell and graph states. Behavioral assertions
 
 ## Review checklist
 
-- Account, Organization, resource state, and primary action are clear.
+- Tenant, resource state, and primary action are clear.
 - Existing primitives/patterns are reused where appropriate.
 - Light/dark and desktop/mobile layouts remain coherent.
 - Affected async, empty, error, disabled, and success states are represented.
@@ -153,6 +116,8 @@ Selective screenshots cover stable shell and graph states. Behavioral assertions
 
 ## Possible future work
 
-- implementation of the staged Clerk adapter, session bootstrap, and backend authorization contract;
+- real Clerk/OIDC adapter and session bootstrap;
+- backend bearer validation and RBAC;
+- identity-provider organization mapping;
 - an Audit Events UI route;
 - SSR/framework mode only after a concrete product or performance trigger.

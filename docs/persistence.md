@@ -91,24 +91,6 @@ For split bundle delivery, the control plane re-encrypts the stored secret to th
 
 Migrations are embedded from `migrations/` and applied by PostgreSQL-owning modes at startup. Multi-row workflows that require atomicity should use repository transactions. Do not place SQL in delivery handlers.
 
-## Hierarchy migration invariants
-
-The Tenant/Organization/Team rollout is additive. It must preserve existing Tenant and resource identifiers, then backfill one generated default Organization per Tenant. Existing policies become account-scoped and non-waivable; existing upstreams become Tenant-shared; historical observations are assigned to the generated Organization where deterministic.
-
-Every customer-owned table continues to carry explicit `tenant_id`. New Organization and Team references are protected with composite foreign keys so a child cannot reference a parent in another Tenant or Organization. Scope-shape checks prevent account policies from carrying Organization/Team values and prevent Team-local upstreams from omitting their ancestors.
-
-The migration sequence is:
-
-1. identity links, Principals, Organizations, Teams, and memberships;
-2. additive resource-scope columns and deterministic backfills;
-3. composite foreign keys, checks, Tenant-leading indexes, and non-null enforcement;
-4. data-plane credential metadata and verifier revisions;
-5. exact-artifact policy waivers and actor/outcome audit fields.
-
-Large-table changes use nullable additions, batched backfills, validation queries, and only then constraint validation. `users` and `tenant_memberships` remain deprecated rather than becoming a second external-account membership source.
-
-Target cache keys include Tenant, Organization, optional Team, upstream, and relevant policy/waiver revisions. Bundle policy staleness and credential-verifier security staleness are independent; verifier material fails closed after its five-minute maximum.
-
 ## Operational implications
 
 - Back up PostgreSQL for durable configuration, history, decisions, audit events, and dependency graphs.
