@@ -27,8 +27,12 @@ import (
 func ptrFloat64(v float64) *float64 { return &v }
 func intPtr(v int) *int             { return &v }
 
-// setupTestDB starts a PostgreSQL container, runs migrations, and returns a pool.
-func setupTestDB(t *testing.T) *pgxpool.Pool {
+type migrationFixture struct {
+	connString  string
+	databaseURL string
+}
+
+func setupMigrationFixture(t *testing.T) *migrationFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -44,26 +48,75 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 		),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, pgContainer.Terminate(ctx))
-	})
+	t.Cleanup(func() { require.NoError(t, pgContainer.Terminate(ctx)) })
 
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	connString, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	// Run migrations.
-	srcDriver, err := iofs.New(migrations.FS, ".")
+	return &migrationFixture{
+		connString:  connString,
+		databaseURL: fmt.Sprintf("pgx5://%s", connString[len("postgres://"):]),
+	}
+}
+
+func (f *migrationFixture) migrator(t *testing.T) *migrate.Migrate {
+	t.Helper()
+	sourceDriver, err := iofs.New(migrations.FS, ".")
 	require.NoError(t, err)
 
-	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, fmt.Sprintf("pgx5://%s", connStr[len("postgres://"):]))
+	migrator, err := migrate.NewWithSourceInstance("iofs", sourceDriver, f.databaseURL)
 	require.NoError(t, err)
-	require.NoError(t, m.Up())
+	return migrator
+}
 
-	pool, err := pgxpool.New(ctx, connStr)
+func (f *migrationFixture) migrateTo(t *testing.T, version uint) {
+	t.Helper()
+	require.NoError(t, f.migrator(t).Migrate(version))
+}
+
+func (f *migrationFixture) migrateUp(t *testing.T) {
+	t.Helper()
+	require.NoError(t, f.migrator(t).Up())
+}
+
+func (f *migrationFixture) openPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), f.connString)
 	require.NoError(t, err)
-	t.Cleanup(func() { pool.Close() })
-
+	t.Cleanup(pool.Close)
 	return pool
+}
+
+// snapshotIDs records stable identifiers before an additive migration. Hierarchy
+// migration tests use the result with requireIDsUnchanged to prove that Tenant
+// and existing protocol/resource references are never rewritten.
+func snapshotIDs(t *testing.T, ctx context.Context, pool *pgxpool.Pool, query string, args ...any) []string {
+	t.Helper()
+	rows, err := pool.Query(ctx, query, args...)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		require.NoError(t, rows.Scan(&id))
+		ids = append(ids, id)
+	}
+	require.NoError(t, rows.Err())
+	return ids
+}
+
+func requireIDsUnchanged(t *testing.T, before, after []string) {
+	t.Helper()
+	require.ElementsMatch(t, before, after)
+}
+
+// setupTestDB starts a PostgreSQL container, runs migrations, and returns a pool.
+func setupTestDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	fixture := setupMigrationFixture(t)
+	fixture.migrateUp(t)
+	return fixture.openPool(t)
 }
 
 // createTestTenant inserts a tenant and returns it with generated fields populated.
@@ -81,32 +134,8 @@ func createTestTenant(t *testing.T, ctx context.Context, pool *pgxpool.Pool, nam
 // ---------------------------------------------------------------------------
 
 func TestMigrations_UpAndDown(t *testing.T) {
-	ctx := context.Background()
-
-	pgContainer, err := pgmodule.Run(ctx,
-		"postgres:16-alpine",
-		pgmodule.WithDatabase("testdb"),
-		pgmodule.WithUsername("test"),
-		pgmodule.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, pgContainer.Terminate(ctx)) })
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	dbURL := fmt.Sprintf("pgx5://%s", connStr[len("postgres://"):])
-
-	srcDriver, err := iofs.New(migrations.FS, ".")
-	require.NoError(t, err)
-
-	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, dbURL)
-	require.NoError(t, err)
+	fixture := setupMigrationFixture(t)
+	m := fixture.migrator(t)
 
 	// Up
 	require.NoError(t, m.Up())
@@ -115,45 +144,15 @@ func TestMigrations_UpAndDown(t *testing.T) {
 	require.NoError(t, m.Down())
 
 	// Re-create source driver (consumed after Down)
-	srcDriver2, err := iofs.New(migrations.FS, ".")
-	require.NoError(t, err)
-	m2, err := migrate.NewWithSourceInstance("iofs", srcDriver2, dbURL)
-	require.NoError(t, err)
-
 	// Up again
-	require.NoError(t, m2.Up())
+	fixture.migrateUp(t)
 }
 
 func TestMigrations_BackfillScorecardCapabilityForLegacyNPMUpstreams(t *testing.T) {
 	ctx := context.Background()
-
-	pgContainer, err := pgmodule.Run(ctx,
-		"postgres:16-alpine",
-		pgmodule.WithDatabase("testdb"),
-		pgmodule.WithUsername("test"),
-		pgmodule.WithPassword("test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, pgContainer.Terminate(ctx)) })
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-	dbURL := fmt.Sprintf("pgx5://%s", connStr[len("postgres://"):])
-
-	srcDriver, err := iofs.New(migrations.FS, ".")
-	require.NoError(t, err)
-	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, dbURL)
-	require.NoError(t, err)
-	require.NoError(t, m.Migrate(16))
-
-	pool, err := pgxpool.New(ctx, connStr)
-	require.NoError(t, err)
-	t.Cleanup(func() { pool.Close() })
+	fixture := setupMigrationFixture(t)
+	fixture.migrateTo(t, 16)
+	pool := fixture.openPool(t)
 
 	var tenantID string
 	err = pool.QueryRow(ctx,
@@ -172,7 +171,7 @@ func TestMigrations_BackfillScorecardCapabilityForLegacyNPMUpstreams(t *testing.
 	)
 	require.NoError(t, err)
 
-	require.NoError(t, m.Migrate(17))
+	fixture.migrateTo(t, 17)
 
 	var capabilities []string
 	err = pool.QueryRow(ctx,

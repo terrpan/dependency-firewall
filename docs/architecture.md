@@ -4,7 +4,7 @@
 
 Dependency Firewall is a multi-tenant policy enforcement proxy for software package and artifact traffic. The system separates management, local request-path evaluation, durable state, and ecosystem-specific background work while shipping those compositions from one Go binary. The currently implemented protocols and their limits are listed in [`supported-ecosystems.md`](./supported-ecosystems.md).
 
-This document is the canonical runtime, boundary, and API-responsibility overview. Protocol behavior belongs in [`proxy-behavior.md`](./proxy-behavior.md), policy semantics in [`policy-engine.md`](./policy-engine.md), state ownership in [`persistence.md`](./persistence.md), and transport identity in [`mtls.md`](./mtls.md).
+This document is the canonical runtime, boundary, and API-responsibility overview. Protocol behavior belongs in [`proxy-behavior.md`](./proxy-behavior.md), policy semantics in [`policy-engine.md`](./policy-engine.md), state ownership in [`persistence.md`](./persistence.md), human/data-plane authorization in [`authorization.md`](./authorization.md), and transport identity in [`mtls.md`](./mtls.md).
 
 ## Runtime topology
 
@@ -50,6 +50,12 @@ Bundle secrets for authenticated OCI upstreams are encrypted to the requesting p
 Management and proxy HTTP routes do not currently validate bearer tokens or enforce roles. Tenant middleware resolves tenant context from API headers or ecosystem-specific routing, but that is routing and scoping—not proof that a caller may act for the tenant.
 
 The SPA provides a provider-neutral authentication adapter, token attachment in the API client, and UI guard/state seams. Its default adapter is anonymous and current route guards do not require a session. Real IdP integration, Go JWT/JWKS validation, RBAC, and user-to-tenant membership enforcement remain future work. Deploy public HTTP behind a trusted network or an external authenticated gateway.
+
+### Target SaaS boundary
+
+The authorization refactor keeps Tenant as the immutable account/isolation boundary, adds local Organizations as the primary operational scope, and adds Teams as membership-constrained subdivisions. A Clerk Organization maps to one Tenant; local Organizations and Teams do not replace that external Tenant membership authority.
+
+Human control-plane sessions, npm/OCI firewall credentials, and internal mTLS are separate authentication systems. Client-selected Tenant, Organization, Team, path, hostname, and headers remain routing inputs only. The target enforcement and compatibility contract is specified in [`authorization.md`](./authorization.md).
 
 ## Internal layers
 
@@ -179,8 +185,8 @@ All modes can emit OpenTelemetry spans. Instrumentation covers public HTTP, inte
 
 The following are possible, not committed roadmap promises:
 
-- client authentication, scoped firewall tokens, CLI/OIDC login, and registry-native challenges
-- IdP adapter integration, backend JWT/JWKS validation, RBAC, and organization mapping
+- implementation of the staged Tenant/Organization/Team authorization contract
+- scoped firewall tokens and registry-native client challenges
 - S3/GCS OCI cache implementations
 - OCI Scorecard/license enrichment with explicit source provenance
 - asynchronous or batched audit persistence and external shipping
