@@ -38,7 +38,7 @@ type ProxyEnrollmentSettings struct {
 type ProxyEnrollmentService struct {
 	repository    port.ProxyEnrollmentRepository
 	installations port.ProxyInstallationRepository
-	authorizer    port.TenantApprovalAuthorizer
+	authorizer    port.TenantAuthorizer
 	issuer        port.WorkloadCertificateIssuer
 	hmacKey       []byte
 	settings      ProxyEnrollmentSettings
@@ -49,7 +49,7 @@ type ProxyEnrollmentService struct {
 func NewProxyEnrollmentService(
 	repository port.ProxyEnrollmentRepository,
 	installations port.ProxyInstallationRepository,
-	authorizer port.TenantApprovalAuthorizer,
+	authorizer port.TenantAuthorizer,
 	issuer port.WorkloadCertificateIssuer,
 	hmacKey []byte,
 	settings ProxyEnrollmentSettings,
@@ -130,11 +130,15 @@ func (s *ProxyEnrollmentService) Resolve(
 	return s.repository.ResolveProxyEnrollment(ctx, enrollmentID, s.digest(normalizeUserCode(userCode)), s.now().UTC())
 }
 
-// ResolveUserCode returns safe pending details without requiring device-side state.
-func (s *ProxyEnrollmentService) ResolveUserCode(
+// ResolveForApproval returns safe pending details to an authenticated human principal.
+func (s *ProxyEnrollmentService) ResolveForApproval(
 	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
 	userCode string,
 ) (*domain.ProxyEnrollment, error) {
+	if !principal.Ref.Valid() {
+		return nil, domain.ErrUnauthenticated
+	}
 	return s.repository.ResolveProxyEnrollmentByUserCode(ctx, s.digest(normalizeUserCode(userCode)), s.now().UTC())
 }
 
@@ -144,20 +148,18 @@ func (s *ProxyEnrollmentService) Approve(
 	principal domain.AuthenticatedPrincipal,
 	enrollmentID, userCode, tenantID, installationName string,
 ) (*domain.ProxyEnrollment, error) {
-	if strings.TrimSpace(principal.ID) == "" {
+	if !principal.Ref.Valid() {
 		return nil, domain.ErrUnauthenticated
 	}
-	if s.authorizer == nil {
-		return nil, domain.ErrForbidden
+	tenantID = strings.TrimSpace(tenantID)
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: tenant id must be a UUID", domain.ErrProxyEnrollmentInvalid)
 	}
-	if err := s.authorizer.AuthorizeTenantApproval(ctx, principal, tenantID); err != nil {
+	if err := s.authorizeTenant(ctx, principal, tenantID, domain.PermissionProxyManage); err != nil {
 		return nil, err
 	}
 	if s.issuer == nil {
 		return nil, fmt.Errorf("workload certificate issuer is not configured")
-	}
-	if _, err := uuid.Parse(strings.TrimSpace(tenantID)); err != nil {
-		return nil, fmt.Errorf("%w: tenant id must be a UUID", domain.ErrProxyEnrollmentInvalid)
 	}
 	enrollment, err := s.Resolve(ctx, enrollmentID, userCode)
 	if err != nil {
@@ -191,7 +193,7 @@ func (s *ProxyEnrollmentService) Approve(
 			CertificateNotAfter:  issued.NotAfter,
 			CertificateChainPEM:  issued.CertificateChainPEM,
 			ServerTrustBundlePEM: issued.ServerTrustBundlePEM,
-			PrincipalID:          principal.ID,
+			Principal:            principal.Ref,
 		},
 		s.now().UTC(),
 	)
@@ -203,14 +205,14 @@ func (s *ProxyEnrollmentService) Deny(
 	principal domain.AuthenticatedPrincipal,
 	enrollmentID, userCode string,
 ) error {
-	if strings.TrimSpace(principal.ID) == "" {
+	if !principal.Ref.Valid() {
 		return domain.ErrUnauthenticated
 	}
 	return s.repository.DenyProxyEnrollment(
 		ctx,
 		enrollmentID,
 		s.digest(normalizeUserCode(userCode)),
-		principal.ID,
+		principal.Ref,
 		s.now().UTC(),
 	)
 }
@@ -223,54 +225,74 @@ func (s *ProxyEnrollmentService) Poll(ctx context.Context, deviceCredential stri
 	return s.repository.PollProxyEnrollment(ctx, s.digest(deviceCredential), s.now().UTC())
 }
 
-// GetInstallation returns one Tenant-owned proxy installation.
+// GetInstallation returns one authorized Tenant-owned proxy installation.
 func (s *ProxyEnrollmentService) GetInstallation(
 	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
 	tenantID, id string,
 ) (*domain.ProxyInstallation, error) {
+	if err := s.authorizeTenant(ctx, principal, tenantID, domain.PermissionProxyRead); err != nil {
+		return nil, err
+	}
 	return s.installations.GetProxyInstallation(ctx, tenantID, id)
 }
 
-// ListInstallations returns all proxy installations for one Tenant.
+// ListInstallations returns authorized proxy installations for one Tenant.
 func (s *ProxyEnrollmentService) ListInstallations(
 	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
 	tenantID string,
 ) ([]domain.ProxyInstallation, error) {
+	if err := s.authorizeTenant(ctx, principal, tenantID, domain.PermissionProxyRead); err != nil {
+		return nil, err
+	}
 	return s.installations.ListProxyInstallations(ctx, tenantID)
 }
 
-// RenameInstallation changes the display name of a live installation.
+// RenameInstallation changes the display name of an authorized live installation.
 func (s *ProxyEnrollmentService) RenameInstallation(
 	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
 	tenantID, id, name string,
 ) (*domain.ProxyInstallation, error) {
+	if err := s.authorizeTenant(ctx, principal, tenantID, domain.PermissionProxyManage); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("%w: installation name is required", domain.ErrProxyEnrollmentInvalid)
 	}
 	return s.installations.RenameProxyInstallation(ctx, tenantID, id, strings.TrimSpace(name))
 }
 
-// RevokeInstallation permanently revokes an installation and its identities.
+// RevokeInstallation permanently revokes an authorized installation and its identities.
 func (s *ProxyEnrollmentService) RevokeInstallation(
 	ctx context.Context,
+	principal domain.AuthenticatedPrincipal,
 	tenantID, id string,
 ) (*domain.ProxyInstallation, error) {
+	if err := s.authorizeTenant(ctx, principal, tenantID, domain.PermissionProxyManage); err != nil {
+		return nil, err
+	}
 	return s.installations.RevokeProxyInstallation(ctx, tenantID, id, s.now().UTC())
 }
 
-// AuthorizeTenantManagement applies the same provider-neutral Tenant permission to installation management.
-func (s *ProxyEnrollmentService) AuthorizeTenantManagement(
+func (s *ProxyEnrollmentService) authorizeTenant(
 	ctx context.Context,
 	principal domain.AuthenticatedPrincipal,
 	tenantID string,
+	permission domain.Permission,
 ) error {
-	if strings.TrimSpace(principal.ID) == "" {
+	if !principal.Ref.Valid() {
 		return domain.ErrUnauthenticated
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if _, err := uuid.Parse(tenantID); err != nil {
+		return fmt.Errorf("%w: tenant id must be a UUID", domain.ErrProxyEnrollmentInvalid)
 	}
 	if s.authorizer == nil {
 		return domain.ErrForbidden
 	}
-	return s.authorizer.AuthorizeTenantApproval(ctx, principal, tenantID)
+	return s.authorizer.Authorize(ctx, principal, tenantID, permission)
 }
 
 func (s *ProxyEnrollmentService) digest(value string) []byte {
@@ -332,14 +354,24 @@ func normalizeUserCode(value string) string {
 	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(value), "-", ""))
 }
 
-// DenyAllTenantApprovalAuthorizer is the safe default until a real human auth adapter is wired.
-type DenyAllTenantApprovalAuthorizer struct{}
+// DenyAllTenantAccess is the safe default until real human authorization is wired.
+type DenyAllTenantAccess struct{}
 
-// AuthorizeTenantApproval denies every principal until a real adapter replaces it.
-func (DenyAllTenantApprovalAuthorizer) AuthorizeTenantApproval(
+// Authorize denies every Tenant capability.
+func (DenyAllTenantAccess) Authorize(
 	context.Context,
 	domain.AuthenticatedPrincipal,
 	string,
+	domain.Permission,
 ) error {
 	return domain.ErrForbidden
+}
+
+// ListTenantIDs returns no accessible Tenants.
+func (DenyAllTenantAccess) ListTenantIDs(
+	context.Context,
+	domain.AuthenticatedPrincipal,
+	domain.Permission,
+) ([]string, error) {
+	return []string{}, nil
 }

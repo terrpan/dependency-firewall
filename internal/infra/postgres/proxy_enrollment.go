@@ -113,6 +113,9 @@ func (r *ProxyEnrollmentRepository) ApproveProxyEnrollment(
 	approval domain.ProxyEnrollmentApproval,
 	now time.Time,
 ) (*domain.ProxyEnrollment, error) {
+	if !approval.Principal.Valid() {
+		return nil, domain.ErrUnauthenticated
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("beginning proxy enrollment approval: %w", err)
@@ -153,15 +156,17 @@ func (r *ProxyEnrollmentRepository) ApproveProxyEnrollment(
 		UPDATE proxy_enrollments SET
 			status = 'approved', tenant_id = $1, installation_id = $2, identity_id = $3,
 			canonical_identity = $4, certificate_chain_pem = $5, server_trust_bundle_pem = $6,
-			approving_principal_id = $7, approved_at = $8, updated_at = $8
-		WHERE id = $9 AND status = 'pending'`,
+			approving_principal_issuer = $7, approving_principal_subject = $8,
+			approved_at = $9, updated_at = $9
+		WHERE id = $10 AND status = 'pending'`,
 		approval.TenantID,
 		approval.InstallationID,
 		approval.IdentityID,
 		approval.CanonicalIdentity,
 		approval.CertificateChainPEM,
 		approval.ServerTrustBundlePEM,
-		approval.PrincipalID,
+		approval.Principal.Issuer,
+		approval.Principal.Subject,
 		now,
 		enrollmentID,
 	)
@@ -179,7 +184,7 @@ func (r *ProxyEnrollmentRepository) ApproveProxyEnrollment(
 	enrollment.InstallationID = approval.InstallationID
 	enrollment.IdentityID = approval.IdentityID
 	enrollment.CanonicalIdentity = approval.CanonicalIdentity
-	enrollment.ApprovingPrincipalID = approval.PrincipalID
+	enrollment.ApprovingPrincipal = approval.Principal
 	enrollment.ApprovedAt = &now
 	return enrollment, nil
 }
@@ -189,9 +194,12 @@ func (r *ProxyEnrollmentRepository) DenyProxyEnrollment(
 	ctx context.Context,
 	enrollmentID string,
 	userCodeDigest []byte,
-	principalID string,
+	principal domain.PrincipalRef,
 	now time.Time,
 ) error {
+	if !principal.Valid() {
+		return domain.ErrUnauthenticated
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning proxy enrollment denial: %w", err)
@@ -209,8 +217,10 @@ func (r *ProxyEnrollmentRepository) DenyProxyEnrollment(
 		return enrollmentStateError(enrollment.Status)
 	}
 	_, err = tx.Exec(ctx, `
-		UPDATE proxy_enrollments SET status = 'denied', denying_principal_id = $1,
-			denied_at = $2, updated_at = $2 WHERE id = $3`, principalID, now, enrollmentID)
+		UPDATE proxy_enrollments SET status = 'denied',
+			denying_principal_issuer = $1, denying_principal_subject = $2,
+			denied_at = $3, updated_at = $3 WHERE id = $4`,
+		principal.Issuer, principal.Subject, now, enrollmentID)
 	if err != nil {
 		return fmt.Errorf("denying proxy enrollment: %w", err)
 	}
@@ -445,7 +455,8 @@ func selectEnrollmentForUpdate(
 		expires_at, poll_interval_seconds, next_poll_at, COALESCE(tenant_id::text, ''),
 		COALESCE(installation_id::text, ''), COALESCE(identity_id::text, ''), COALESCE(canonical_identity, ''),
 		COALESCE(certificate_chain_pem, ''::bytea), COALESCE(server_trust_bundle_pem, ''::bytea),
-		COALESCE(approving_principal_id, ''), COALESCE(denying_principal_id, ''), created_at, updated_at,
+		COALESCE(approving_principal_issuer, ''), COALESCE(approving_principal_subject, ''),
+		COALESCE(denying_principal_issuer, ''), COALESCE(denying_principal_subject, ''), created_at, updated_at,
 		approved_at, denied_at, consumed_at, expired_at
 		FROM proxy_enrollments ` + where + ` FOR UPDATE`
 	var enrollment domain.ProxyEnrollment
@@ -455,8 +466,9 @@ func selectEnrollmentForUpdate(
 		&enrollment.ProposedName, &enrollment.Status, &enrollment.ExpiresAt, &pollIntervalSeconds,
 		&enrollment.NextPollAt, &enrollment.TenantID, &enrollment.InstallationID, &enrollment.IdentityID,
 		&enrollment.CanonicalIdentity, &enrollment.CertificateChainPEM, &enrollment.ServerTrustBundlePEM,
-		&enrollment.ApprovingPrincipalID, &enrollment.DenyingPrincipalID, &enrollment.CreatedAt,
-		&enrollment.UpdatedAt, &enrollment.ApprovedAt, &enrollment.DeniedAt, &enrollment.ConsumedAt,
+		&enrollment.ApprovingPrincipal.Issuer, &enrollment.ApprovingPrincipal.Subject,
+		&enrollment.DenyingPrincipal.Issuer, &enrollment.DenyingPrincipal.Subject,
+		&enrollment.CreatedAt, &enrollment.UpdatedAt, &enrollment.ApprovedAt, &enrollment.DeniedAt, &enrollment.ConsumedAt,
 		&enrollment.ExpiredAt,
 	)
 	if err != nil {

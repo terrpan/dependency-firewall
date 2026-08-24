@@ -40,12 +40,12 @@ For bundle delivery, the proxy client certificate is also the recipient key for 
 
 The examples below use DNS SANs because they are easy to issue and understand in local and self-managed deployments. The same authorization model works with any stable certificate identity the code can extract. SPIFFE URI SANs are also supported when a deployment actually uses SPIFFE/SPIRE or another workload identity system that issues SPIFFE IDs.
 
-| Certificate field | Example `authorized_clients.identity` |
-| --- | --- |
-| DNS SAN | `proxy-a.firewall.internal` |
-| URI SAN | `spiffe://dependency-firewall/proxy/proxy-a` |
-| Email SAN | `proxy-a@firewall.internal` |
-| Common Name | `proxy-a` |
+| Certificate field | Example `authorized_clients.identity`        |
+| ----------------- | -------------------------------------------- |
+| DNS SAN           | `proxy-a.firewall.internal`                  |
+| URI SAN           | `spiffe://dependency-firewall/proxy/proxy-a` |
+| Email SAN         | `proxy-a@firewall.internal`                  |
+| Common Name       | `proxy-a`                                    |
 
 ## Control-plane config
 
@@ -200,6 +200,8 @@ The enrollment issuer requires a CA certificate and separate CA private-key file
 A proxy creates its P-256 key locally, enrolls over system-trusted HTTPS, and receives the client chain, existing gRPC server trust bundle, public gRPC address, and server name. An operator may set `enrollment.additional_ca_file` (or `FIREWALL_ENROLLMENT_ADDITIONAL_CA_FILE`) to a read-only mounted PEM bundle for an internal PKI or local development TLS bridge; it is appended to system roots only for the initial enrollment HTTPS client. It is never fetched from the enrollment endpoint and does not change gRPC mTLS trust. This proxy-only setting is not a control-plane trust configuration. No private key crosses the API or is written to disk. The in-memory key also decrypts the existing ECDSA hybrid upstream-secret envelope. Restart requires activation again; renewal and rotation are not implemented.
 
 Control-plane enrollment configuration includes the public API/verification URLs, public gRPC address and server name, base64 32-byte HMAC key, expiry/poll timing, issuer files, and certificate validity. A proxy needs only the public enrollment API URL in addition to its normal Valkey/runtime settings. Non-loopback enrollment HTTP is rejected. [`examples/enrollment`](../examples/enrollment/README.md) provides a local-development Compose topology using Caddy and the proxy additional-CA setting for enrollment HTTPS only; gRPC remains direct end-to-end mTLS. Hosted proxies, Helm/Kubernetes, persistent keys, external agents, HA coordination, enterprise forward proxies, and CA-bundle distribution remain unavailable.
+
+Human activation-code resolution and denial require an authenticated provider-neutral principal. Approval additionally requires `proxy:manage` for the selected Tenant; installation list/get require `proxy:read`, while rename/revoke require `proxy:manage`. The enrollment is not Tenant-bound before approval, so denial remains authenticated and code-bound rather than authorizing an arbitrary client-supplied Tenant. The shipped human context is empty and the Tenant authorizer denies all permissions, preserving fail-closed behavior until real authentication and authorization adapters are configured.
 
 The root development topology can add the same Caddy bridge with `make up ENROLLMENT=1`. It uses only development certificates and a development HMAC key. Start the enrolled proxy separately; the existing `proxy` keeps its manually mounted test certificate, which preserves the ordinary `make up` behavior.
 

@@ -94,8 +94,9 @@ func TestProxyEnrollmentService_ApproveGeneratesIdentityServerSide(t *testing.T)
 		resolved: &domain.ProxyEnrollment{ID: "enrollment", CSRDER: []byte{1, 2, 3}},
 	}
 	issuer := &fakeWorkloadIssuer{}
+	authorizer := &recordingTenantAuthorizer{}
 	service, err := NewProxyEnrollmentService(
-		repository, repository, allowTenantAuthorizer{}, issuer, make([]byte, 32),
+		repository, repository, authorizer, issuer, make([]byte, 32),
 		ProxyEnrollmentSettings{Validity: 10 * time.Minute, PollInterval: 5 * time.Second},
 	)
 	require.NoError(t, err)
@@ -103,7 +104,7 @@ func TestProxyEnrollmentService_ApproveGeneratesIdentityServerSide(t *testing.T)
 
 	_, err = service.Approve(
 		context.Background(),
-		domain.AuthenticatedPrincipal{ID: "user-1"},
+		testAuthenticatedPrincipal(),
 		"enrollment",
 		"ABCD-EFGH",
 		tenantID,
@@ -118,6 +119,92 @@ func TestProxyEnrollmentService_ApproveGeneratesIdentityServerSide(t *testing.T)
 	)
 	assert.Equal(t, repository.approval.CanonicalIdentity, issuer.request.CanonicalIdentity)
 	assert.Equal(t, []byte{1, 2, 3}, issuer.request.CSRDER)
+	assert.Equal(t, testAuthenticatedPrincipal().Ref, repository.approval.Principal)
+	assert.Equal(t, []domain.Permission{domain.PermissionProxyManage}, authorizer.permissions)
+}
+
+func TestProxyEnrollmentService_UsesReadAndManagePermissions(t *testing.T) {
+	t.Parallel()
+	tenantID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	repository := &fakeProxyEnrollmentRepository{}
+	authorizer := &recordingTenantAuthorizer{}
+	enrollmentService, err := NewProxyEnrollmentService(
+		repository,
+		repository,
+		authorizer,
+		nil,
+		make([]byte, 32),
+		ProxyEnrollmentSettings{Validity: 10 * time.Minute, PollInterval: 5 * time.Second},
+	)
+	require.NoError(t, err)
+	principal := testAuthenticatedPrincipal()
+
+	_, _ = enrollmentService.ListInstallations(context.Background(), principal, tenantID)
+	_, _ = enrollmentService.GetInstallation(context.Background(), principal, tenantID, "installation")
+	_, _ = enrollmentService.RenameInstallation(context.Background(), principal, tenantID, "installation", "edge")
+	_, _ = enrollmentService.RevokeInstallation(context.Background(), principal, tenantID, "installation")
+
+	assert.Equal(t, []domain.Permission{
+		domain.PermissionProxyRead,
+		domain.PermissionProxyRead,
+		domain.PermissionProxyManage,
+		domain.PermissionProxyManage,
+	}, authorizer.permissions)
+}
+
+func TestProxyEnrollmentService_RejectsInvalidTenantBeforeAuthorization(t *testing.T) {
+	t.Parallel()
+	repository := &fakeProxyEnrollmentRepository{}
+	authorizer := &recordingTenantAuthorizer{}
+	enrollmentService, err := NewProxyEnrollmentService(
+		repository,
+		repository,
+		authorizer,
+		nil,
+		make([]byte, 32),
+		ProxyEnrollmentSettings{Validity: 10 * time.Minute, PollInterval: 5 * time.Second},
+	)
+	require.NoError(t, err)
+
+	_, err = enrollmentService.ListInstallations(context.Background(), testAuthenticatedPrincipal(), "not-a-tenant-id")
+
+	require.ErrorIs(t, err, domain.ErrProxyEnrollmentInvalid)
+	assert.Empty(t, authorizer.permissions)
+}
+
+func TestProxyEnrollmentService_RejectsIncompletePrincipal(t *testing.T) {
+	t.Parallel()
+	repository := &fakeProxyEnrollmentRepository{}
+	authorizer := &recordingTenantAuthorizer{}
+	enrollmentService, err := NewProxyEnrollmentService(
+		repository,
+		repository,
+		authorizer,
+		nil,
+		make([]byte, 32),
+		ProxyEnrollmentSettings{Validity: 10 * time.Minute, PollInterval: 5 * time.Second},
+	)
+	require.NoError(t, err)
+
+	_, err = enrollmentService.ResolveForApproval(
+		context.Background(),
+		domain.AuthenticatedPrincipal{Ref: domain.PrincipalRef{Issuer: "https://issuer.example"}},
+		"ABCD-EFGH",
+	)
+	require.ErrorIs(t, err, domain.ErrUnauthenticated)
+	_, err = enrollmentService.ListInstallations(
+		context.Background(),
+		domain.AuthenticatedPrincipal{},
+		"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+	)
+	require.ErrorIs(t, err, domain.ErrUnauthenticated)
+	assert.Empty(t, authorizer.permissions)
+}
+
+func testAuthenticatedPrincipal() domain.AuthenticatedPrincipal {
+	return domain.AuthenticatedPrincipal{
+		Ref: domain.PrincipalRef{Issuer: "https://issuer.example", Subject: "user-1"},
+	}
 }
 
 func testCSRPEM(t *testing.T, curve elliptic.Curve, requestedIdentity bool) []byte {
@@ -180,7 +267,13 @@ func (r *fakeProxyEnrollmentRepository) ApproveProxyEnrollment(
 	r.approval = &approval
 	return &domain.ProxyEnrollment{ID: "enrollment", Status: domain.ProxyEnrollmentApproved}, nil
 }
-func (*fakeProxyEnrollmentRepository) DenyProxyEnrollment(context.Context, string, []byte, string, time.Time) error {
+func (*fakeProxyEnrollmentRepository) DenyProxyEnrollment(
+	context.Context,
+	string,
+	[]byte,
+	domain.PrincipalRef,
+	time.Time,
+) error {
 	return nil
 }
 
@@ -225,10 +318,19 @@ func (*fakeProxyEnrollmentRepository) RevokeProxyInstallation(
 	return nil, errors.New("unused")
 }
 
-type allowTenantAuthorizer struct{}
+type recordingTenantAuthorizer struct {
+	permissions []domain.Permission
+	err         error
+}
 
-func (allowTenantAuthorizer) AuthorizeTenantApproval(context.Context, domain.AuthenticatedPrincipal, string) error {
-	return nil
+func (a *recordingTenantAuthorizer) Authorize(
+	_ context.Context,
+	_ domain.AuthenticatedPrincipal,
+	_ string,
+	permission domain.Permission,
+) error {
+	a.permissions = append(a.permissions, permission)
+	return a.err
 }
 
 type fakeWorkloadIssuer struct {

@@ -51,7 +51,7 @@ type ProxyEnrollmentRepository interface {
 		ctx context.Context,
 		enrollmentID string,
 		userCodeDigest []byte,
-		principalID string,
+		principal domain.PrincipalRef,
 		now time.Time,
 	) error
 	PollProxyEnrollment(
@@ -59,11 +59,6 @@ type ProxyEnrollmentRepository interface {
 		deviceCredentialDigest []byte,
 		now time.Time,
 	) (*domain.ProxyEnrollment, error)
-}
-
-// TenantApprovalAuthorizer authorizes a human principal for one Tenant.
-type TenantApprovalAuthorizer interface {
-	AuthorizeTenantApproval(ctx context.Context, principal domain.AuthenticatedPrincipal, tenantID string) error
 }
 
 // WorkloadCertificateIssuer issues a client certificate for a verified CSR public key.

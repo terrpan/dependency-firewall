@@ -8,17 +8,17 @@ Only `control-plane` and `all-in-one` modes open PostgreSQL and run migrations. 
 
 ### Active runtime tables
 
-| Area | Tables | Runtime use |
-| --- | --- | --- |
-| Tenancy | `tenants` | tenant CRUD and bundle identity |
-| Upstreams | `upstreams` | upstream configuration, capabilities, encrypted OCI credentials |
-| Policies | `policies`, `policy_versions`, `tenant_policy_revisions` | active rules, version history/rollback, revision hashes |
-| Artifacts and evaluation | `artifacts`, `evaluations`, `evaluation_reasons`, `decisions` | normalized identities, evaluation history/reasons, durable decisions |
-| Audit | `audit_events` | configured durable audit sink and list API |
-| Dependency graphs | `dependency_graph_roots`, `dependency_graph_nodes`, `dependency_graph_edges`, `dependency_context_summaries` | job lifecycle, resolved graph, target-aware lookup summaries |
-| Proxy enrollment | `proxy_enrollments`, `proxy_installations`, `workload_identities` | digest-only device/user credentials, atomic activation state, Tenant-owned installations, certificate identity metadata and revocation |
+| Area                     | Tables                                                                                                       | Runtime use                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Tenancy                  | `tenants`                                                                                                    | tenant CRUD and bundle identity                                                                                                        |
+| Upstreams                | `upstreams`                                                                                                  | upstream configuration, capabilities, encrypted OCI credentials                                                                        |
+| Policies                 | `policies`, `policy_versions`, `tenant_policy_revisions`                                                     | active rules, version history/rollback, revision hashes                                                                                |
+| Artifacts and evaluation | `artifacts`, `evaluations`, `evaluation_reasons`, `decisions`                                                | normalized identities, evaluation history/reasons, durable decisions                                                                   |
+| Audit                    | `audit_events`                                                                                               | configured durable audit sink and list API                                                                                             |
+| Dependency graphs        | `dependency_graph_roots`, `dependency_graph_nodes`, `dependency_graph_edges`, `dependency_context_summaries` | job lifecycle, resolved graph, target-aware lookup summaries                                                                           |
+| Proxy enrollment         | `proxy_enrollments`, `proxy_installations`, `workload_identities`                                            | digest-only device/user credentials, atomic activation state, Tenant-owned installations, certificate identity metadata and revocation |
 
-`proxy_enrollments` stores HMAC-SHA-256 digests, never plaintext device credentials or user codes. Pending approval, denial, expiry, and one-time consumption are serialized with row locks. Approval atomically creates a pending installation and its Tenant-matched identity; the winning poll activates the installation, returns the certificate once, and clears stored certificate/trust bytes. Terminal enrollment states cannot be replayed.
+`proxy_enrollments` stores HMAC-SHA-256 digests, never plaintext device credentials or user codes. Pending approval, denial, expiry, and one-time consumption are serialized with row locks. Approval atomically creates a pending installation and its Tenant-matched identity; the winning poll activates the installation, returns the certificate once, and clears stored certificate/trust bytes. Human approval and denial store the exact provider-neutral principal issuer and subject as separate nullable pairs, not a provider user row or mutable email. Terminal enrollment states cannot be replayed.
 
 Installation names are unique within a Tenant while pending or active. Revocation marks both the installation and its workload identities. The first authorized gRPC call records `first_connected_at`. Composite foreign keys prevent an installation, identity, or enrollment from crossing the Tenant boundary.
 
@@ -42,13 +42,13 @@ OCI blob access uses `HasRecentAllow`, which searches for an allow decision duri
 
 ## Cache inventory
 
-| Cache | Owner/storage | Key dimensions | TTL / retention | Invalidation |
-| --- | --- | --- | --- | --- |
-| Decision | external Valkey | tenant, tenant generation, dependency-context hash, artifact | 5 minutes for mutable identity; 1 hour for immutable identity | policy mutations/import/rollback and cache API bump tenant generation |
-| Metadata | external Valkey | tenant, tenant generation, artifact | 1 hour for mutable identity; 24 hours for digest identity | metadata-cache API bumps tenant generation |
-| Dependency context | external Valkey | tenant, upstream, artifact | 30 minutes | expiry; repopulated from PostgreSQL summary |
-| Tenant bundle | proxy process memory | tenant | refresh attempted on demand after configured interval; last-known-good retained | process restart or successful refresh replaces entry |
-| OCI artifact | disk backend | tenant, upstream, artifact kind, immutable digest | configured size/age/count limits; zero means no limit | eviction on completed writes according to configured limits |
+| Cache              | Owner/storage        | Key dimensions                                               | TTL / retention                                                                 | Invalidation                                                          |
+| ------------------ | -------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Decision           | external Valkey      | tenant, tenant generation, dependency-context hash, artifact | 5 minutes for mutable identity; 1 hour for immutable identity                   | policy mutations/import/rollback and cache API bump tenant generation |
+| Metadata           | external Valkey      | tenant, tenant generation, artifact                          | 1 hour for mutable identity; 24 hours for digest identity                       | metadata-cache API bumps tenant generation                            |
+| Dependency context | external Valkey      | tenant, upstream, artifact                                   | 30 minutes                                                                      | expiry; repopulated from PostgreSQL summary                           |
+| Tenant bundle      | proxy process memory | tenant                                                       | refresh attempted on demand after configured interval; last-known-good retained | process restart or successful refresh replaces entry                  |
+| OCI artifact       | disk backend         | tenant, upstream, artifact kind, immutable digest            | configured size/age/count limits; zero means no limit                           | eviction on completed writes according to configured limits           |
 
 Valkey is shared external storage, not “proxy-local.” Bundle cache state is the process-local cache.
 

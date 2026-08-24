@@ -8,12 +8,12 @@ This document is the canonical runtime, boundary, and API-responsibility overvie
 
 ## Runtime topology
 
-| Mode | Responsibilities | Direct dependencies |
-| --- | --- | --- |
-| `control-plane` | Management HTTP API; OpenAPI/docs; bundle and ingest gRPC; migrations; durable repositories | PostgreSQL, Valkey; Node/npm only for an explicitly enabled in-process graph worker |
-| `proxy` | Supported ecosystem HTTP routes; bundle-backed evaluation; proxy health | Valkey, control-plane gRPC, upstream registries |
-| `all-in-one` | Control-plane and proxy HTTP on one mux; local bundle/ingest adapters | PostgreSQL, Valkey; Node/npm only for an explicitly enabled in-process graph worker |
-| `dependency-graph-worker` | Claim, resolve, complete, and fail npm graph jobs | Node/npm, upstream npm registry, control-plane gRPC |
+| Mode                      | Responsibilities                                                                            | Direct dependencies                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `control-plane`           | Management HTTP API; OpenAPI/docs; bundle and ingest gRPC; migrations; durable repositories | PostgreSQL, Valkey; Node/npm only for an explicitly enabled in-process graph worker |
+| `proxy`                   | Supported ecosystem HTTP routes; bundle-backed evaluation; proxy health                     | Valkey, control-plane gRPC, upstream registries                                     |
+| `all-in-one`              | Control-plane and proxy HTTP on one mux; local bundle/ingest adapters                       | PostgreSQL, Valkey; Node/npm only for an explicitly enabled in-process graph worker |
+| `dependency-graph-worker` | Claim, resolve, complete, and fail npm graph jobs                                           | Node/npm, upstream npm registry, control-plane gRPC                                 |
 
 `dependency_graph.run_in_process` defaults to `false`. All-in-one mode therefore needs either a separate worker or explicit in-process enablement to consume queued graph jobs.
 
@@ -49,7 +49,7 @@ Bundle secrets for authenticated OCI upstreams are encrypted to the requesting p
 
 ### Public HTTP
 
-Management and proxy HTTP routes do not generally validate bearer tokens or enforce roles. Tenant middleware resolves tenant context from API headers or ecosystem-specific routing, but that is routing and scoping—not proof that a caller may act for the tenant. Automatic-enrollment machine polling uses a one-time bearer credential. Human approval has a provider-neutral principal/Tenant-authorizer boundary and the shipped adapter fails closed with `401/403`; approval does not become usable until a real authenticated principal and Tenant authorization adapter is supplied.
+Management and proxy HTTP routes do not generally validate bearer tokens or enforce roles. Tenant middleware resolves tenant context from API headers or ecosystem-specific routing, but that is routing and scoping—not proof that a caller may act for the tenant. Automatic-enrollment machine polling uses a one-time bearer credential. Human activation-code resolution, approval, denial, and installation management read a provider-neutral `issuer + subject` principal from request context. Core services enforce `proxy:read` for installation reads and `proxy:manage` for approval and mutations through the general Tenant authorizer. The shipped context is empty and the shipped authorizer denies every Tenant permission, so these operations fail closed with `401/403` until real adapters are supplied.
 
 The SPA provides a provider-neutral authentication adapter, token attachment in the API client, and UI guard/state seams. Its default adapter is anonymous and current route guards do not require a session. Real IdP integration, Go JWT/JWKS validation, RBAC, and user-to-tenant membership enforcement remain future work. Deploy public HTTP behind a trusted network or an external authenticated gateway.
 
@@ -63,7 +63,7 @@ Handlers normally orchestrate through core services. Some current delivery compo
 
 ### Core
 
-Core owns artifact normalization, enrichment planning, policy evaluation, cache-aware access decisions, graph-context orchestration, policy lifecycle, audit workflows, and protocol-neutral ports. Policy evaluation is pure and deny-wins.
+Core owns artifact normalization, enrichment planning, policy evaluation, cache-aware access decisions, graph-context orchestration, policy lifecycle, audit workflows, provider-neutral human identity and application-permission contracts, and protocol-neutral ports. Policy evaluation is pure and deny-wins.
 
 ### Infrastructure
 
@@ -73,19 +73,19 @@ Infrastructure implements PostgreSQL repositories, Valkey caches, bundle-backed 
 
 The control plane publishes OpenAPI at `/api/openapi` and interactive documentation at `/api/docs`. Registered Huma operations are authoritative.
 
-| Resource | Operations |
-| --- | --- |
-| Health | health operation registered by the control-plane health handler |
-| Tenants | create, list, get, update, delete under `/api/v1/tenants` |
-| Upstreams | create, list, get, update, delete under `/api/v1/upstreams` |
-| Policies | create, list, get, update, delete under `/api/v1/policies` |
-| Policy lifecycle | list `/api/v1/policy-types`; import `/api/v1/policies/import`; list versions and rollback under `/api/v1/policies/{id}` |
-| Evaluations | list `/api/v1/evaluations` |
-| Audit events | list `/api/v1/audit/events` |
-| Caches | clear decision or metadata cache through `/api/v1/cache/decisions` and `/api/v1/cache/metadata` |
-| Dependency graphs | list `/api/v1/dependency-graphs`; get `/api/v1/dependency-graphs/{id}` |
-| Proxy enrollment | start and one-time machine poll under `/api/v1/proxy-enrollments`; safe human resolve/approve/deny operations |
-| Proxy installations | list, get, rename, and revoke under `/api/v1/tenants/{tenant_id}/proxy-installations` |
+| Resource            | Operations                                                                                                              |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Health              | health operation registered by the control-plane health handler                                                         |
+| Tenants             | create, list, get, update, delete under `/api/v1/tenants`                                                               |
+| Upstreams           | create, list, get, update, delete under `/api/v1/upstreams`                                                             |
+| Policies            | create, list, get, update, delete under `/api/v1/policies`                                                              |
+| Policy lifecycle    | list `/api/v1/policy-types`; import `/api/v1/policies/import`; list versions and rollback under `/api/v1/policies/{id}` |
+| Evaluations         | list `/api/v1/evaluations`                                                                                              |
+| Audit events        | list `/api/v1/audit/events`                                                                                             |
+| Caches              | clear decision or metadata cache through `/api/v1/cache/decisions` and `/api/v1/cache/metadata`                         |
+| Dependency graphs   | list `/api/v1/dependency-graphs`; get `/api/v1/dependency-graphs/{id}`                                                  |
+| Proxy enrollment    | public start and one-time machine poll; authenticated human resolve/approve/deny currently fail closed                  |
+| Proxy installations | permission-checked list/get/rename/revoke; shipped authorization currently denies all                                   |
 
 Audit-event browsing is API-only today; the SPA has no audit route.
 

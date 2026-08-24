@@ -14,6 +14,7 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
+	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
 
 func TestProxyEnrollmentHandler_HumanApprovalAuthorization(t *testing.T) {
@@ -21,25 +22,24 @@ func TestProxyEnrollmentHandler_HumanApprovalAuthorization(t *testing.T) {
 	tenantID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	tests := []struct {
 		name       string
-		principals HumanPrincipalProvider
+		principal  *domain.AuthenticatedPrincipal
 		authorizer tenantApprovalAuthorizer
 		wantStatus int
 	}{
 		{
 			name:       "anonymous",
-			principals: AnonymousPrincipalProvider{},
 			authorizer: tenantApprovalAuthorizer{},
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
 			name:       "authenticated unauthorized",
-			principals: fixedPrincipalProvider{principal: domain.AuthenticatedPrincipal{ID: "user"}},
+			principal:  ptrPrincipal(apiTestPrincipal()),
 			authorizer: tenantApprovalAuthorizer{err: domain.ErrForbidden},
 			wantStatus: http.StatusForbidden,
 		},
 		{
 			name:       "authorized provider-neutral principal",
-			principals: fixedPrincipalProvider{principal: domain.AuthenticatedPrincipal{ID: "user"}},
+			principal:  ptrPrincipal(apiTestPrincipal()),
 			authorizer: tenantApprovalAuthorizer{},
 			wantStatus: http.StatusOK,
 		},
@@ -57,7 +57,6 @@ func TestProxyEnrollmentHandler_HumanApprovalAuthorization(t *testing.T) {
 			require.NoError(t, err)
 			handler := NewProxyEnrollmentHandler(
 				enrollmentService,
-				tt.principals,
 				slog.Default(),
 				ProxyEnrollmentHandlerSettings{
 					PublicAPIURL:      "https://firewall.example.com",
@@ -69,7 +68,11 @@ func TestProxyEnrollmentHandler_HumanApprovalAuthorization(t *testing.T) {
 			input.Body.UserCode = "ABCD-EFGH"
 			input.Body.TenantID = tenantID
 			input.Body.InstallationName = "edge"
-			output, callErr := handler.approve(context.Background(), input)
+			ctx := context.Background()
+			if tt.principal != nil {
+				ctx = middleware.ContextWithPrincipal(ctx, *tt.principal)
+			}
+			output, callErr := handler.approve(ctx, input)
 			if tt.wantStatus == http.StatusOK {
 				require.NoError(t, callErr)
 				require.NotNil(t, output)
@@ -84,9 +87,38 @@ func TestProxyEnrollmentHandler_HumanApprovalAuthorization(t *testing.T) {
 	}
 }
 
+func TestProxyEnrollmentHandler_ResolveRequiresAuthentication(t *testing.T) {
+	t.Parallel()
+	repository := &apiEnrollmentRepository{
+		resolved: &domain.ProxyEnrollment{ID: "enrollment", Status: domain.ProxyEnrollmentPending},
+	}
+	enrollmentService, err := service.NewProxyEnrollmentService(
+		repository,
+		repository,
+		tenantApprovalAuthorizer{},
+		nil,
+		make([]byte, 32),
+		service.ProxyEnrollmentSettings{Validity: 10 * time.Minute, PollInterval: 5 * time.Second},
+	)
+	require.NoError(t, err)
+	handler := NewProxyEnrollmentHandler(enrollmentService, slog.Default(), ProxyEnrollmentHandlerSettings{})
+	input := &enrollmentCodeInput{Body: enrollmentCodeRequest{UserCode: "ABCD-EFGH"}}
+
+	_, err = handler.resolve(context.Background(), input)
+	require.Error(t, err)
+	var statusErr huma.StatusError
+	require.True(t, errors.As(err, &statusErr))
+	assert.Equal(t, http.StatusUnauthorized, statusErr.GetStatus())
+
+	ctx := middleware.ContextWithPrincipal(context.Background(), apiTestPrincipal())
+	output, err := handler.resolve(ctx, input)
+	require.NoError(t, err)
+	assert.Equal(t, "enrollment", output.Body.ID)
+}
+
 func TestProxyEnrollmentHandler_ConfigurationReturnsOnlyPublicAPIURL(t *testing.T) {
 	t.Parallel()
-	handler := NewProxyEnrollmentHandler(nil, nil, slog.Default(), ProxyEnrollmentHandlerSettings{
+	handler := NewProxyEnrollmentHandler(nil, slog.Default(), ProxyEnrollmentHandlerSettings{
 		PublicAPIURL: "https://firewall.example.com",
 	})
 
@@ -96,18 +128,21 @@ func TestProxyEnrollmentHandler_ConfigurationReturnsOnlyPublicAPIURL(t *testing.
 	assert.Equal(t, "https://firewall.example.com", output.Body.PublicAPIURL)
 }
 
-type fixedPrincipalProvider struct{ principal domain.AuthenticatedPrincipal }
+func apiTestPrincipal() domain.AuthenticatedPrincipal {
+	return domain.AuthenticatedPrincipal{Ref: domain.PrincipalRef{Issuer: "https://issuer.example", Subject: "user"}}
+}
 
-func (p fixedPrincipalProvider) PrincipalFromContext(context.Context) (domain.AuthenticatedPrincipal, error) {
-	return p.principal, nil
+func ptrPrincipal(principal domain.AuthenticatedPrincipal) *domain.AuthenticatedPrincipal {
+	return &principal
 }
 
 type tenantApprovalAuthorizer struct{ err error }
 
-func (a tenantApprovalAuthorizer) AuthorizeTenantApproval(
+func (a tenantApprovalAuthorizer) Authorize(
 	context.Context,
 	domain.AuthenticatedPrincipal,
 	string,
+	domain.Permission,
 ) error {
 	return a.err
 }
@@ -163,7 +198,13 @@ func (*apiEnrollmentRepository) ApproveProxyEnrollment(
 		Status:         domain.ProxyEnrollmentApproved,
 	}, nil
 }
-func (*apiEnrollmentRepository) DenyProxyEnrollment(context.Context, string, []byte, string, time.Time) error {
+func (*apiEnrollmentRepository) DenyProxyEnrollment(
+	context.Context,
+	string,
+	[]byte,
+	domain.PrincipalRef,
+	time.Time,
+) error {
 	return nil
 }
 

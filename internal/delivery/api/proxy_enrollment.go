@@ -12,25 +12,12 @@ import (
 
 	"github.com/danielterry/dependency-firewall/internal/core/domain"
 	"github.com/danielterry/dependency-firewall/internal/core/service"
+	"github.com/danielterry/dependency-firewall/internal/delivery/middleware"
 )
-
-// HumanPrincipalProvider extracts an authenticated provider-neutral principal from request context.
-type HumanPrincipalProvider interface {
-	PrincipalFromContext(context.Context) (domain.AuthenticatedPrincipal, error)
-}
-
-// AnonymousPrincipalProvider is the fail-closed default until an HTTP identity adapter is installed.
-type AnonymousPrincipalProvider struct{}
-
-// PrincipalFromContext always reports that authentication is absent.
-func (AnonymousPrincipalProvider) PrincipalFromContext(context.Context) (domain.AuthenticatedPrincipal, error) {
-	return domain.AuthenticatedPrincipal{}, domain.ErrUnauthenticated
-}
 
 // ProxyEnrollmentHandler serves machine enrollment, human activation, and installation management.
 type ProxyEnrollmentHandler struct {
 	service           *service.ProxyEnrollmentService
-	principals        HumanPrincipalProvider
 	logger            *slog.Logger
 	publicAPIURL      string
 	publicGRPCAddress string
@@ -47,16 +34,11 @@ type ProxyEnrollmentHandlerSettings struct {
 // NewProxyEnrollmentHandler creates the HTTP enrollment boundary.
 func NewProxyEnrollmentHandler(
 	service *service.ProxyEnrollmentService,
-	principals HumanPrincipalProvider,
 	logger *slog.Logger,
 	settings ProxyEnrollmentHandlerSettings,
 ) *ProxyEnrollmentHandler {
-	if principals == nil {
-		principals = AnonymousPrincipalProvider{}
-	}
 	return &ProxyEnrollmentHandler{
 		service:           service,
-		principals:        principals,
 		logger:            logger,
 		publicAPIURL:      settings.PublicAPIURL,
 		publicGRPCAddress: settings.PublicGRPCAddress,
@@ -109,7 +91,12 @@ func (h *ProxyEnrollmentHandler) RegisterHumaRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "resolve-proxy-enrollment", Method: http.MethodPost, Path: "/api/v1/proxy-enrollments/resolve",
 		Summary: "Resolve an activation code", Tags: []string{"proxy enrollment"}, MaxBodyBytes: 2 << 10,
-		Errors: controlPlaneErrors(http.StatusBadRequest, http.StatusGone, http.StatusInternalServerError),
+		Errors: controlPlaneErrors(
+			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusGone,
+			http.StatusInternalServerError,
+		),
 	}, h.resolve)
 	huma.Register(api, huma.Operation{
 		OperationID:  "approve-proxy-enrollment",
@@ -148,7 +135,11 @@ func (h *ProxyEnrollmentHandler) RegisterHumaRoutes(api huma.API) {
 		Path:        "/api/v1/tenants/{tenant_id}/proxy-installations",
 		Summary:     "List proxy installations",
 		Tags:        []string{"proxy installations"},
-		Errors:      controlPlaneReadErrors(http.StatusInternalServerError),
+		Errors: controlPlaneReadErrors(
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusInternalServerError,
+		),
 	}, h.listInstallations)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-proxy-installation",
@@ -156,7 +147,12 @@ func (h *ProxyEnrollmentHandler) RegisterHumaRoutes(api huma.API) {
 		Path:        "/api/v1/tenants/{tenant_id}/proxy-installations/{id}",
 		Summary:     "Get proxy installation",
 		Tags:        []string{"proxy installations"},
-		Errors:      controlPlaneReadErrors(http.StatusNotFound, http.StatusInternalServerError),
+		Errors: controlPlaneReadErrors(
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusInternalServerError,
+		),
 	}, h.getInstallation)
 	huma.Register(api, huma.Operation{
 		OperationID:  "rename-proxy-installation",
@@ -167,6 +163,8 @@ func (h *ProxyEnrollmentHandler) RegisterHumaRoutes(api huma.API) {
 		MaxBodyBytes: 2 << 10,
 		Errors: controlPlaneErrors(
 			http.StatusBadRequest,
+			http.StatusUnauthorized,
+			http.StatusForbidden,
 			http.StatusNotFound,
 			http.StatusConflict,
 			http.StatusInternalServerError,
@@ -178,7 +176,12 @@ func (h *ProxyEnrollmentHandler) RegisterHumaRoutes(api huma.API) {
 		Path:        "/api/v1/tenants/{tenant_id}/proxy-installations/{id}",
 		Summary:     "Revoke proxy installation",
 		Tags:        []string{"proxy installations"},
-		Errors:      controlPlaneErrors(http.StatusNotFound, http.StatusInternalServerError),
+		Errors: controlPlaneErrors(
+			http.StatusUnauthorized,
+			http.StatusForbidden,
+			http.StatusNotFound,
+			http.StatusInternalServerError,
+		),
 	}, h.revokeInstallation)
 }
 
@@ -369,7 +372,11 @@ func (h *ProxyEnrollmentHandler) resolve(
 	ctx context.Context,
 	input *enrollmentCodeInput,
 ) (*safeProxyEnrollmentOutput, error) {
-	enrollment, err := h.service.ResolveUserCode(ctx, input.Body.UserCode)
+	principal, err := authenticatedPrincipal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	enrollment, err := h.service.ResolveForApproval(ctx, principal, input.Body.UserCode)
 	if err != nil {
 		return nil, h.enrollmentError(ctx, "resolving proxy enrollment", err)
 	}
@@ -380,9 +387,9 @@ func (h *ProxyEnrollmentHandler) approve(
 	ctx context.Context,
 	input *approveProxyEnrollmentInput,
 ) (*safeProxyEnrollmentOutput, error) {
-	principal, err := h.principals.PrincipalFromContext(ctx)
+	principal, err := authenticatedPrincipal(ctx)
 	if err != nil {
-		return nil, principalError(err)
+		return nil, err
 	}
 	enrollment, err := h.service.Approve(
 		ctx,
@@ -399,9 +406,9 @@ func (h *ProxyEnrollmentHandler) approve(
 }
 
 func (h *ProxyEnrollmentHandler) deny(ctx context.Context, input *enrollmentIDCodeInput) (*struct{}, error) {
-	principal, err := h.principals.PrincipalFromContext(ctx)
+	principal, err := authenticatedPrincipal(ctx)
 	if err != nil {
-		return nil, principalError(err)
+		return nil, err
 	}
 	if err := h.service.Deny(ctx, principal, input.ID, input.Body.UserCode); err != nil {
 		return nil, h.enrollmentError(ctx, "denying proxy enrollment", err)
@@ -412,18 +419,13 @@ func (h *ProxyEnrollmentHandler) deny(ctx context.Context, input *enrollmentIDCo
 func (h *ProxyEnrollmentHandler) listInstallations(ctx context.Context, input *struct {
 	TenantID string `path:"tenant_id"`
 }) (*proxyInstallationListOutput, error) {
-	if err := h.authorizeTenantManagement(ctx, input.TenantID); err != nil {
+	principal, err := authenticatedPrincipal(ctx)
+	if err != nil {
 		return nil, err
 	}
-	installations, err := h.service.ListInstallations(ctx, input.TenantID)
+	installations, err := h.service.ListInstallations(ctx, principal, input.TenantID)
 	if err != nil {
-		return nil, humaInternalError(
-			ctx,
-			h.logger,
-			"listing proxy installations",
-			err,
-			"failed to list proxy installations",
-		)
+		return nil, h.installationError(ctx, "listing proxy installations", err)
 	}
 	result := make([]proxyInstallationResponse, len(installations))
 	for i := range installations {
@@ -436,10 +438,11 @@ func (h *ProxyEnrollmentHandler) getInstallation(
 	ctx context.Context,
 	input *proxyInstallationIDInput,
 ) (*proxyInstallationOutput, error) {
-	if err := h.authorizeTenantManagement(ctx, input.TenantID); err != nil {
+	principal, err := authenticatedPrincipal(ctx)
+	if err != nil {
 		return nil, err
 	}
-	installation, err := h.service.GetInstallation(ctx, input.TenantID, input.ID)
+	installation, err := h.service.GetInstallation(ctx, principal, input.TenantID, input.ID)
 	if err != nil {
 		return nil, h.installationError(ctx, "getting proxy installation", err)
 	}
@@ -450,10 +453,11 @@ func (h *ProxyEnrollmentHandler) renameInstallation(
 	ctx context.Context,
 	input *renameProxyInstallationInput,
 ) (*proxyInstallationOutput, error) {
-	if err := h.authorizeTenantManagement(ctx, input.TenantID); err != nil {
+	principal, err := authenticatedPrincipal(ctx)
+	if err != nil {
 		return nil, err
 	}
-	installation, err := h.service.RenameInstallation(ctx, input.TenantID, input.ID, input.Body.Name)
+	installation, err := h.service.RenameInstallation(ctx, principal, input.TenantID, input.ID, input.Body.Name)
 	if err != nil {
 		return nil, h.installationError(ctx, "renaming proxy installation", err)
 	}
@@ -464,25 +468,15 @@ func (h *ProxyEnrollmentHandler) revokeInstallation(
 	ctx context.Context,
 	input *proxyInstallationIDInput,
 ) (*proxyInstallationOutput, error) {
-	if err := h.authorizeTenantManagement(ctx, input.TenantID); err != nil {
+	principal, err := authenticatedPrincipal(ctx)
+	if err != nil {
 		return nil, err
 	}
-	installation, err := h.service.RevokeInstallation(ctx, input.TenantID, input.ID)
+	installation, err := h.service.RevokeInstallation(ctx, principal, input.TenantID, input.ID)
 	if err != nil {
 		return nil, h.installationError(ctx, "revoking proxy installation", err)
 	}
 	return &proxyInstallationOutput{Body: installationResponse(installation)}, nil
-}
-
-func (h *ProxyEnrollmentHandler) authorizeTenantManagement(ctx context.Context, tenantID string) error {
-	principal, err := h.principals.PrincipalFromContext(ctx)
-	if err != nil {
-		return principalError(err)
-	}
-	if err := h.service.AuthorizeTenantManagement(ctx, principal, tenantID); err != nil {
-		return principalError(err)
-	}
-	return nil
 }
 
 func (h *ProxyEnrollmentHandler) enrollmentError(ctx context.Context, operation string, err error) error {
@@ -510,6 +504,8 @@ func (h *ProxyEnrollmentHandler) enrollmentError(ctx context.Context, operation 
 
 func (h *ProxyEnrollmentHandler) installationError(ctx context.Context, operation string, err error) error {
 	switch {
+	case errors.Is(err, domain.ErrUnauthenticated), errors.Is(err, domain.ErrForbidden):
+		return principalError(err)
 	case errors.Is(err, domain.ErrProxyInstallationNotFound):
 		return huma.Error404NotFound("proxy installation not found")
 	case errors.Is(err, domain.ErrProxyInstallationNameConflict):
@@ -519,6 +515,14 @@ func (h *ProxyEnrollmentHandler) installationError(ctx context.Context, operatio
 	default:
 		return humaInternalError(ctx, h.logger, operation, err, "proxy installation operation failed")
 	}
+}
+
+func authenticatedPrincipal(ctx context.Context) (domain.AuthenticatedPrincipal, error) {
+	principal, ok := middleware.PrincipalFromContext(ctx)
+	if !ok {
+		return domain.AuthenticatedPrincipal{}, huma.Error401Unauthorized("authentication required")
+	}
+	return principal, nil
 }
 
 func principalError(err error) error {

@@ -72,8 +72,8 @@ type ProxyEnrollment struct {
 	CanonicalIdentity      string
 	CertificateChainPEM    []byte
 	ServerTrustBundlePEM   []byte
-	ApprovingPrincipalID   string
-	DenyingPrincipalID     string
+	ApprovingPrincipal     PrincipalRef
+	DenyingPrincipal       PrincipalRef
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	ApprovedAt             *time.Time
@@ -93,7 +93,7 @@ type ProxyEnrollmentApproval struct {
 	CertificateNotAfter  time.Time
 	CertificateChainPEM  []byte
 	ServerTrustBundlePEM []byte
-	PrincipalID          string
+	Principal            PrincipalRef
 }
 
 // WorkloadCertificateRequest contains only a verified public key and server-generated identity.
@@ -108,11 +108,6 @@ type IssuedWorkloadCertificate struct {
 	ServerTrustBundlePEM []byte
 	Serial               string
 	NotAfter             time.Time
-}
-
-// AuthenticatedPrincipal is a provider-neutral human principal.
-type AuthenticatedPrincipal struct {
-	ID string
 }
 
 // WorkloadAuthorizationResult distinguishes unknown identities from known-but-denied identities.

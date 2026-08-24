@@ -105,7 +105,7 @@ func registerProxyEnrollmentRoutes(api huma.API, deps *dependencies, cfg *config
 	}
 	enrollmentService, err := service.NewProxyEnrollmentService(
 		deps.proxyEnrollmentRepo, deps.proxyEnrollmentRepo,
-		service.DenyAllTenantApprovalAuthorizer{}, deps.workloadIssuer, deps.enrollmentHMACKey,
+		service.DenyAllTenantAccess{}, deps.workloadIssuer, deps.enrollmentHMACKey,
 		service.ProxyEnrollmentSettings{
 			VerificationURI: cfg.Enrollment.VerificationURI, PublicGRPCAddress: cfg.Enrollment.PublicGRPCAddress,
 			GRPCServerName: cfg.Enrollment.GRPCServerName, Validity: cfg.Enrollment.Validity,
@@ -117,7 +117,6 @@ func registerProxyEnrollmentRoutes(api huma.API, deps *dependencies, cfg *config
 	}
 	apidelivery.NewProxyEnrollmentHandler(
 		enrollmentService,
-		apidelivery.AnonymousPrincipalProvider{},
 		logger,
 		apidelivery.ProxyEnrollmentHandlerSettings{
 			PublicAPIURL:      cfg.Enrollment.PublicAPIURL,
