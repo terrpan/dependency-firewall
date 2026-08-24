@@ -18,6 +18,8 @@ func main() {
 
 	deliveryapi.NewHealthHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewTenantHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
+	deliveryapi.NewProxyEnrollmentHandler(nil, nil, logger, deliveryapi.ProxyEnrollmentHandlerSettings{}).
+		RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewPolicyHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewCacheHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)
 	deliveryapi.NewUpstreamHandler(nil, logger).RegisterHumaRoutes(controlPlaneAPI)

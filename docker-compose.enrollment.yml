@@ -1,0 +1,28 @@
+services:
+  control-plane:
+    environment:
+      FIREWALL_ENROLLMENT_ENABLED: "true"
+      FIREWALL_ENROLLMENT_PUBLIC_API_URL: "${FIREWALL_ENROLLMENT_PUBLIC_API_URL:-https://host.docker.internal:8443}"
+      FIREWALL_ENROLLMENT_VERIFICATION_URI: "${FIREWALL_ENROLLMENT_VERIFICATION_URI:-http://localhost:5173/activate}"
+      FIREWALL_ENROLLMENT_PUBLIC_GRPC_ADDRESS: "${FIREWALL_ENROLLMENT_PUBLIC_GRPC_ADDRESS:-host.docker.internal:9090}"
+      FIREWALL_ENROLLMENT_GRPC_SERVER_NAME: "${FIREWALL_ENROLLMENT_GRPC_SERVER_NAME:-control-plane.firewall.local}"
+      FIREWALL_ENROLLMENT_HMAC_KEY: "${FIREWALL_ENROLLMENT_HMAC_KEY:-ZW5yb2xsbWVudC1sb2NhbC1obWFjLWtleS0wMTIzNDU=}"
+      FIREWALL_ENROLLMENT_ISSUER_CA_CERTIFICATE_FILE: "/etc/firewall/mtls/ca.pem"
+      FIREWALL_ENROLLMENT_ISSUER_CA_PRIVATE_KEY_FILE: "/etc/firewall/mtls/ca-key.pem"
+    volumes:
+      - ./examples/mtls/certs/ca-key.pem:/etc/firewall/mtls/ca-key.pem:ro
+
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["enrollment"]
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./examples/enrollment/Caddyfile.root-compose:/etc/caddy/Caddyfile:ro
+      - enrollment_caddy_data:/data
+      - enrollment_caddy_config:/config
+
+volumes:
+  enrollment_caddy_data:
+  enrollment_caddy_config:

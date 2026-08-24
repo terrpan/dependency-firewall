@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
+	"github.com/danielterry/dependency-firewall/internal/core/port"
 )
 
 // TenantIDExtractor returns the tenant id carried by a decoded control-plane RPC request.
@@ -32,8 +34,17 @@ type TenantAuthorizationDeniedEvent struct {
 type TenantAuthorizationDeniedRecorder func(context.Context, TenantAuthorizationDeniedEvent) error
 
 type tenantAuthorizationConfig struct {
-	logger         *slog.Logger
-	deniedRecorder TenantAuthorizationDeniedRecorder
+	logger             *slog.Logger
+	deniedRecorder     TenantAuthorizationDeniedRecorder
+	workloadAuthorizer port.WorkloadIdentityAuthorizer
+	now                func() time.Time
+}
+
+// WithWorkloadIdentityAuthorizer gives persisted enrollment state precedence over static compatibility mappings.
+func WithWorkloadIdentityAuthorizer(authorizer port.WorkloadIdentityAuthorizer) TenantAuthorizationOption {
+	return func(cfg *tenantAuthorizationConfig) {
+		cfg.workloadAuthorizer = authorizer
+	}
 }
 
 // TenantAuthorizationOption customizes the tenant authorization interceptor.
@@ -60,7 +71,7 @@ func TenantAuthorizationInterceptor(
 	options ...TenantAuthorizationOption,
 ) grpc.UnaryServerInterceptor {
 	authorizer := newTenantAuthorizer(clients)
-	cfg := tenantAuthorizationConfig{}
+	cfg := tenantAuthorizationConfig{now: time.Now}
 	for _, option := range options {
 		if option != nil {
 			option(&cfg)
@@ -86,7 +97,7 @@ func TenantAuthorizationStreamInterceptor(
 	options ...TenantAuthorizationOption,
 ) grpc.StreamServerInterceptor {
 	authorizer := newTenantAuthorizer(clients)
-	cfg := tenantAuthorizationConfig{}
+	cfg := tenantAuthorizationConfig{now: time.Now}
 	for _, option := range options {
 		if option != nil {
 			option(&cfg)
@@ -140,6 +151,35 @@ func (cfg tenantAuthorizationConfig) authorize(
 			PermissionMessage: "client certificate identity is required",
 		}, codes.Unauthenticated)
 		return err
+	}
+	if cfg.workloadAuthorizer != nil {
+		result, lookupErr := cfg.workloadAuthorizer.AuthorizeWorkloadIdentity(
+			ctx,
+			identities,
+			tenantID,
+			cfg.now().UTC(),
+		)
+		if lookupErr != nil {
+			_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+				TenantID:          tenantID,
+				ClientIdentities:  identities,
+				FullMethod:        fullMethod,
+				Reason:            "workload_identity_lookup_failed",
+				PermissionMessage: "workload identity authorization unavailable",
+			}, codes.Internal)
+			return err
+		}
+		if result.Known {
+			if result.Authorized {
+				return nil
+			}
+			_, err := cfg.deny(ctx, TenantAuthorizationDeniedEvent{
+				TenantID: tenantID, ClientIdentities: identities, FullMethod: fullMethod,
+				Reason:            "enrolled_workload_identity_not_active_for_tenant",
+				PermissionMessage: "enrolled client certificate is not active for tenant " + strconv.Quote(tenantID),
+			}, codes.PermissionDenied)
+			return err
+		}
 	}
 	if authorizer.authorized(identities, tenantID) {
 		return nil

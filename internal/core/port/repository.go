@@ -18,6 +18,72 @@ type TenantRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// ProxyInstallationRepository manages tenant-owned proxy installations.
+type ProxyInstallationRepository interface {
+	GetProxyInstallation(ctx context.Context, tenantID, id string) (*domain.ProxyInstallation, error)
+	ListProxyInstallations(ctx context.Context, tenantID string) ([]domain.ProxyInstallation, error)
+	RenameProxyInstallation(ctx context.Context, tenantID, id, name string) (*domain.ProxyInstallation, error)
+	RevokeProxyInstallation(ctx context.Context, tenantID, id string, now time.Time) (*domain.ProxyInstallation, error)
+}
+
+// ProxyEnrollmentRepository atomically manages enrollment, installation and workload-identity state.
+type ProxyEnrollmentRepository interface {
+	CreateProxyEnrollment(ctx context.Context, enrollment *domain.ProxyEnrollment) error
+	ResolveProxyEnrollment(
+		ctx context.Context,
+		enrollmentID string,
+		userCodeDigest []byte,
+		now time.Time,
+	) (*domain.ProxyEnrollment, error)
+	ResolveProxyEnrollmentByUserCode(
+		ctx context.Context,
+		userCodeDigest []byte,
+		now time.Time,
+	) (*domain.ProxyEnrollment, error)
+	ApproveProxyEnrollment(
+		ctx context.Context,
+		enrollmentID string,
+		userCodeDigest []byte,
+		approval domain.ProxyEnrollmentApproval,
+		now time.Time,
+	) (*domain.ProxyEnrollment, error)
+	DenyProxyEnrollment(
+		ctx context.Context,
+		enrollmentID string,
+		userCodeDigest []byte,
+		principalID string,
+		now time.Time,
+	) error
+	PollProxyEnrollment(
+		ctx context.Context,
+		deviceCredentialDigest []byte,
+		now time.Time,
+	) (*domain.ProxyEnrollment, error)
+}
+
+// TenantApprovalAuthorizer authorizes a human principal for one Tenant.
+type TenantApprovalAuthorizer interface {
+	AuthorizeTenantApproval(ctx context.Context, principal domain.AuthenticatedPrincipal, tenantID string) error
+}
+
+// WorkloadCertificateIssuer issues a client certificate for a verified CSR public key.
+type WorkloadCertificateIssuer interface {
+	IssueWorkloadCertificate(
+		ctx context.Context,
+		request domain.WorkloadCertificateRequest,
+	) (*domain.IssuedWorkloadCertificate, error)
+}
+
+// WorkloadIdentityAuthorizer checks persisted workload identity state.
+type WorkloadIdentityAuthorizer interface {
+	AuthorizeWorkloadIdentity(
+		ctx context.Context,
+		identities []string,
+		tenantID string,
+		now time.Time,
+	) (domain.WorkloadAuthorizationResult, error)
+}
+
 // PolicyRepository manages policy persistence.
 type PolicyRepository interface {
 	GetByID(ctx context.Context, tenantID, id string) (*domain.Policy, error)

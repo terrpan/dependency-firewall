@@ -1,6 +1,26 @@
 {
   "components": {
     "schemas": {
+      "ApproveProxyEnrollmentInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "installation_name": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "user_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_code",
+          "tenant_id",
+          "installation_name"
+        ],
+        "type": "object"
+      },
       "ArtifactIdentityResponse": {
         "additionalProperties": false,
         "properties": {
@@ -379,6 +399,30 @@
         ],
         "type": "object"
       },
+      "EnrollmentCodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "user_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_code"
+        ],
+        "type": "object"
+      },
+      "EnrollmentIDCodeInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "user_code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_code"
+        ],
+        "type": "object"
+      },
       "EvaluationReasonResponse": {
         "additionalProperties": false,
         "properties": {
@@ -742,6 +786,183 @@
           "priority",
           "enabled",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "PollProxyEnrollmentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "canonical_identity": {
+            "type": "string"
+          },
+          "client_certificate_chain_pem": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "grpc_address": {
+            "type": "string"
+          },
+          "grpc_server_name": {
+            "type": "string"
+          },
+          "identity_id": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "server_trust_bundle_pem": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProxyEnrollmentConfigurationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "public_api_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_api_url"
+        ],
+        "type": "object"
+      },
+      "ProxyInstallationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "first_connected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "RenameProxyInstallationInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "SafeProxyEnrollmentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "proposed_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "StartProxyEnrollmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "csr_pem": {
+            "description": "PEM encoded ECDSA P-256 certificate signing request",
+            "type": "string"
+          },
+          "proposed_name": {
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
+        "required": [
+          "csr_pem"
+        ],
+        "type": "object"
+      },
+      "StartProxyEnrollmentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "device_credential": {
+            "type": "string"
+          },
+          "enrollment_id": {
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "poll_interval_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "user_code": {
+            "type": "string"
+          },
+          "verification_uri": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enrollment_id",
+          "device_credential",
+          "user_code",
+          "verification_uri",
+          "expires_at",
+          "poll_interval_seconds"
         ],
         "type": "object"
       },
@@ -2333,6 +2554,522 @@
         ]
       }
     },
+    "/api/v1/proxy-enrollment-configuration": {
+      "get": {
+        "description": "Returns the public enrollment API address for self-hosted proxy setup.",
+        "operationId": "get-proxy-enrollment-configuration",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyEnrollmentConfigurationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get proxy enrollment configuration",
+        "tags": [
+          "proxy enrollment"
+        ]
+      }
+    },
+    "/api/v1/proxy-enrollments": {
+      "post": {
+        "operationId": "create-proxy-enrollment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartProxyEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartProxyEnrollmentResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Start proxy enrollment",
+        "tags": [
+          "proxy enrollment"
+        ]
+      }
+    },
+    "/api/v1/proxy-enrollments/resolve": {
+      "post": {
+        "operationId": "resolve-proxy-enrollment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafeProxyEnrollmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Resolve an activation code",
+        "tags": [
+          "proxy enrollment"
+        ]
+      }
+    },
+    "/api/v1/proxy-enrollments/token": {
+      "post": {
+        "operationId": "poll-proxy-enrollment",
+        "parameters": [
+          {
+            "description": "Bearer device credential",
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "description": "Bearer device credential",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PollProxyEnrollmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Poll proxy enrollment",
+        "tags": [
+          "proxy enrollment"
+        ]
+      }
+    },
+    "/api/v1/proxy-enrollments/{id}/approve": {
+      "post": {
+        "operationId": "approve-proxy-enrollment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveProxyEnrollmentInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SafeProxyEnrollmentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Approve proxy enrollment",
+        "tags": [
+          "proxy enrollment"
+        ]
+      }
+    },
+    "/api/v1/proxy-enrollments/{id}/deny": {
+      "post": {
+        "operationId": "deny-proxy-enrollment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentIDCodeInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Deny proxy enrollment",
+        "tags": [
+          "proxy enrollment"
+        ]
+      }
+    },
     "/api/v1/tenants": {
       "get": {
         "description": "Lists all configured tenants managed by the control plane.",
@@ -2674,6 +3411,352 @@
         "summary": "Update a tenant",
         "tags": [
           "tenants"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tenant_id}/proxy-installations": {
+      "get": {
+        "operationId": "list-proxy-installations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProxyInstallationResponse"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "List proxy installations",
+        "tags": [
+          "proxy installations"
+        ]
+      }
+    },
+    "/api/v1/tenants/{tenant_id}/proxy-installations/{id}": {
+      "delete": {
+        "operationId": "revoke-proxy-installation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyInstallationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Revoke proxy installation",
+        "tags": [
+          "proxy installations"
+        ]
+      },
+      "get": {
+        "operationId": "get-proxy-installation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyInstallationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Get proxy installation",
+        "tags": [
+          "proxy installations"
+        ]
+      },
+      "put": {
+        "operationId": "rename-proxy-installation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameProxyInstallationInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyInstallationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "499": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumaErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Rename proxy installation",
+        "tags": [
+          "proxy installations"
         ]
       }
     },

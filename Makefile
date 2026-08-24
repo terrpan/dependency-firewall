@@ -2,6 +2,7 @@
 
 LEFTHOOK_VERSION ?= v1.13.6
 COMMITLINT_VERSION ?= v0.12.0
+ENROLLMENT ?= 0
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -20,13 +21,21 @@ push: ## Push the firewall image using ko
 	ko build ./cmd/firewall
 
 mtls-certs: ## Generate local mTLS certificates for split-mode Docker Compose
-	@if [ ! -f examples/mtls/certs/ca.pem ] || [ ! -f examples/mtls/certs/control-plane.pem ] || [ ! -f examples/mtls/certs/proxy-a.pem ] || [ ! -f examples/mtls/certs/dependency-graph-worker.pem ] || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/ca.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/control-plane.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/proxy-a.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/dependency-graph-worker.pem >/dev/null 2>&1; then ./examples/mtls/generate-certs.sh; fi
+	@if [ ! -f examples/mtls/certs/ca.pem ] || [ ! -f examples/mtls/certs/control-plane.pem ] || [ ! -f examples/mtls/certs/proxy-a.pem ] || [ ! -f examples/mtls/certs/dependency-graph-worker.pem ] || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/ca.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/control-plane.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/proxy-a.pem >/dev/null 2>&1 || ! openssl x509 -checkend 0 -noout -in examples/mtls/certs/dependency-graph-worker.pem >/dev/null 2>&1 || ! openssl x509 -in examples/mtls/certs/ca.pem -noout -text | grep -A1 "X509v3 Key Usage" | grep -q "Certificate Sign"; then ./examples/mtls/generate-certs.sh; fi
 
-up: mtls-certs build build-worker ## Build and start docker compose
-	docker compose up -d --force-recreate
+up: mtls-certs build build-worker ## Build and start docker compose; set ENROLLMENT=1 for local automatic proxy enrollment
+	@if [ "$(ENROLLMENT)" = "1" ]; then \
+		docker compose -f docker-compose.yml -f docker-compose.enrollment.yml --profile enrollment up -d --force-recreate; \
+	else \
+		docker compose up -d --force-recreate; \
+	fi
 
-down: ## Stop docker compose
-	docker compose down
+down: ## Stop docker compose; set ENROLLMENT=1 when it was enabled for up
+	@if [ "$(ENROLLMENT)" = "1" ]; then \
+		docker compose -f docker-compose.yml -f docker-compose.enrollment.yml --profile enrollment down; \
+	else \
+		docker compose down; \
+	fi
 
 restart: down up ## Restart docker compose (rebuilds image)
 

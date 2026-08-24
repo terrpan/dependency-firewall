@@ -41,13 +41,15 @@ The SPA is built and served independently. The Go server does not expose `web/di
 
 ### Internal gRPC
 
-Split proxy and worker connections to the control plane require mTLS. The control plane extracts the client certificate identity and authorizes the `tenant_id` associated with each RPC through `bundle.tls.authorized_clients`.
+Split proxy and worker connections to the control plane require mTLS. The control plane extracts the client certificate identity and authorizes the `tenant_id` associated with each RPC. Persisted enrolled workload identities take precedence: a known identity must belong to an active, unrevoked installation for that Tenant and can never fall back to static configuration. Identities absent from the database retain compatibility through `bundle.tls.authorized_clients`, including worker wildcard mappings.
+
+Optional automatic enrollment lets a split proxy generate an ECDSA P-256 key in memory, submit a CSR over system-trusted HTTPS, and poll for one operator-approved client certificate. An operator-mounted additional CA bundle may extend system trust for that initial HTTPS connection; it is a separate trust boundary from gRPC mTLS. The control plane generates the Tenant-bound SPIFFE identity; CSR subjects, SANs, extensions, and Tenant-like input are ignored. The proxy binds local package routing to the approved Tenant before the authoritative gRPC check. Restarting loses the key and requires another activation; renewal and persistent agent identity are not implemented.
 
 Bundle secrets for authenticated OCI upstreams are encrypted to the requesting proxy certificate. Worker claim and watch requests carry `dependency_graph.tenant_id`; the control plane authorizes that scope against the worker certificate and filters claims and wake-up notifications by tenant. The default `"*"` scope preserves global-worker behavior and requires wildcard certificate authorization.
 
 ### Public HTTP
 
-Management and proxy HTTP routes do not currently validate bearer tokens or enforce roles. Tenant middleware resolves tenant context from API headers or ecosystem-specific routing, but that is routing and scoping—not proof that a caller may act for the tenant.
+Management and proxy HTTP routes do not generally validate bearer tokens or enforce roles. Tenant middleware resolves tenant context from API headers or ecosystem-specific routing, but that is routing and scoping—not proof that a caller may act for the tenant. Automatic-enrollment machine polling uses a one-time bearer credential. Human approval has a provider-neutral principal/Tenant-authorizer boundary and the shipped adapter fails closed with `401/403`; approval does not become usable until a real authenticated principal and Tenant authorization adapter is supplied.
 
 The SPA provides a provider-neutral authentication adapter, token attachment in the API client, and UI guard/state seams. Its default adapter is anonymous and current route guards do not require a session. Real IdP integration, Go JWT/JWKS validation, RBAC, and user-to-tenant membership enforcement remain future work. Deploy public HTTP behind a trusted network or an external authenticated gateway.
 
@@ -82,6 +84,8 @@ The control plane publishes OpenAPI at `/api/openapi` and interactive documentat
 | Audit events | list `/api/v1/audit/events` |
 | Caches | clear decision or metadata cache through `/api/v1/cache/decisions` and `/api/v1/cache/metadata` |
 | Dependency graphs | list `/api/v1/dependency-graphs`; get `/api/v1/dependency-graphs/{id}` |
+| Proxy enrollment | start and one-time machine poll under `/api/v1/proxy-enrollments`; safe human resolve/approve/deny operations |
+| Proxy installations | list, get, rename, and revoke under `/api/v1/tenants/{tenant_id}/proxy-installations` |
 
 Audit-event browsing is API-only today; the SPA has no audit route.
 
@@ -168,6 +172,8 @@ Project/environment-scoped uploaded graphs, revisions, and activation are a dist
 - The proxy uses Valkey but no PostgreSQL.
 - The worker uses neither PostgreSQL nor Valkey.
 - Only the worker, or a process running it in-process, needs Node/npm.
+- Automatic enrollment is optional and split-mode only. Its HTTP API URL must use ordinary system-trusted HTTPS except explicit loopback development.
+- Docker Compose is the only documented automatically enrolled proxy deployment. Hosted proxies, Helm, Kubernetes, HA enrollment coordination, renewal, and rotation are unavailable.
 - OCI artifact caching supports only the disk backend; selecting `s3` or `gcs` fails startup.
 - OCI is currently GET-only/pull-only and does not authenticate client registry requests.
 

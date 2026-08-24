@@ -16,6 +16,11 @@ Only `control-plane` and `all-in-one` modes open PostgreSQL and run migrations. 
 | Artifacts and evaluation | `artifacts`, `evaluations`, `evaluation_reasons`, `decisions` | normalized identities, evaluation history/reasons, durable decisions |
 | Audit | `audit_events` | configured durable audit sink and list API |
 | Dependency graphs | `dependency_graph_roots`, `dependency_graph_nodes`, `dependency_graph_edges`, `dependency_context_summaries` | job lifecycle, resolved graph, target-aware lookup summaries |
+| Proxy enrollment | `proxy_enrollments`, `proxy_installations`, `workload_identities` | digest-only device/user credentials, atomic activation state, Tenant-owned installations, certificate identity metadata and revocation |
+
+`proxy_enrollments` stores HMAC-SHA-256 digests, never plaintext device credentials or user codes. Pending approval, denial, expiry, and one-time consumption are serialized with row locks. Approval atomically creates a pending installation and its Tenant-matched identity; the winning poll activates the installation, returns the certificate once, and clears stored certificate/trust bytes. Terminal enrollment states cannot be replayed.
+
+Installation names are unique within a Tenant while pending or active. Revocation marks both the installation and its workload identities. The first authorized gRPC call records `first_connected_at`. Composite foreign keys prevent an installation, identity, or enrollment from crossing the Tenant boundary.
 
 Graph roots are unique by tenant, upstream, package name, and version. Enqueue is therefore idempotent. A completed row is reused rather than refreshed; there is no invalidation/refresh operation. Failed rows become claimable again after their fixed retry time.
 
@@ -97,4 +102,5 @@ Migrations are embedded from `migrations/` and applied by PostgreSQL-owning mode
 - Treat Valkey as rebuildable cache state, while recognizing that its outage affects request-path availability.
 - Treat local bundle and OCI caches as per-process/per-node state.
 - Keep `secrets.upstream_auth_key` stable and protected; losing it makes stored upstream credentials unreadable.
+- Keep the independent 32-byte `enrollment.hmac_key` stable and protected while enrollments are outstanding. It is not a proxy bootstrap secret and is never distributed to proxies.
 - Do not infer implemented auth features from reserved tables.

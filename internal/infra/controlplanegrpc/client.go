@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -38,10 +39,29 @@ func DialOptions(configs ...config.BundleTLSConfig) ([]grpc.DialOption, error) {
 	}, telemetry.ClientDialOptions()...), nil
 }
 
+// DialOptionsWithTLSConfig builds gRPC options from process-local TLS material.
+func DialOptionsWithTLSConfig(tlsConfig *tls.Config) ([]grpc.DialOption, error) {
+	if tlsConfig == nil {
+		return nil, fmt.Errorf("grpc client TLS config is required")
+	}
+	return append([]grpc.DialOption{
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig.Clone())),
+		grpc.WithDefaultCallOptions(grpc.ForceCodec(jsonCodec{})),
+	}, telemetry.ClientDialOptions()...), nil
+}
+
 // ServerOptions returns the shared server options for control-plane gRPC
 // traffic.
 func ServerOptions(configs ...config.BundleTLSConfig) ([]grpc.ServerOption, error) {
-	transport, err := serverTransportCredentials(bundleTLSConfig(configs...))
+	return ServerOptionsWithAdditionalClientCAs(bundleTLSConfig(configs...))
+}
+
+// ServerOptionsWithAdditionalClientCAs trusts enrollment issuers in addition to manual client roots.
+func ServerOptionsWithAdditionalClientCAs(
+	cfg config.BundleTLSConfig,
+	additionalCAFiles ...string,
+) ([]grpc.ServerOption, error) {
+	transport, err := serverTransportCredentials(cfg, additionalCAFiles...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +101,10 @@ func clientTransportCredentials(cfg config.BundleTLSConfig) (credentials.Transpo
 	}), nil
 }
 
-func serverTransportCredentials(cfg config.BundleTLSConfig) (credentials.TransportCredentials, error) {
+func serverTransportCredentials(
+	cfg config.BundleTLSConfig,
+	additionalCAFiles ...string,
+) (credentials.TransportCredentials, error) {
 	if cfg.Mode != "mtls" {
 		return nil, nil
 	}
@@ -94,6 +117,14 @@ func serverTransportCredentials(cfg config.BundleTLSConfig) (credentials.Transpo
 	if err != nil {
 		return nil, err
 	}
+	for _, path := range additionalCAFiles {
+		if strings.TrimSpace(path) == "" || path == cfg.CAFile {
+			continue
+		}
+		if err := appendCertsFromFile(clientCAs, path); err != nil {
+			return nil, fmt.Errorf("adding grpc client CA: %w", err)
+		}
+	}
 
 	return credentials.NewTLS(&tls.Config{
 		MinVersion:   tls.VersionTLS12,
@@ -101,6 +132,18 @@ func serverTransportCredentials(cfg config.BundleTLSConfig) (credentials.Transpo
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    clientCAs,
 	}), nil
+}
+
+func appendCertsFromFile(pool *x509.CertPool, path string) error {
+	//nolint:gosec // path is an operator-supplied CA file from static config, not request input
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading grpc ca file: %w", err)
+	}
+	if !pool.AppendCertsFromPEM(contents) {
+		return fmt.Errorf("parsing grpc ca file: no certificates found")
+	}
+	return nil
 }
 
 func certPoolFromFile(path string) (*x509.CertPool, error) {

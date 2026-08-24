@@ -28,6 +28,15 @@ func NewGRPCClient(_ context.Context, address string, configs ...config.BundleTL
 	return &GRPCClient{conn: conn}, nil
 }
 
+// NewGRPCClientWithDialOptions creates an ingest client from process-local transport credentials.
+func NewGRPCClientWithDialOptions(address string, options ...grpc.DialOption) (*GRPCClient, error) {
+	conn, err := grpc.NewClient(address, options...)
+	if err != nil {
+		return nil, fmt.Errorf("creating proxy ingestion client: %w", err)
+	}
+	return &GRPCClient{conn: conn}, nil
+}
+
 // Close closes the underlying client connection.
 func (c *GRPCClient) Close() error {
 	if c == nil || c.conn == nil {

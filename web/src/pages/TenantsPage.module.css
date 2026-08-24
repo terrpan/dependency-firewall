@@ -150,6 +150,30 @@
   gap: var(--space-card);
 }
 
+.runtimeChoice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.runtimeChoice[aria-disabled='true'] {
+  opacity: 0.6;
+}
+
+.runtimeChoice span {
+  display: grid;
+  gap: 4px;
+}
+
+.runtimeChoice small {
+  color: var(--color-text-muted);
+}
+
 .formHeader {
   display: flex;
   gap: 12px;

@@ -248,6 +248,9 @@ type ApiFixtureOptions = {
   evaluationListFailures?: number
   evaluations?: readonly Record<string, unknown>[]
   policies?: readonly unknown[]
+  proxyInstallations?: readonly Record<string, unknown>[]
+  activationResolveStatus?: number
+  enrollmentPublicAPIURL?: string
   tenantListFailures?: number
   tenants?: readonly Record<string, unknown>[]
   upstreamListFailures?: number
@@ -265,10 +268,18 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
   let remainingUpstreamListFailures = options.upstreamListFailures ?? 0
   let remainingEvaluationListFailures = options.evaluationListFailures ?? 0
   let remainingDependencyGraphListFailures = options.dependencyGraphListFailures ?? 0
+  const proxyInstallations: Array<Record<string, unknown>> = (options.proxyInstallations ?? []).map((item) => ({
+    ...item,
+  }))
 
   await page.route('**/healthz', (route) => route.fulfill({ json: { status: 'ok', dependencies: {} } }))
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/proxy-enrollment-configuration')) {
+      return route.fulfill({
+        json: { public_api_url: options.enrollmentPublicAPIURL ?? 'https://firewall.example.com' },
+      })
+    }
     if (path.endsWith('/tenants') && route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as { name?: string }
       const tenant = {
@@ -287,6 +298,51 @@ export async function installApi(page: Page, options: ApiFixtureOptions = {}) {
       }
       return route.fulfill({ json: tenantFixtures })
     }
+    if (path.endsWith('/proxy-enrollments/resolve')) {
+      if (options.activationResolveStatus) {
+        return route.fulfill({ status: options.activationResolveStatus, json: { error: 'activation unavailable' } })
+      }
+      return route.fulfill({
+        json: {
+          id: 'enrollment-1',
+          proposed_name: 'Edge proxy',
+          status: 'pending',
+          expires_at: '2026-08-08T10:10:00Z',
+        },
+      })
+    }
+    if (/\/proxy-enrollments\/[^/]+\/approve$/.test(path)) {
+      const body = route.request().postDataJSON() as { tenant_id: string; installation_name: string }
+      proxyInstallations.unshift({
+        id: 'installation-1',
+        tenant_id: body.tenant_id,
+        name: body.installation_name,
+        status: 'active',
+        created_at: '2026-08-08T10:00:00Z',
+        updated_at: '2026-08-08T10:00:01Z',
+        first_connected_at: '2026-08-08T10:00:01Z',
+      })
+      return route.fulfill({
+        json: {
+          id: 'enrollment-1',
+          installation_id: 'installation-1',
+          status: 'approved',
+          expires_at: '2026-08-08T10:10:00Z',
+        },
+      })
+    }
+    if (/\/tenants\/[^/]+\/proxy-installations\/[^/]+$/.test(path)) {
+      const installationId = path.split('/').at(-1)
+      const installation = proxyInstallations.find((item) => item.id === installationId)
+      if (!installation) return route.fulfill({ status: 404, json: { error: 'not found' } })
+      if (route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as { name: string }
+        installation.name = body.name
+      }
+      if (route.request().method() === 'DELETE') installation.status = 'revoked'
+      return route.fulfill({ json: installation })
+    }
+    if (/\/tenants\/[^/]+\/proxy-installations$/.test(path)) return route.fulfill({ json: proxyInstallations })
     if (path.endsWith('/evaluations')) {
       if (remainingEvaluationListFailures > 0) {
         remainingEvaluationListFailures -= 1

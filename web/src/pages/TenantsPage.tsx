@@ -1,10 +1,13 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { Building2, Plus } from 'lucide-react'
+import { Building2, Plus, Server } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ModalWizard, ModalWizardActions, type ModalWizardStep } from '../components/modal/index.ts'
 import { useSessionControlPlaneApi } from '../features/auth/useSessionControlPlaneApi.ts'
 import { useNotifications } from '../features/notifications/useNotifications.ts'
 import { useTenant } from '../features/tenant/useTenant.ts'
+import { ProxyInstallationsPanel } from '../features/proxy-setup/ProxyInstallationsPanel.tsx'
+import { ProxySetup } from '../features/proxy-setup/ProxySetup.tsx'
+import type { Tenant } from '../lib/api/index.ts'
 import { AsyncState, Badge, Button, EmptyState, Field, Input, PageHeader, ResourceList } from '../ui/index.ts'
 import { applicationClass } from '../ui/foundation/applicationStyles.ts'
 import styles from './TenantsPage.module.css'
@@ -12,6 +15,7 @@ import styles from './TenantsPage.module.css'
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 const createTenantSteps = [
   { id: 'details', label: 'Details', description: 'Name the workspace.' },
+  { id: 'proxy', label: 'Proxy', description: 'Choose how traffic is enforced.' },
   { id: 'review', label: 'Review', description: 'Confirm the new tenant.' },
 ] satisfies readonly ModalWizardStep[]
 
@@ -28,11 +32,13 @@ export function TenantsPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [createStep, setCreateStep] = useState(0)
+  const [createdTenant, setCreatedTenant] = useState<Tenant | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   function openCreateWizard() {
     setName('')
     setCreateStep(0)
+    setCreatedTenant(null)
     setIsCreateOpen(true)
   }
 
@@ -40,6 +46,7 @@ export function TenantsPage() {
     if (isCreating) return
     setName('')
     setCreateStep(0)
+    setCreatedTenant(null)
     setIsCreateOpen(false)
   }
 
@@ -48,8 +55,8 @@ export function TenantsPage() {
     const trimmedName = name.trim()
     if (!trimmedName) return
 
-    if (createStep === 0) {
-      setCreateStep(1)
+    if (createStep < 2) {
+      setCreateStep(createStep + 1)
       return
     }
 
@@ -58,10 +65,8 @@ export function TenantsPage() {
       const tenant = await api.tenants.create({ name: trimmedName })
       await reloadTenants()
       setTenantId(tenant.id)
-      setName('')
-      setCreateStep(0)
-      setIsCreateOpen(false)
-      notifySuccess('Tenant created', `${tenant.name} is now the active workspace.`)
+      setCreatedTenant(tenant)
+      notifySuccess('Tenant created', `${tenant.name} is ready for proxy setup.`)
     } catch (error) {
       notifyError('Unable to create tenant', error instanceof Error ? error.message : 'Try again.')
     } finally {
@@ -156,6 +161,8 @@ export function TenantsPage() {
         </section>
       </div>
 
+      {activeTenant ? <ProxyInstallationsPanel tenantId={activeTenant.id} tenantName={activeTenant.name} /> : null}
+
       <ModalWizard
         currentStep={createStep}
         description="Create an isolated workspace for one team, business unit, or environment."
@@ -164,18 +171,24 @@ export function TenantsPage() {
           <ModalWizardActions
             leading={
               <Button disabled={isCreating} onClick={closeCreateWizard}>
-                Cancel
+                {createdTenant ? 'Done' : 'Cancel'}
               </Button>
             }
           >
-            {createStep > 0 ? (
-              <Button disabled={isCreating} onClick={() => setCreateStep(0)}>
+            {createdTenant ? (
+              <Link className={styles.routeLink} to="/activate">
+                Enter activation code
+              </Link>
+            ) : createStep > 0 ? (
+              <Button disabled={isCreating} onClick={() => setCreateStep((step) => Math.max(0, step - 1))}>
                 Back
               </Button>
             ) : null}
-            <Button variant="primary" disabled={isCreating || !name.trim()} form="create-tenant-form" type="submit">
-              {createStep === 0 ? 'Review details' : isCreating ? 'Creating…' : 'Create tenant'}
-            </Button>
+            {!createdTenant ? (
+              <Button variant="primary" disabled={isCreating || !name.trim()} form="create-tenant-form" type="submit">
+                {createStep < 2 ? 'Continue' : isCreating ? 'Creating…' : 'Create tenant'}
+              </Button>
+            ) : null}
           </ModalWizardActions>
         }
         initialFocusRef={nameInputRef}
@@ -185,57 +198,91 @@ export function TenantsPage() {
         size="regular"
         stepGuideVariant="compact"
         steps={createTenantSteps}
-        title="Create tenant"
+        title={createdTenant ? 'Tenant created' : 'Create tenant'}
       >
-        <form aria-label="Create tenant" className={styles.form} id="create-tenant-form" onSubmit={createTenant}>
-          {createStep === 0 ? (
-            <div className={styles.wizardSection}>
-              <div className={styles.formHeader}>
-                <span className={styles.formIcon} aria-hidden="true">
-                  <Building2 size={20} />
-                </span>
-                <div>
-                  <h3>Name the workspace</h3>
-                  <p>Use the name operators already use for this team or environment.</p>
+        {createdTenant ? (
+          <ProxySetup tenantName={createdTenant.name} />
+        ) : (
+          <form aria-label="Create tenant" className={styles.form} id="create-tenant-form" onSubmit={createTenant}>
+            {createStep === 0 ? (
+              <div className={styles.wizardSection}>
+                <div className={styles.formHeader}>
+                  <span className={styles.formIcon} aria-hidden="true">
+                    <Building2 size={20} />
+                  </span>
+                  <div>
+                    <h3>Name the workspace</h3>
+                    <p>Use the name operators already use for this team or environment.</p>
+                  </div>
                 </div>
-              </div>
 
-              <Field label="Tenant name">
-                <Input
-                  autoComplete="organization"
-                  maxLength={120}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Platform Engineering"
-                  ref={nameInputRef}
-                  required
-                  value={name}
-                />
-              </Field>
-            </div>
-          ) : (
-            <div className={styles.wizardSection}>
-              <div className={styles.formHeader}>
-                <span className={styles.formIcon} aria-hidden="true">
-                  <Building2 size={20} />
-                </span>
-                <div>
-                  <h3>Review workspace</h3>
-                  <p>The new tenant becomes active immediately after creation.</p>
-                </div>
+                <Field label="Tenant name">
+                  <Input
+                    autoComplete="organization"
+                    maxLength={120}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Platform Engineering"
+                    ref={nameInputRef}
+                    required
+                    value={name}
+                  />
+                </Field>
               </div>
-              <dl className={styles.reviewCard}>
-                <div>
-                  <dt>Workspace name</dt>
-                  <dd>{name.trim()}</dd>
+            ) : createStep === 1 ? (
+              <div className={styles.wizardSection}>
+                <div className={styles.formHeader}>
+                  <span className={styles.formIcon} aria-hidden="true">
+                    <Server size={20} />
+                  </span>
+                  <div>
+                    <h3>Choose proxy runtime</h3>
+                    <p>Traffic is enforced by a proxy you run in your environment.</p>
+                  </div>
                 </div>
-                <div>
-                  <dt>Scope</dt>
-                  <dd>Isolated tenant</dd>
+                <label className={styles.runtimeChoice}>
+                  <input aria-label="Self-hosted proxy" checked readOnly type="radio" />
+                  <span>
+                    <strong>Self-hosted</strong>
+                    <small>Connect with Docker after the Tenant is created.</small>
+                  </span>
+                </label>
+                <label className={styles.runtimeChoice} aria-disabled="true">
+                  <input aria-label="Hosted proxy unavailable" disabled type="radio" />
+                  <span>
+                    <strong>Hosted — unavailable</strong>
+                    <small>Managed proxy hosting is not implemented.</small>
+                  </span>
+                </label>
+              </div>
+            ) : (
+              <div className={styles.wizardSection}>
+                <div className={styles.formHeader}>
+                  <span className={styles.formIcon} aria-hidden="true">
+                    <Building2 size={20} />
+                  </span>
+                  <div>
+                    <h3>Review workspace</h3>
+                    <p>The new tenant becomes active immediately after creation.</p>
+                  </div>
                 </div>
-              </dl>
-            </div>
-          )}
-        </form>
+                <dl className={styles.reviewCard}>
+                  <div>
+                    <dt>Workspace name</dt>
+                    <dd>{name.trim()}</dd>
+                  </div>
+                  <div>
+                    <dt>Scope</dt>
+                    <dd>Isolated tenant</dd>
+                  </div>
+                  <div>
+                    <dt>Proxy</dt>
+                    <dd>Self-hosted</dd>
+                  </div>
+                </dl>
+              </div>
+            )}
+          </form>
+        )}
       </ModalWizard>
     </section>
   )

@@ -1,0 +1,39 @@
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  proxy:
+    image: dependency-firewall:latest
+    restart: unless-stopped
+    depends_on:
+      - valkey
+      - caddy
+    volumes:
+      - caddy_data:/caddy-data:ro
+    environment:
+      FIREWALL_RUNTIME_MODE: proxy
+      FIREWALL_SERVER_PORT: "8080"
+      FIREWALL_VALKEY_ADDR: valkey:6379
+      FIREWALL_BUNDLE_TLS_MODE: mtls
+      FIREWALL_ENROLLMENT_ENABLED: "true"
+      FIREWALL_ENROLLMENT_PUBLIC_API_URL: https://caddy:8443
+      FIREWALL_ENROLLMENT_ADDITIONAL_CA_FILE: /caddy-data/caddy/pki/authorities/local/root.crt
+    ports:
+      - "8080:8080"
+
+volumes:
+  caddy_data:
+  caddy_config:

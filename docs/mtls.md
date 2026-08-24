@@ -127,6 +127,8 @@ openssl req -x509 -new -nodes \
   -key .local/mtls/ca-key.pem \
   -sha256 -days 30 \
   -subj "/CN=dependency-firewall-test-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
   -out .local/mtls/ca.pem
 
 openssl genrsa -out .local/mtls/control-plane-key.pem 2048
@@ -189,14 +191,87 @@ bundle:
 
 The proxy certificate DNS SAN is `proxy-a.firewall.local`, so the control-plane `authorized_clients.identity` must use that exact value. If you use a URI SAN, email SAN, or Common Name instead, change the identity value accordingly.
 
+## Automatic split-proxy enrollment
+
+When `enrollment.enabled` is true, the control plane additionally trusts the configured enrollment issuer CA for client verification. It keeps existing manual client roots and static `authorized_clients` compatibility. Database state has precedence for identities issued by enrollment: inactive, revoked, expired, or wrong-Tenant identities are denied without static fallback.
+
+The enrollment issuer requires a CA certificate and separate CA private-key file. Startup validates the key match, CA constraints/current validity, and that the issuer key is not the control-plane server key. Issued certificates have a random serial, one server-generated URI SAN, digital-signature usage, and client-auth EKU. Their configurable validity defaults to 30 days and is capped by issuer expiry.
+
+A proxy creates its P-256 key locally, enrolls over system-trusted HTTPS, and receives the client chain, existing gRPC server trust bundle, public gRPC address, and server name. An operator may set `enrollment.additional_ca_file` (or `FIREWALL_ENROLLMENT_ADDITIONAL_CA_FILE`) to a read-only mounted PEM bundle for an internal PKI or local development TLS bridge; it is appended to system roots only for the initial enrollment HTTPS client. It is never fetched from the enrollment endpoint and does not change gRPC mTLS trust. This proxy-only setting is not a control-plane trust configuration. No private key crosses the API or is written to disk. The in-memory key also decrypts the existing ECDSA hybrid upstream-secret envelope. Restart requires activation again; renewal and rotation are not implemented.
+
+Control-plane enrollment configuration includes the public API/verification URLs, public gRPC address and server name, base64 32-byte HMAC key, expiry/poll timing, issuer files, and certificate validity. A proxy needs only the public enrollment API URL in addition to its normal Valkey/runtime settings. Non-loopback enrollment HTTP is rejected. [`examples/enrollment`](../examples/enrollment/README.md) provides a local-development Compose topology using Caddy and the proxy additional-CA setting for enrollment HTTPS only; gRPC remains direct end-to-end mTLS. Hosted proxies, Helm/Kubernetes, persistent keys, external agents, HA coordination, enterprise forward proxies, and CA-bundle distribution remain unavailable.
+
+The root development topology can add the same Caddy bridge with `make up ENROLLMENT=1`. It uses only development certificates and a development HMAC key. Start the enrolled proxy separately; the existing `proxy` keeps its manually mounted test certificate, which preserves the ordinary `make up` behavior.
+
+### Local development with Caddy
+
+This is a local-development path only. Caddy terminates the enrollment HTTPS
+request and the proxy trusts Caddy's locally generated root for that one
+request. Caddy never handles the bundle or ingest gRPC connection; the enrolled
+proxy connects directly to the control plane's host-published gRPC port with the
+certificate it receives during enrollment.
+
+Start the local control plane and Caddy:
+
+```bash
+make up ENROLLMENT=1
+```
+
+After Caddy has started, copy its root certificate from the Docker volume to a
+host file for a separately started proxy:
+
+```bash
+mkdir -p .local
+docker compose -f docker-compose.yml -f docker-compose.enrollment.yml \
+  --profile enrollment \
+  cp caddy:/data/caddy/pki/authorities/local/root.crt \
+  .local/caddy-root.crt
+```
+
+Run that proxy on its own network with its own Valkey dependency. Mount the
+copied file read-only and configure only the initial enrollment client to trust
+it:
+
+```bash
+docker network inspect dependency-firewall >/dev/null 2>&1 || \
+  docker network create dependency-firewall
+
+if docker container inspect dependency-firewall-valkey >/dev/null 2>&1; then
+  docker start dependency-firewall-valkey >/dev/null
+else
+  docker run -d --name dependency-firewall-valkey \
+    --network dependency-firewall \
+    valkey/valkey:8-alpine
+fi
+
+docker run --rm --name dependency-firewall-enrolled-proxy \
+  --network dependency-firewall \
+  --add-host host.docker.internal:host-gateway \
+  -v "$PWD/.local/caddy-root.crt:/etc/firewall/additional-ca.pem:ro" \
+  -e FIREWALL_RUNTIME_MODE=proxy \
+  -e FIREWALL_BUNDLE_TLS_MODE=mtls \
+  -e FIREWALL_ENROLLMENT_ENABLED=true \
+  -e FIREWALL_ENROLLMENT_PUBLIC_API_URL=https://host.docker.internal:8443 \
+  -e FIREWALL_ENROLLMENT_ADDITIONAL_CA_FILE=/etc/firewall/additional-ca.pem \
+  -e FIREWALL_VALKEY_ADDR=dependency-firewall-valkey:6379 \
+  dependency-firewall:latest
+```
+
+`host.docker.internal` reaches the Docker host from the separately started
+proxy. Docker Desktop provides it automatically; `--add-host ...:host-gateway`
+provides the equivalent mapping on Linux. Caddy creates its root on first start;
+rerun the copy command if it was not available yet. Do not use this CA, the
+development HMAC key, or this Caddy topology in a shared or production
+deployment.
+
 ## Validation rules
 
 - `runtime.mode=control-plane` requires `bundle.tls.mode=mtls`, unless `bundle.tls.allow_insecure_control_plane=true` is explicitly set for local development.
 - `runtime.mode=proxy` requires `bundle.tls.mode=mtls`.
 - `runtime.mode=dependency-graph-worker` requires `bundle.tls.mode=mtls` and uses `bundle.control_plane_addr` to claim and complete graph jobs.
 - In worker mode, the `bundle` section is transport-only: it configures the mTLS client to the control plane, not tenant bundle retrieval or caching.
-- `bundle.tls.mode=mtls` requires `ca_file`, `cert_file`, and `key_file`.
-- `runtime.mode=control-plane` plus `bundle.tls.mode=mtls` requires at least one `authorized_clients` entry.
+- `bundle.tls.mode=mtls` requires `ca_file`, `cert_file`, and `key_file`, except an enrollment-enabled proxy receives those materials in memory.
+- `runtime.mode=control-plane` plus `bundle.tls.mode=mtls` requires at least one `authorized_clients` entry unless database-backed automatic enrollment is enabled.
 - Authenticated OCI upstream secrets are delivered in bundles only when the bundle transport is mTLS-protected and tenant-authorized.
 - Split-mode proxy runtime requires bundle-delivered auth secrets to be version-2 encrypted envelopes and rejects plaintext bundle secrets. All-in-one mode uses the legacy-compatible resolver for local in-process flows.
 

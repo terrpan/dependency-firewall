@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/danielterry/dependency-firewall/internal/config"
 	"github.com/danielterry/dependency-firewall/internal/core/policy"
 	"github.com/danielterry/dependency-firewall/internal/core/port"
@@ -82,6 +84,9 @@ func registerControlPlaneRoutes(
 	)
 
 	apidelivery.NewTenantHandler(tenantService, logger).RegisterHumaRoutes(controlPlaneAPI)
+	if err := registerProxyEnrollmentRoutes(controlPlaneAPI, deps, cfg, logger); err != nil {
+		return err
+	}
 	apidelivery.NewPolicyHandler(policyService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewCacheHandler(cacheService, logger).RegisterHumaRoutes(controlPlaneAPI)
 	apidelivery.NewUpstreamHandler(upstreamService, logger).RegisterHumaRoutes(controlPlaneAPI)
@@ -91,6 +96,35 @@ func registerControlPlaneRoutes(
 		apidelivery.NewDependencyGraphHandler(deps.dependencyGraphRepo, logger).RegisterHumaRoutes(controlPlaneAPI)
 	}
 
+	return nil
+}
+
+func registerProxyEnrollmentRoutes(api huma.API, deps *dependencies, cfg *config.Config, logger *slog.Logger) error {
+	if !cfg.Enrollment.Enabled {
+		return nil
+	}
+	enrollmentService, err := service.NewProxyEnrollmentService(
+		deps.proxyEnrollmentRepo, deps.proxyEnrollmentRepo,
+		service.DenyAllTenantApprovalAuthorizer{}, deps.workloadIssuer, deps.enrollmentHMACKey,
+		service.ProxyEnrollmentSettings{
+			VerificationURI: cfg.Enrollment.VerificationURI, PublicGRPCAddress: cfg.Enrollment.PublicGRPCAddress,
+			GRPCServerName: cfg.Enrollment.GRPCServerName, Validity: cfg.Enrollment.Validity,
+			PollInterval: cfg.Enrollment.PollInterval,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	apidelivery.NewProxyEnrollmentHandler(
+		enrollmentService,
+		apidelivery.AnonymousPrincipalProvider{},
+		logger,
+		apidelivery.ProxyEnrollmentHandlerSettings{
+			PublicAPIURL:      cfg.Enrollment.PublicAPIURL,
+			PublicGRPCAddress: cfg.Enrollment.PublicGRPCAddress,
+			GRPCServerName:    cfg.Enrollment.GRPCServerName,
+		},
+	).RegisterHumaRoutes(api)
 	return nil
 }
 
@@ -194,6 +228,7 @@ func newOCIProxyHandler(
 	ociMux := http.NewServeMux()
 	ociHandler.RegisterRoutes(ociMux)
 	var wrapped http.Handler = ociMux
+	wrapped = enforceBoundProxyTenant(deps.boundTenantID, wrapped)
 	wrapped = tenantResolver.Middleware(wrapped)
 	wrapped = middleware.OCITenantFromHost()(wrapped)
 	wrapped = middleware.RequestLogging(logger)(wrapped)
@@ -219,11 +254,27 @@ func newNPMProxyHandler(
 	npmMux := http.NewServeMux()
 	npmHandler.RegisterRoutes(npmMux)
 	var wrapped http.Handler = npmMux
+	wrapped = enforceBoundProxyTenant(deps.boundTenantID, wrapped)
 	wrapped = tenantResolver.Middleware(wrapped)
 	wrapped = middleware.NPMTenantFromPath()(wrapped)
 	wrapped = middleware.RequestLogging(logger)(wrapped)
 	wrapped = middleware.Recovery(logger)(wrapped)
 	return middleware.RequestID()(wrapped)
+}
+
+func enforceBoundProxyTenant(boundTenantID string, next http.Handler) http.Handler {
+	boundTenantID = strings.TrimSpace(boundTenantID)
+	if boundTenantID == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tenant, ok := middleware.TenantFromContext(r.Context())
+		if !ok || tenant.ID != boundTenantID {
+			http.Error(w, "proxy enrollment is not authorized for this tenant", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newNPMInstallSnapshotService(

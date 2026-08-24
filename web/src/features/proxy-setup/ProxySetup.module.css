@@ -1,0 +1,205 @@
+.setup,
+.heading {
+  display: grid;
+  gap: var(--space-card);
+}
+
+.heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.heading h3,
+.heading p,
+.command p {
+  margin: 0;
+}
+
+.heading p {
+  color: var(--color-text-muted);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.command {
+  display: grid;
+  gap: 12px;
+}
+
+.dockerMethods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.portControls,
+.portOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.portControls {
+  flex-wrap: wrap;
+}
+
+.configurationError {
+  color: var(--color-danger);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.portOption {
+  width: fit-content;
+  gap: 8px;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.portOption input {
+  inline-size: 16px;
+  block-size: 16px;
+  accent-color: var(--color-action);
+}
+
+.portField {
+  display: grid;
+  gap: 4px;
+}
+
+.portInput {
+  display: grid;
+  grid-template-columns: auto 4.5rem;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.portInput input {
+  min-width: 0;
+  min-height: 28px;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.portInput input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.portField small {
+  color: var(--color-danger);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.copyButton {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  right: 8px;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0.25rem;
+  border-color: rgb(238 244 248 / 35%);
+  background: rgb(24 32 42 / 75%);
+  color: #eef4f8;
+  box-shadow: none;
+}
+
+.copyButton:hover,
+.copyButton:focus-visible {
+  background: rgb(45 53 61 / 95%);
+}
+
+.copyIcon,
+.copySuccessIcon {
+  display: inline-flex;
+}
+
+.copySuccessIcon {
+  color: #a7f3d0;
+  animation: copy-success 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes copy-success {
+  0% {
+    transform: scale(0.55) rotate(-12deg);
+    opacity: 0;
+  }
+
+  70% {
+    transform: scale(1.16) rotate(0deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.copyStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.codeBlock {
+  position: relative;
+  max-width: 100%;
+  margin: 0;
+  padding: 16px 56px 16px 16px;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-inverse, #18202a);
+  color: #eef4f8;
+  font-size: 0.78rem;
+}
+
+.codeBlock code {
+  display: block;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.codeBlock,
+.codeBlock code {
+  user-select: text;
+}
+
+.codeBlock::selection,
+.codeBlock *::selection {
+  background: #32658a;
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .heading {
+    grid-template-columns: 1fr;
+  }
+
+  .portControls {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copySuccessIcon {
+    animation: none;
+  }
+}

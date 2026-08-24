@@ -3,8 +3,10 @@
 package postgres_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -181,6 +183,128 @@ func TestMigrations_BackfillScorecardCapabilityForLegacyNPMUpstreams(t *testing.
 	).Scan(&capabilities)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"publish_time", "licenses", "vulnerability_lookup", "scorecard_lookup"}, capabilities)
+}
+
+func TestProxyEnrollmentRepository_ConcurrentApprovalPollAndRevocation(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "proxy-enrollment-tenant")
+	repository := postgres.NewProxyEnrollmentRepository(pool)
+	now := time.Now().UTC()
+	enrollment := &domain.ProxyEnrollment{
+		DeviceCredentialDigest: bytes.Repeat([]byte{1}, 32),
+		UserCodeDigest:         bytes.Repeat([]byte{2}, 32),
+		CSRDER:                 []byte{1, 2, 3}, Status: domain.ProxyEnrollmentPending,
+		ExpiresAt: now.Add(10 * time.Minute), PollInterval: 5 * time.Second, NextPollAt: now.Add(5 * time.Second),
+	}
+	require.NoError(t, repository.CreateProxyEnrollment(ctx, enrollment))
+	approvals := []domain.ProxyEnrollmentApproval{
+		{
+			TenantID:             tenant.ID,
+			InstallationID:       "11111111-1111-4111-8111-111111111111",
+			InstallationName:     "edge-a",
+			IdentityID:           "21111111-1111-4111-8111-111111111111",
+			CanonicalIdentity:    "spiffe://dependency-firewall/tenant/" + tenant.ID + "/proxy/11111111-1111-4111-8111-111111111111",
+			CertificateSerial:    "1",
+			CertificateNotAfter:  now.Add(time.Hour),
+			CertificateChainPEM:  []byte("cert-a"),
+			ServerTrustBundlePEM: []byte("trust"),
+			PrincipalID:          "user",
+		},
+		{
+			TenantID:             tenant.ID,
+			InstallationID:       "12222222-2222-4222-8222-222222222222",
+			InstallationName:     "edge-b",
+			IdentityID:           "22222222-2222-4222-8222-222222222222",
+			CanonicalIdentity:    "spiffe://dependency-firewall/tenant/" + tenant.ID + "/proxy/12222222-2222-4222-8222-222222222222",
+			CertificateSerial:    "2",
+			CertificateNotAfter:  now.Add(time.Hour),
+			CertificateChainPEM:  []byte("cert-b"),
+			ServerTrustBundlePEM: []byte("trust"),
+			PrincipalID:          "user",
+		},
+	}
+	approvalErrors := make(chan error, 2)
+	var approvalsWG sync.WaitGroup
+	for i := range approvals {
+		approvalsWG.Add(1)
+		go func(approval domain.ProxyEnrollmentApproval) {
+			defer approvalsWG.Done()
+			_, err := repository.ApproveProxyEnrollment(ctx, enrollment.ID, enrollment.UserCodeDigest, approval, now)
+			approvalErrors <- err
+		}(approvals[i])
+	}
+	approvalsWG.Wait()
+	close(approvalErrors)
+	approvalSuccesses := 0
+	for err := range approvalErrors {
+		if err == nil {
+			approvalSuccesses++
+		} else {
+			require.ErrorIs(t, err, domain.ErrProxyEnrollmentConflict)
+		}
+	}
+	assert.Equal(t, 1, approvalSuccesses)
+
+	pollErrors := make(chan error, 2)
+	pollResults := make(chan *domain.ProxyEnrollment, 2)
+	var pollsWG sync.WaitGroup
+	for range 2 {
+		pollsWG.Add(1)
+		go func() {
+			defer pollsWG.Done()
+			result, err := repository.PollProxyEnrollment(ctx, enrollment.DeviceCredentialDigest, now.Add(time.Second))
+			pollResults <- result
+			pollErrors <- err
+		}()
+	}
+	pollsWG.Wait()
+	close(pollErrors)
+	close(pollResults)
+	pollSuccesses := 0
+	var consumed *domain.ProxyEnrollment
+	for result := range pollResults {
+		if result != nil {
+			consumed = result
+			pollSuccesses++
+		}
+	}
+	for err := range pollErrors {
+		if err != nil {
+			require.ErrorIs(t, err, domain.ErrProxyEnrollmentConsumed)
+		}
+	}
+	require.Equal(t, 1, pollSuccesses)
+	require.NotNil(t, consumed)
+	assert.NotEmpty(t, consumed.CertificateChainPEM)
+	var storedCertificate []byte
+	require.NoError(
+		t,
+		pool.QueryRow(ctx, `SELECT COALESCE(certificate_chain_pem, ''::bytea) FROM proxy_enrollments WHERE id = $1`, enrollment.ID).
+			Scan(&storedCertificate),
+	)
+	assert.Empty(t, storedCertificate)
+
+	authorization, err := repository.AuthorizeWorkloadIdentity(
+		ctx,
+		[]string{consumed.CanonicalIdentity},
+		tenant.ID,
+		now.Add(2*time.Second),
+	)
+	require.NoError(t, err)
+	assert.True(t, authorization.Known)
+	assert.True(t, authorization.Authorized)
+	_, err = repository.RevokeProxyInstallation(ctx, tenant.ID, consumed.InstallationID, now.Add(3*time.Second))
+	require.NoError(t, err)
+	authorization, err = repository.AuthorizeWorkloadIdentity(
+		ctx,
+		[]string{consumed.CanonicalIdentity},
+		tenant.ID,
+		now.Add(4*time.Second),
+	)
+	require.NoError(t, err)
+	assert.True(t, authorization.Known)
+	assert.False(t, authorization.Authorized)
 }
 
 // ---------------------------------------------------------------------------
