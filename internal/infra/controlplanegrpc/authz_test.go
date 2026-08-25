@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"net/url"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -17,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/danielterry/dependency-firewall/internal/config"
+	"github.com/danielterry/dependency-firewall/internal/core/domain"
 )
 
 func TestTenantAuthorizer(t *testing.T) {
@@ -31,6 +34,78 @@ func TestTenantAuthorizer(t *testing.T) {
 	assert.False(t, authorizer.authorized([]string{"spiffe://dependency-firewall/proxy/a"}, "tenant-b"))
 	assert.True(t, authorizer.authorized([]string{"spiffe://dependency-firewall/proxy/admin"}, "tenant-b"))
 	assert.False(t, authorizer.authorized([]string{"spiffe://dependency-firewall/proxy/unknown"}, "tenant-a"))
+}
+
+func TestTenantAuthorizationInterceptor_KnownEnrollmentCannotUseStaticFallback(t *testing.T) {
+	t.Parallel()
+	identity := "spiffe://dependency-firewall/tenant/tenant-a/proxy/proxy-a"
+	ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: credentials.TLSInfo{
+		State: tlsConnectionState(&x509.Certificate{URIs: []*url.URL{mustURL(t, identity)}}),
+	}})
+
+	tests := []struct {
+		name       string
+		result     domain.WorkloadAuthorizationResult
+		wantCode   codes.Code
+		wantCalled bool
+	}{
+		{
+			name:     "known revoked identity denied despite static allow",
+			result:   domain.WorkloadAuthorizationResult{Known: true},
+			wantCode: codes.PermissionDenied,
+		},
+		{
+			name:       "unknown identity uses static compatibility",
+			result:     domain.WorkloadAuthorizationResult{},
+			wantCode:   codes.OK,
+			wantCalled: true,
+		},
+		{
+			name:       "known active identity authorized",
+			result:     domain.WorkloadAuthorizationResult{Known: true, Authorized: true},
+			wantCode:   codes.OK,
+			wantCalled: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			interceptor := TenantAuthorizationInterceptor(
+				[]config.BundleTLSAuthorizedClient{{Identity: identity, TenantIDs: []string{"tenant-a"}}},
+				func(any) string { return "tenant-a" },
+				WithWorkloadIdentityAuthorizer(staticWorkloadAuthorizer{result: tt.result}),
+			)
+			_, err := interceptor(
+				ctx,
+				struct{}{},
+				&grpc.UnaryServerInfo{},
+				func(context.Context, any) (any, error) { called = true; return struct{}{}, nil },
+			)
+			assert.Equal(t, tt.wantCode, status.Code(err))
+			assert.Equal(t, tt.wantCalled, called)
+		})
+	}
+}
+
+type staticWorkloadAuthorizer struct {
+	result domain.WorkloadAuthorizationResult
+}
+
+func (a staticWorkloadAuthorizer) AuthorizeWorkloadIdentity(
+	context.Context,
+	[]string,
+	string,
+	time.Time,
+) (domain.WorkloadAuthorizationResult, error) {
+	return a.result, nil
+}
+
+func mustURL(t *testing.T, value string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(value)
+	require.NoError(t, err)
+	return parsed
 }
 
 func TestTenantAuthorizationInterceptor_RecordsDeniedRequest(t *testing.T) {

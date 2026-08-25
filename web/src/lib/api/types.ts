@@ -10,6 +10,20 @@ export type Tenant = NonNullable<
 export type CreateTenantRequest = paths['/api/v1/tenants']['post']['requestBody']['content']['application/json']
 export type UpdateTenantRequest = paths['/api/v1/tenants/{id}']['put']['requestBody']['content']['application/json']
 
+export type ProxyInstallation = NonNullable<
+  paths['/api/v1/tenants/{tenant_id}/proxy-installations']['get']['responses'][200]['content']['application/json']
+>[number]
+export type ProxyEnrollmentConfiguration =
+  paths['/api/v1/proxy-enrollment-configuration']['get']['responses'][200]['content']['application/json']
+export type RenameProxyInstallationRequest =
+  paths['/api/v1/tenants/{tenant_id}/proxy-installations/{id}']['put']['requestBody']['content']['application/json']
+export type ResolveProxyEnrollmentRequest =
+  paths['/api/v1/proxy-enrollments/resolve']['post']['requestBody']['content']['application/json']
+export type ProxyEnrollment =
+  paths['/api/v1/proxy-enrollments/resolve']['post']['responses'][200]['content']['application/json']
+export type ApproveProxyEnrollmentRequest =
+  paths['/api/v1/proxy-enrollments/{id}/approve']['post']['requestBody']['content']['application/json']
+
 export type Upstream = NonNullable<
   paths['/api/v1/upstreams']['get']['responses'][200]['content']['application/json']
 >[number]

@@ -3,8 +3,10 @@
 package postgres_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -181,6 +183,216 @@ func TestMigrations_BackfillScorecardCapabilityForLegacyNPMUpstreams(t *testing.
 	).Scan(&capabilities)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"publish_time", "licenses", "vulnerability_lookup", "scorecard_lookup"}, capabilities)
+}
+
+func TestMigrations_ExpandProxyEnrollmentPrincipals(t *testing.T) {
+	ctx := context.Background()
+	pgContainer, err := pgmodule.Run(ctx,
+		"postgres:16-alpine",
+		pgmodule.WithDatabase("testdb"),
+		pgmodule.WithUsername("test"),
+		pgmodule.WithPassword("test"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(30*time.Second),
+		),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pgContainer.Terminate(ctx)) })
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+	srcDriver, err := iofs.New(migrations.FS, ".")
+	require.NoError(t, err)
+	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, fmt.Sprintf("pgx5://%s", connStr[len("postgres://"):]))
+	require.NoError(t, err)
+	require.NoError(t, m.Migrate(20))
+	pool, err := pgxpool.New(ctx, connStr)
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+	_, err = pool.Exec(ctx, `INSERT INTO proxy_enrollments (
+		device_credential_digest, user_code_digest, csr_der, status, expires_at,
+		poll_interval_seconds, next_poll_at, approving_principal_id, denying_principal_id
+	) VALUES ($1, $2, $3, 'pending', $4, 5, $4, 'approver', 'denier')`,
+		bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{8}, 32), []byte{1}, time.Now().UTC().Add(time.Minute))
+	require.NoError(t, err)
+
+	require.NoError(t, m.Migrate(21))
+	var approvingIssuer, approvingSubject, denyingIssuer, denyingSubject string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT approving_principal_issuer, approving_principal_subject,
+		denying_principal_issuer, denying_principal_subject FROM proxy_enrollments`).Scan(
+		&approvingIssuer, &approvingSubject, &denyingIssuer, &denyingSubject,
+	))
+	assert.Equal(t, "urn:dependency-firewall:legacy-principal-id", approvingIssuer)
+	assert.Equal(t, "approver", approvingSubject)
+	assert.Equal(t, "urn:dependency-firewall:legacy-principal-id", denyingIssuer)
+	assert.Equal(t, "denier", denyingSubject)
+
+	require.NoError(t, m.Steps(-1))
+	var approvingID, denyingID string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT approving_principal_id, denying_principal_id
+		FROM proxy_enrollments`).Scan(&approvingID, &denyingID))
+	assert.Equal(t, "approver", approvingID)
+	assert.Equal(t, "denier", denyingID)
+}
+
+func TestProxyEnrollmentRepository_ConcurrentApprovalPollAndRevocation(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	tenant := createTestTenant(t, ctx, pool, "proxy-enrollment-tenant")
+	repository := postgres.NewProxyEnrollmentRepository(pool)
+	now := time.Now().UTC()
+	enrollment := &domain.ProxyEnrollment{
+		DeviceCredentialDigest: bytes.Repeat([]byte{1}, 32),
+		UserCodeDigest:         bytes.Repeat([]byte{2}, 32),
+		CSRDER:                 []byte{1, 2, 3}, Status: domain.ProxyEnrollmentPending,
+		ExpiresAt: now.Add(10 * time.Minute), PollInterval: 5 * time.Second, NextPollAt: now.Add(5 * time.Second),
+	}
+	require.NoError(t, repository.CreateProxyEnrollment(ctx, enrollment))
+	approvals := []domain.ProxyEnrollmentApproval{
+		{
+			TenantID:             tenant.ID,
+			InstallationID:       "11111111-1111-4111-8111-111111111111",
+			InstallationName:     "edge-a",
+			IdentityID:           "21111111-1111-4111-8111-111111111111",
+			CanonicalIdentity:    "spiffe://dependency-firewall/tenant/" + tenant.ID + "/proxy/11111111-1111-4111-8111-111111111111",
+			CertificateSerial:    "1",
+			CertificateNotAfter:  now.Add(time.Hour),
+			CertificateChainPEM:  []byte("cert-a"),
+			ServerTrustBundlePEM: []byte("trust"),
+			Principal: domain.PrincipalRef{
+				Issuer:  "https://issuer.example",
+				Subject: "user",
+			},
+		},
+		{
+			TenantID:             tenant.ID,
+			InstallationID:       "12222222-2222-4222-8222-222222222222",
+			InstallationName:     "edge-b",
+			IdentityID:           "22222222-2222-4222-8222-222222222222",
+			CanonicalIdentity:    "spiffe://dependency-firewall/tenant/" + tenant.ID + "/proxy/12222222-2222-4222-8222-222222222222",
+			CertificateSerial:    "2",
+			CertificateNotAfter:  now.Add(time.Hour),
+			CertificateChainPEM:  []byte("cert-b"),
+			ServerTrustBundlePEM: []byte("trust"),
+			Principal: domain.PrincipalRef{
+				Issuer:  "https://issuer.example",
+				Subject: "user",
+			},
+		},
+	}
+	approvalErrors := make(chan error, 2)
+	var approvalsWG sync.WaitGroup
+	for i := range approvals {
+		approvalsWG.Add(1)
+		go func(approval domain.ProxyEnrollmentApproval) {
+			defer approvalsWG.Done()
+			_, err := repository.ApproveProxyEnrollment(ctx, enrollment.ID, enrollment.UserCodeDigest, approval, now)
+			approvalErrors <- err
+		}(approvals[i])
+	}
+	approvalsWG.Wait()
+	close(approvalErrors)
+	approvalSuccesses := 0
+	for err := range approvalErrors {
+		if err == nil {
+			approvalSuccesses++
+		} else {
+			require.ErrorIs(t, err, domain.ErrProxyEnrollmentConflict)
+		}
+	}
+	assert.Equal(t, 1, approvalSuccesses)
+	var approvingIssuer, approvingSubject string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT approving_principal_issuer, approving_principal_subject
+		FROM proxy_enrollments WHERE id = $1`, enrollment.ID).Scan(&approvingIssuer, &approvingSubject))
+	assert.Equal(t, "https://issuer.example", approvingIssuer)
+	assert.Equal(t, "user", approvingSubject)
+
+	pollErrors := make(chan error, 2)
+	pollResults := make(chan *domain.ProxyEnrollment, 2)
+	var pollsWG sync.WaitGroup
+	for range 2 {
+		pollsWG.Add(1)
+		go func() {
+			defer pollsWG.Done()
+			result, err := repository.PollProxyEnrollment(ctx, enrollment.DeviceCredentialDigest, now.Add(time.Second))
+			pollResults <- result
+			pollErrors <- err
+		}()
+	}
+	pollsWG.Wait()
+	close(pollErrors)
+	close(pollResults)
+	pollSuccesses := 0
+	var consumed *domain.ProxyEnrollment
+	for result := range pollResults {
+		if result != nil {
+			consumed = result
+			pollSuccesses++
+		}
+	}
+	for err := range pollErrors {
+		if err != nil {
+			require.ErrorIs(t, err, domain.ErrProxyEnrollmentConsumed)
+		}
+	}
+	require.Equal(t, 1, pollSuccesses)
+	require.NotNil(t, consumed)
+	assert.NotEmpty(t, consumed.CertificateChainPEM)
+	var storedCertificate []byte
+	require.NoError(
+		t,
+		pool.QueryRow(ctx, `SELECT COALESCE(certificate_chain_pem, ''::bytea) FROM proxy_enrollments WHERE id = $1`, enrollment.ID).
+			Scan(&storedCertificate),
+	)
+	assert.Empty(t, storedCertificate)
+
+	authorization, err := repository.AuthorizeWorkloadIdentity(
+		ctx,
+		[]string{consumed.CanonicalIdentity},
+		tenant.ID,
+		now.Add(2*time.Second),
+	)
+	require.NoError(t, err)
+	assert.True(t, authorization.Known)
+	assert.True(t, authorization.Authorized)
+	_, err = repository.RevokeProxyInstallation(ctx, tenant.ID, consumed.InstallationID, now.Add(3*time.Second))
+	require.NoError(t, err)
+	authorization, err = repository.AuthorizeWorkloadIdentity(
+		ctx,
+		[]string{consumed.CanonicalIdentity},
+		tenant.ID,
+		now.Add(4*time.Second),
+	)
+	require.NoError(t, err)
+	assert.True(t, authorization.Known)
+	assert.False(t, authorization.Authorized)
+}
+
+func TestProxyEnrollmentRepository_DenialPersistsPrincipalRef(t *testing.T) {
+	pool := setupTestDB(t)
+	ctx := context.Background()
+	repository := postgres.NewProxyEnrollmentRepository(pool)
+	now := time.Now().UTC()
+	enrollment := &domain.ProxyEnrollment{
+		DeviceCredentialDigest: bytes.Repeat([]byte{3}, 32),
+		UserCodeDigest:         bytes.Repeat([]byte{4}, 32),
+		CSRDER:                 []byte{1},
+		Status:                 domain.ProxyEnrollmentPending,
+		ExpiresAt:              now.Add(10 * time.Minute),
+		PollInterval:           5 * time.Second,
+		NextPollAt:             now.Add(5 * time.Second),
+	}
+	require.NoError(t, repository.CreateProxyEnrollment(ctx, enrollment))
+	principal := domain.PrincipalRef{Issuer: "https://issuer.example/tenant", Subject: "subject with spaces"}
+
+	require.NoError(t, repository.DenyProxyEnrollment(ctx, enrollment.ID, enrollment.UserCodeDigest, principal, now))
+
+	var denyingIssuer, denyingSubject string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT denying_principal_issuer, denying_principal_subject
+		FROM proxy_enrollments WHERE id = $1`, enrollment.ID).Scan(&denyingIssuer, &denyingSubject))
+	assert.Equal(t, principal.Issuer, denyingIssuer)
+	assert.Equal(t, principal.Subject, denyingSubject)
 }
 
 // ---------------------------------------------------------------------------

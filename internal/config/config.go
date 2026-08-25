@@ -4,6 +4,7 @@ package config
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,6 +36,7 @@ type Config struct {
 	Bundle          BundleConfig          `mapstructure:"bundle"           validate:"required"`
 	Secrets         SecretsConfig         `mapstructure:"secrets"`
 	DependencyGraph DependencyGraphConfig `mapstructure:"dependency_graph"`
+	Enrollment      EnrollmentConfig      `mapstructure:"enrollment"`
 }
 
 // RuntimeMode identifies which service shape the single binary should run.
@@ -172,6 +174,22 @@ type SecretsConfig struct {
 	UpstreamAuthKey string `mapstructure:"upstream_auth_key"`
 }
 
+// EnrollmentConfig configures optional automatic split-proxy enrollment.
+type EnrollmentConfig struct {
+	Enabled                 bool          `mapstructure:"enabled"`
+	PublicAPIURL            string        `mapstructure:"public_api_url"`
+	AdditionalCAFile        string        `mapstructure:"additional_ca_file"`
+	VerificationURI         string        `mapstructure:"verification_uri"`
+	PublicGRPCAddress       string        `mapstructure:"public_grpc_address"`
+	GRPCServerName          string        `mapstructure:"grpc_server_name"`
+	HMACKey                 string        `mapstructure:"hmac_key"`
+	Validity                time.Duration `mapstructure:"validity"`
+	PollInterval            time.Duration `mapstructure:"poll_interval"`
+	IssuerCACertificateFile string        `mapstructure:"issuer_ca_certificate_file"`
+	IssuerCAPrivateKeyFile  string        `mapstructure:"issuer_ca_private_key_file"`
+	CertificateValidity     time.Duration `mapstructure:"certificate_validity"`
+}
+
 // DependencyGraphConfig holds async npm dependency graph resolver settings.
 type DependencyGraphConfig struct {
 	Enabled      bool          `mapstructure:"enabled"`
@@ -241,6 +259,7 @@ func setDefaults(v *viper.Viper) {
 	setBundleDefaults(v)
 	v.SetDefault("secrets.upstream_auth_key", "")
 	setDependencyGraphDefaults(v)
+	setEnrollmentDefaults(v)
 }
 
 func setRuntimeServerDefaults(v *viper.Viper) {
@@ -319,6 +338,21 @@ func setDependencyGraphDefaults(v *viper.Viper) {
 	v.SetDefault("dependency_graph.retry_delay", 5*time.Minute)
 }
 
+func setEnrollmentDefaults(v *viper.Viper) {
+	v.SetDefault("enrollment.enabled", false)
+	v.SetDefault("enrollment.public_api_url", "")
+	v.SetDefault("enrollment.additional_ca_file", "")
+	v.SetDefault("enrollment.verification_uri", "")
+	v.SetDefault("enrollment.public_grpc_address", "")
+	v.SetDefault("enrollment.grpc_server_name", "")
+	v.SetDefault("enrollment.hmac_key", "")
+	v.SetDefault("enrollment.validity", 10*time.Minute)
+	v.SetDefault("enrollment.poll_interval", 5*time.Second)
+	v.SetDefault("enrollment.issuer_ca_certificate_file", "")
+	v.SetDefault("enrollment.issuer_ca_private_key_file", "")
+	v.SetDefault("enrollment.certificate_validity", 30*24*time.Hour)
+}
+
 func bindEnvKeys(v *viper.Viper) error {
 	for _, key := range v.AllKeys() {
 		if err := v.BindEnv(key); err != nil {
@@ -355,6 +389,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.validateBundleTLS(); err != nil {
+		return err
+	}
+	if err := c.validateEnrollment(); err != nil {
 		return err
 	}
 	if err := c.validateControlPlaneBundle(); err != nil {
@@ -470,21 +507,22 @@ func (c *Config) validateBundleTLS() error {
 	if !strings.EqualFold(c.Bundle.TLS.Mode, "mtls") {
 		return nil
 	}
-	if strings.TrimSpace(c.Bundle.TLS.CAFile) == "" {
+	automaticProxyCredentials := c.Runtime.Mode == RuntimeModeProxy && c.Enrollment.Enabled
+	if strings.TrimSpace(c.Bundle.TLS.CAFile) == "" && !automaticProxyCredentials {
 		return fmt.Errorf(
 			"invalid config: field %q is required when bundle.tls.mode is %q",
 			"bundle.tls.ca_file",
 			c.Bundle.TLS.Mode,
 		)
 	}
-	if strings.TrimSpace(c.Bundle.TLS.CertFile) == "" {
+	if strings.TrimSpace(c.Bundle.TLS.CertFile) == "" && !automaticProxyCredentials {
 		return fmt.Errorf(
 			"invalid config: field %q is required when bundle.tls.mode is %q",
 			"bundle.tls.cert_file",
 			c.Bundle.TLS.Mode,
 		)
 	}
-	if strings.TrimSpace(c.Bundle.TLS.KeyFile) == "" {
+	if strings.TrimSpace(c.Bundle.TLS.KeyFile) == "" && !automaticProxyCredentials {
 		return fmt.Errorf(
 			"invalid config: field %q is required when bundle.tls.mode is %q",
 			"bundle.tls.key_file",
@@ -498,7 +536,7 @@ func (c *Config) validateBundleTLS() error {
 }
 
 func (c *Config) validateAuthorizedClients() error {
-	if len(c.Bundle.TLS.AuthorizedClients) == 0 {
+	if len(c.Bundle.TLS.AuthorizedClients) == 0 && !c.Enrollment.Enabled {
 		return fmt.Errorf(
 			"invalid config: field %q is required when runtime.mode is %q and bundle.tls.mode is %q",
 			"bundle.tls.authorized_clients",
@@ -529,6 +567,98 @@ func (c *Config) validateAuthorizedClients() error {
 		}
 	}
 	return nil
+}
+
+func (c *Config) validateEnrollment() error {
+	if err := c.validateEnrollmentAdditionalCA(); err != nil {
+		return err
+	}
+	if !c.Enrollment.Enabled {
+		return nil
+	}
+	if err := c.validateEnrollmentMode(); err != nil {
+		return err
+	}
+	if err := validateEnrollmentURL("enrollment.public_api_url", c.Enrollment.PublicAPIURL); err != nil {
+		return err
+	}
+	if c.Enrollment.Validity <= 0 || c.Enrollment.PollInterval <= 0 || c.Enrollment.CertificateValidity <= 0 {
+		return fmt.Errorf("invalid config: enrollment validity, polling, and certificate validity must be positive")
+	}
+	if c.Runtime.Mode == RuntimeModeProxy {
+		return nil
+	}
+	return c.validateControlPlaneEnrollment()
+}
+
+func (c *Config) validateEnrollmentAdditionalCA() error {
+	if strings.TrimSpace(c.Enrollment.AdditionalCAFile) == "" || c.Runtime.Mode == RuntimeModeProxy {
+		return nil
+	}
+	return fmt.Errorf(
+		"invalid config: field %q is supported only when runtime.mode is %q",
+		"enrollment.additional_ca_file",
+		RuntimeModeProxy,
+	)
+}
+
+func (c *Config) validateEnrollmentMode() error {
+	switch c.Runtime.Mode {
+	case RuntimeModeProxy, RuntimeModeControlPlane:
+		return nil
+	case RuntimeModeDependencyGraphWorker:
+		return fmt.Errorf("invalid config: automatic enrollment is not supported for dependency-graph-worker mode")
+	case RuntimeModeAllInOne:
+		return fmt.Errorf(
+			"invalid config: automatic enrollment is supported only by split control-plane and proxy modes",
+		)
+	default:
+		return fmt.Errorf(
+			"invalid config: automatic enrollment is not supported for runtime.mode %q",
+			c.Runtime.Mode,
+		)
+	}
+}
+
+func (c *Config) validateControlPlaneEnrollment() error {
+	if c.Bundle.TLS.Mode != "mtls" {
+		return fmt.Errorf("invalid config: field %q must be %q when enrollment is enabled", "bundle.tls.mode", "mtls")
+	}
+	for field, value := range map[string]string{
+		"enrollment.verification_uri":           c.Enrollment.VerificationURI,
+		"enrollment.public_grpc_address":        c.Enrollment.PublicGRPCAddress,
+		"enrollment.grpc_server_name":           c.Enrollment.GRPCServerName,
+		"enrollment.issuer_ca_certificate_file": c.Enrollment.IssuerCACertificateFile,
+		"enrollment.issuer_ca_private_key_file": c.Enrollment.IssuerCAPrivateKeyFile,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("invalid config: field %q is required when enrollment is enabled", field)
+		}
+	}
+	if err := validateEnrollmentURL("enrollment.verification_uri", c.Enrollment.VerificationURI); err != nil {
+		return err
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(c.Enrollment.HMACKey))
+	if err != nil || len(key) != 32 {
+		return fmt.Errorf("invalid config: field %q must be a base64 encoded 32-byte key", "enrollment.hmac_key")
+	}
+	return nil
+}
+
+func validateEnrollmentURL(field, value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("invalid config: field %q must be an absolute URL without query or fragment", field)
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	host := parsed.Hostname()
+	ip := net.ParseIP(host)
+	if parsed.Scheme == "http" && (strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback())) {
+		return nil
+	}
+	return fmt.Errorf("invalid config: field %q must use HTTPS except for loopback development", field)
 }
 
 func (c *Config) validateControlPlaneBundle() error {

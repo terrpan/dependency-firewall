@@ -12,6 +12,8 @@ openssl req -x509 -new -nodes \
   -key "$cert_dir/ca-key.pem" \
   -sha256 -days 30 \
   -subj "/CN=dependency-firewall-test-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
   -out "$cert_dir/ca.pem"
 
 openssl genrsa -out "$cert_dir/control-plane-key.pem" 2048

@@ -258,13 +258,22 @@ func TestConfigValidate(t *testing.T) {
 
 		require.NoError(t, cfg.Validate())
 	})
+
+	t.Run("additional enrollment CA bundle is proxy-only", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.Enrollment.AdditionalCAFile = "/run/secrets/internal-root.pem"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "enrollment.additional_ca_file")
+	})
 }
 
 func TestLoadWithOptions_AppliesEnvironmentOverrides(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(configPath, []byte(`
 runtime:
-  mode: all-in-one
+  mode: proxy
 telemetry:
   enabled: false
   endpoint: "http://file-collector:4317"
@@ -272,6 +281,14 @@ telemetry:
   insecure: true
 server:
   port: 8080
+bundle:
+  tls:
+    mode: mtls
+    ca_file: "/run/secrets/control-plane-ca.pem"
+    cert_file: "/run/secrets/proxy.pem"
+    key_file: "/run/secrets/proxy-key.pem"
+enrollment:
+  additional_ca_file: "/etc/firewall/ca-from-file.pem"
 `), 0o600))
 
 	t.Setenv("FIREWALL_TELEMETRY_ENABLED", "true")
@@ -279,6 +296,7 @@ server:
 	t.Setenv("FIREWALL_TELEMETRY_INSECURE", "false")
 	t.Setenv("FIREWALL_SERVER_PORT", "18080")
 	t.Setenv("FIREWALL_BUNDLE_TLS_ALLOW_INSECURE_CONTROL_PLANE", "true")
+	t.Setenv("FIREWALL_ENROLLMENT_ADDITIONAL_CA_FILE", "/run/secrets/internal-root.pem")
 
 	cfg, err := LoadWithOptions(LoadOptions{ConfigPath: configPath})
 	require.NoError(t, err)
@@ -288,6 +306,7 @@ server:
 	assert.False(t, cfg.Telemetry.Insecure)
 	assert.Equal(t, 18080, cfg.Server.Port)
 	assert.True(t, cfg.Bundle.TLS.AllowInsecureControlPlane)
+	assert.Equal(t, "/run/secrets/internal-root.pem", cfg.Enrollment.AdditionalCAFile)
 	assert.Equal(t, "*", cfg.DependencyGraph.TenantID)
 }
 

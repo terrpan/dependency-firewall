@@ -1,0 +1,52 @@
+.panel,
+.header,
+.item,
+.item > div {
+  display: grid;
+  gap: 10px;
+}
+
+.header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.header h3,
+.header p {
+  margin: 0;
+}
+
+.header p,
+.item span {
+  color: var(--color-text-muted);
+}
+
+.item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.activateLink {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-action);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .header,
+  .item {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}

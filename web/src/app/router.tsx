@@ -23,6 +23,9 @@ const TenantsPage = lazy(() => import('../pages/TenantsPage.tsx').then(({ Tenant
 const UpstreamsPage = lazy(() =>
   import('../pages/UpstreamsPage.tsx').then(({ UpstreamsPage }) => ({ default: UpstreamsPage })),
 )
+const ActivatePage = lazy(() =>
+  import('../pages/ActivatePage.tsx').then(({ ActivatePage }) => ({ default: ActivatePage })),
+)
 
 export const router = createBrowserRouter([
   {
@@ -36,6 +39,10 @@ export const router = createBrowserRouter([
       {
         index: true,
         element: <RouteElement Page={DashboardPage} />,
+      },
+      {
+        path: 'activate',
+        element: <RouteElement Page={ActivatePage} />,
       },
       {
         path: 'tenants',

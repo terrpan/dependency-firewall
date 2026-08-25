@@ -32,6 +32,12 @@ import type {
   UpdateTenantRequest,
   UpdateUpstreamRequest,
   Upstream,
+  ApproveProxyEnrollmentRequest,
+  ProxyEnrollment,
+  ProxyEnrollmentConfiguration,
+  ProxyInstallation,
+  RenameProxyInstallationRequest,
+  ResolveProxyEnrollmentRequest,
 } from './types.ts'
 
 type RequestOptions = {
@@ -219,6 +225,74 @@ export function createControlPlaneApi(options: ControlPlaneApiOptions = {}) {
       },
       remove(id: string, options?: RequestOptions) {
         return request<void>({ method: 'DELETE', path: `/tenants/${id}`, ...options })
+      },
+    },
+    proxyEnrollments: {
+      configuration(options?: RequestOptions) {
+        return request<ProxyEnrollmentConfiguration>({
+          method: 'GET',
+          path: '/proxy-enrollment-configuration',
+          ...options,
+        })
+      },
+      resolve(body: ResolveProxyEnrollmentRequest, options?: RequestOptions) {
+        return request<ProxyEnrollment, ResolveProxyEnrollmentRequest>({
+          method: 'POST',
+          path: '/proxy-enrollments/resolve',
+          body,
+          contentType: 'application/json',
+          ...options,
+        })
+      },
+      approve(id: string, body: ApproveProxyEnrollmentRequest, options?: RequestOptions) {
+        return request<ProxyEnrollment, ApproveProxyEnrollmentRequest>({
+          method: 'POST',
+          path: `/proxy-enrollments/${id}/approve`,
+          body,
+          contentType: 'application/json',
+          ...options,
+        })
+      },
+      deny(id: string, userCode: string, options?: RequestOptions) {
+        return request<void, { user_code: string }>({
+          method: 'POST',
+          path: `/proxy-enrollments/${id}/deny`,
+          body: { user_code: userCode },
+          contentType: 'application/json',
+          ...options,
+        })
+      },
+    },
+    proxyInstallations: {
+      list(tenantId: string, options?: RequestOptions) {
+        return request<ProxyInstallation[]>({
+          method: 'GET',
+          path: `/tenants/${tenantId}/proxy-installations`,
+          ...options,
+        })
+      },
+      get(tenantId: string, id: string, options?: RequestOptions) {
+        return request<ProxyInstallation>({
+          method: 'GET',
+          path: `/tenants/${tenantId}/proxy-installations/${id}`,
+          ...options,
+        })
+      },
+      rename(tenantId: string, id: string, body: RenameProxyInstallationRequest, options?: RequestOptions) {
+        return request<ProxyInstallation, RenameProxyInstallationRequest>({
+          method: 'PUT',
+          path: `/tenants/${tenantId}/proxy-installations/${id}`,
+          body,
+          contentType: 'application/json',
+          ...options,
+        })
+      },
+      revoke(tenantId: string, id: string, options?: RequestOptions) {
+        return request<ProxyInstallation>({
+          method: 'DELETE',
+          path: `/tenants/${tenantId}/proxy-installations/${id}`,
+          ...options,
+        })
       },
     },
     upstreams: {

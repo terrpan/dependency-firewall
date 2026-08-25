@@ -19,7 +19,10 @@ import (
 	bundleinfra "github.com/danielterry/dependency-firewall/internal/infra/bundle"
 	"github.com/danielterry/dependency-firewall/internal/infra/controlplanegrpc"
 	ingestinfra "github.com/danielterry/dependency-firewall/internal/infra/ingest"
+	"github.com/danielterry/dependency-firewall/internal/infra/secrets"
 	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
+	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
+	"github.com/danielterry/dependency-firewall/internal/infra/workloadidentity"
 )
 
 // RunControlPlane starts the control-plane HTTP API and bundle gRPC service.
@@ -52,7 +55,12 @@ func runControlPlane(
 	}
 	httpServer := newHTTPServer(cfg, controlPlaneMux)
 
-	controlPlaneGRPCOptions, err := controlPlaneGRPCServerOptions(cfg, logger, deps.auditService)
+	controlPlaneGRPCOptions, err := controlPlaneGRPCServerOptions(
+		cfg,
+		logger,
+		deps.auditService,
+		deps.workloadAuthorizer,
+	)
 	if err != nil {
 		return err
 	}
@@ -117,14 +125,25 @@ func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info
 		false,
 		false,
 		func(logger *slog.Logger, deps *dependencies) error {
-			grpcClient, err := bundleinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr, cfg.Bundle.TLS)
+			provider := proxyRuntimeCredentialProvider(cfg, logger)
+			runtimeCredentials, err := provider.Acquire(ctx)
+			if err != nil {
+				return fmt.Errorf("acquiring proxy runtime credentials: %w", err)
+			}
+			dialOptions, err := controlplanegrpc.DialOptionsWithTLSConfig(runtimeCredentials.TLSConfig)
+			if err != nil {
+				return err
+			}
+			grpcClient, err := bundleinfra.NewGRPCClientWithDialOptions(runtimeCredentials.GRPCAddress, dialOptions...)
 			if err != nil {
 				return err
 			}
 			// Runs as the process is shutting down; a close failure changes nothing.
 			defer func() { _ = grpcClient.Close() }()
 
-			ingestClient, err := ingestinfra.NewGRPCClient(ctx, cfg.Bundle.ControlPlaneAddr, cfg.Bundle.TLS)
+			ingestClient, err := ingestinfra.NewGRPCClientWithDialOptions(
+				runtimeCredentials.GRPCAddress,
+				dialOptions...)
 			if err != nil {
 				return err
 			}
@@ -134,12 +153,47 @@ func RunProxy(ctx context.Context, cfg *config.Config, logger *slog.Logger, info
 			deps.decisionRepo = ingestinfra.NewDecisionRepository(ingestClient)
 			deps.dependencyGraphQueue = ingestinfra.NewDependencyGraphQueue(ingestClient)
 			deps.dependencyGraphContexts = ingestClient
+			deps.boundTenantID = runtimeCredentials.TenantID
+			baseOCIClient := upstream.NewOCIClient(
+				telemetry.WrapHTTPClient(newOutboundHTTPClient(0)),
+				upstream.WithAuthSecretResolver(
+					secrets.NewStrictHybridPrivateKeyResolver(runtimeCredentials.PrivateKey),
+				),
+			)
+			deps.ociClient = baseOCIClient
+			if cfg.OCICache.Enabled {
+				artifactCache, cacheErr := newOCIArtifactCache(cfg.OCICache)
+				if cacheErr != nil {
+					return fmt.Errorf("creating OCI cache: %w", cacheErr)
+				}
+				deps.ociClient = upstream.NewCachedOCIClient(baseOCIClient, artifactCache, logger)
+			}
 			installRuntimeServices(cfg, logger, deps, nil, ingestinfra.NewAuditEventRecorder(ingestClient))
 
 			bundleProvider := service.NewCachedBundleProvider(grpcClient, cfg.Bundle.RefreshInterval, logger)
 			return runProxyHTTP(ctx, cfg, logger, info, deps, bundleProvider)
 		},
 	)
+}
+
+func proxyRuntimeCredentialProvider(
+	cfg *config.Config,
+	logger *slog.Logger,
+) workloadidentity.RuntimeCredentialProvider {
+	if cfg.Enrollment.Enabled {
+		return workloadidentity.NewEnrollmentProvider(workloadidentity.EnrollmentProviderConfig{
+			PublicAPIURL:     cfg.Enrollment.PublicAPIURL,
+			AdditionalCAFile: cfg.Enrollment.AdditionalCAFile,
+			Logger:           logger,
+		})
+	}
+	return workloadidentity.NewFileProvider(workloadidentity.FileProviderConfig{
+		CAFile:          cfg.Bundle.TLS.CAFile,
+		CertificateFile: cfg.Bundle.TLS.CertFile,
+		PrivateKeyFile:  cfg.Bundle.TLS.KeyFile,
+		ServerName:      cfg.Bundle.TLS.ServerNameOverride,
+		GRPCAddress:     cfg.Bundle.ControlPlaneAddr,
+	})
 }
 
 // RunAllInOne starts the combined local runtime with control-plane HTTP and proxy HTTP.
@@ -260,8 +314,13 @@ func controlPlaneGRPCServerOptions(
 	cfg *config.Config,
 	logger *slog.Logger,
 	auditService *service.AuditService,
+	workloadAuthorizer port.WorkloadIdentityAuthorizer,
 ) ([]grpc.ServerOption, error) {
-	options, err := controlplanegrpc.ServerOptions(cfg.Bundle.TLS)
+	additionalClientCAs := []string{}
+	if cfg.Enrollment.Enabled {
+		additionalClientCAs = append(additionalClientCAs, cfg.Enrollment.IssuerCACertificateFile)
+	}
+	options, err := controlplanegrpc.ServerOptionsWithAdditionalClientCAs(cfg.Bundle.TLS, additionalClientCAs...)
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +329,7 @@ func controlPlaneGRPCServerOptions(
 			cfg.Bundle.TLS.AuthorizedClients,
 			controlPlaneTenantIDFromRequest,
 			controlplanegrpc.WithTenantAuthorizationLogger(logger),
+			controlplanegrpc.WithWorkloadIdentityAuthorizer(workloadAuthorizer),
 			controlplanegrpc.WithTenantAuthorizationDeniedRecorder(
 				controlPlaneAuthorizationDeniedRecorder(auditService),
 			),
@@ -278,6 +338,7 @@ func controlPlaneGRPCServerOptions(
 			cfg.Bundle.TLS.AuthorizedClients,
 			controlPlaneTenantIDFromRequest,
 			controlplanegrpc.WithTenantAuthorizationLogger(logger),
+			controlplanegrpc.WithWorkloadIdentityAuthorizer(workloadAuthorizer),
 			controlplanegrpc.WithTenantAuthorizationDeniedRecorder(
 				controlPlaneAuthorizationDeniedRecorder(auditService),
 			),

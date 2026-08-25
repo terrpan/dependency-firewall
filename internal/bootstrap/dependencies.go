@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/danielterry/dependency-firewall/internal/infra/telemetry"
 	"github.com/danielterry/dependency-firewall/internal/infra/upstream"
 	valkeyinfra "github.com/danielterry/dependency-firewall/internal/infra/valkey"
+	"github.com/danielterry/dependency-firewall/internal/infra/workloadidentity"
 )
 
 type dependencies struct {
@@ -44,6 +46,10 @@ type dependencies struct {
 	upstreamRepo            port.UpstreamRepository
 	bundleUpstreamRepo      port.BundleUpstreamRepository
 	authSecretRewrapper     port.UpstreamAuthSecretRewrapper
+	proxyEnrollmentRepo     *postgres.ProxyEnrollmentRepository
+	workloadAuthorizer      port.WorkloadIdentityAuthorizer
+	workloadIssuer          port.WorkloadCertificateIssuer
+	enrollmentHMACKey       []byte
 
 	decisionCache          port.DecisionCache
 	metadataCache          port.MetadataCache
@@ -54,6 +60,7 @@ type dependencies struct {
 	enrichmentService *service.EnrichmentService
 	ociClient         port.UpstreamClient
 	npmClient         port.UpstreamClient
+	boundTenantID     string
 }
 
 func openDependencies(
@@ -140,6 +147,27 @@ func (d *dependencies) installDatabaseRepositories(cfg *config.Config) error {
 	d.upstreamRepo = upstreamRepo
 	d.bundleUpstreamRepo = upstreamRepo
 	d.authSecretRewrapper = upstreamRepo
+	if cfg.Enrollment.Enabled {
+		enrollmentRepo := postgres.NewProxyEnrollmentRepository(d.pool)
+		d.proxyEnrollmentRepo = enrollmentRepo
+		d.workloadAuthorizer = enrollmentRepo
+		key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(cfg.Enrollment.HMACKey))
+		if err != nil {
+			return fmt.Errorf("decoding proxy enrollment HMAC key: %w", err)
+		}
+		d.enrollmentHMACKey = key
+		issuer, err := workloadidentity.NewLocalCAIssuer(workloadidentity.LocalCAConfig{
+			CACertificateFile:     cfg.Enrollment.IssuerCACertificateFile,
+			CAPrivateKeyFile:      cfg.Enrollment.IssuerCAPrivateKeyFile,
+			ControlPlaneKeyFile:   cfg.Bundle.TLS.KeyFile,
+			ServerTrustBundleFile: cfg.Bundle.TLS.CAFile,
+			CertificateValidity:   cfg.Enrollment.CertificateValidity,
+		})
+		if err != nil {
+			return fmt.Errorf("configuring workload certificate issuer: %w", err)
+		}
+		d.workloadIssuer = issuer
+	}
 	return nil
 }
 
@@ -173,6 +201,9 @@ func ociClientOptions(cfg *config.Config) ([]upstream.OCIClientOption, error) {
 		return nil, nil
 	}
 	if cfg.Runtime.Mode != config.RuntimeModeProxy && cfg.Runtime.Mode != config.RuntimeModeAllInOne {
+		return nil, nil
+	}
+	if cfg.Runtime.Mode == config.RuntimeModeProxy && cfg.Enrollment.Enabled {
 		return nil, nil
 	}
 	cert, err := tls.LoadX509KeyPair(cfg.Bundle.TLS.CertFile, cfg.Bundle.TLS.KeyFile)

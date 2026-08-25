@@ -16,7 +16,17 @@ Implemented extension seams are:
 - API-client attachment of `Authorization: Bearer <token>` when a token exists;
 - explicit route-guard and expired-session UI states.
 
-These seams are not an authority boundary. A production IdP adapter, session enforcement, Go JWT/JWKS validation, RBAC, and IdP-organization-to-tenant mapping remain future work. Backend authorization must remain authoritative and must not trust client role claims.
+These seams are not an authority boundary. A production IdP adapter, session enforcement, Go JWT/JWKS validation, RBAC, and IdP-organization-to-tenant mapping remain future work. Proxy enrollment’s human routes already require a provider-neutral principal from server request context and permission-check installation operations, but shipped wiring supplies no principal and denies every Tenant permission. Backend authorization remains authoritative and never trusts client role claims.
+
+## Proxy onboarding
+
+Tenant creation uses `Details → Proxy → Review`. Self-hosted is the implemented option; hosted remains visibly unavailable. Creation stays open in a setup state rather than dropping the operator back into inventory. The reusable proxy-setup feature is shared by that state and an existing Tenant's **Add proxy** action.
+
+The Docker setup tab offers equivalent Docker Compose and plain `docker run` commands. Both use the locally built `dependency-firewall:latest` image and include the required Valkey runtime dependency, without exposing a certificate, private key, SAN, Tenant ID, static allowlist, or bootstrap secret. The setup fetches the public HTTPS enrollment API address directly from the control plane’s `enrollment.public_api_url` configuration; it never uses the console origin or asks the operator to enter an address. Re-running the Docker command reuses or starts the named Valkey container. Proxy port publishing is opt-in; when enabled, the chosen port configures both the proxy listener and its Docker host mapping. Operators can also opt into mounting an additional CA bundle for the initial enrollment connection. Helm and Kubernetes tabs remain disabled and must not fabricate commands. The lazy `/activate` route resolves a one-time code, confirms the active Tenant and installation name, handles invalid/expired/denied/used/unauthorized states, and polls until the installation connects. Tenant inventory shows pending, active, and revoked installations with rename/revoke actions. Normal copy avoids PKI terminology.
+
+The activation UI may submit a selected Tenant ID only as requested scope; the server’s `proxy:manage` decision is authoritative. Activation-code resolution itself requires authentication, installation list/get require `proxy:read`, and approval/rename/revoke require `proxy:manage`. With the current anonymous frontend and deny-all backend adapters, these interactions intentionally render 401/403 states rather than activating a proxy.
+
+The setup commands keep the proxy and its Valkey dependency on a dedicated network. A local-development enrollment URL at host.docker.internal adds only the Docker host gateway; it never attaches the proxy to the control-plane Compose network.
 
 ## Product design principles
 

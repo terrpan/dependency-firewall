@@ -87,6 +87,15 @@ make down
 
 Use [`examples/mtls`](./examples/mtls/README.md) for runnable split-mode configuration. Standalone proxy and worker modes cannot start with the insecure defaults because both require mTLS. A control plane may use `bundle.tls.allow_insecure_control_plane=true` only as an explicit local-development exception.
 
+To enable local automatic enrollment, run `make up ENROLLMENT=1`. This adds a
+Caddy enrollment-HTTPS bridge while the regular `proxy` continues using its
+mounted development certificate. Start an enrolled proxy separately using the
+setup wizard or your own Docker command. Caddy is local-development-only;
+bundle and ingest gRPC stay direct end-to-end mTLS. Use
+`make down ENROLLMENT=1` to stop that topology. See the [local enrollment CA
+steps](./docs/mtls.md#local-development-with-caddy) when starting that proxy in
+another container.
+
 ## Local all-in-one development
 
 ```bash
